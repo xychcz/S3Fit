@@ -1,2 +1,3 @@
-# S3Fit
-S3Fit: Simultaneous Spectrum and photometric-SED Fit Code for extragalaxy
+# S<sup>3</sup>Fit
+**S<sup>3</sup>Fit**: **S**imultaneous **S**pectrum and photometric-**S**ED **Fit** Code for extragalaxy
+
