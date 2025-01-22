@@ -2,6 +2,8 @@ import os, time, traceback
 import numpy as np
 from copy import deepcopy as copy
 from astropy.io import fits
+import astropy.units as u
+import astropy.constants as const
 from astropy.cosmology import WMAP9 as cosmo
 from astropy.convolution import Gaussian1DKernel
 from scipy.signal import fftconvolve
@@ -250,9 +252,9 @@ class FitFrame(object):
         self.best_coeffs = np.zeros((num_mock_loops, self.num_tot_coeffs),dtype='float')
         self.best_chi_sq = np.zeros(num_mock_loops, dtype='float')
         self.fit_quality = np.zeros(num_mock_loops, dtype='int')
-        self.spec_fmock_lw = np.broadcast_to(self.spec['flux_w'], (num_mock_loops, self.spec['flux_w'].shape[0]))
+        self.spec_fmock_lw = np.tile(self.spec['flux_w'], (num_mock_loops, 1))
         if self.have_phot:
-            self.phot_fmock_lb = np.broadcast_to(self.phot['flux_b'], (num_mock_loops, self.phot['flux_b'].shape[0]))
+            self.phot_fmock_lb = np.tile(self.phot['flux_b'], (num_mock_loops, 1))
             
         self.fitraw = fitraw
         self.plot = plot
@@ -397,7 +399,7 @@ class FitFrame(object):
         
     def nl_lsq_func(self, x0, wave_w, flux_w, ferr_w, 
                     model_type, mask_ssp_lite=None, mask_el_lite=None, fit_phot=False, 
-                    refit_rand_x0=True, max_fit_ntry=3, accept_chi_sq=5, verbose=self.verbose): 
+                    refit_rand_x0=True, max_fit_ntry=3, accept_chi_sq=5, verbose=False): 
         # core fitting function to obtain solution of non-linear least-square problems
         
         bound_min_p, bound_max_p, bound_width_p = self.bound_min_p.copy(), self.bound_max_p.copy(), self.bound_width_p.copy()
