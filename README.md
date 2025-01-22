@@ -5,6 +5,10 @@
 
 **Usage**
 ```python
+import os, sys
+sys.path.append(os.path.abspath("PATH_OF_THIS_CODE"))
+from s3fit.py import FitFrame
+
 # fitting models
 ssp_file = '/lwk/xychen/AKARI_ULIRG/GMOS/ifufit_code/ssp/popstar21_stellar_nebular_fullwave.fits'
 ssp_pmmc = [[[0, -1000, 1000], [600, 100, 1200], [0.5, 0, 5.0], '5.5e-3, None, solar_met']]
@@ -25,15 +29,21 @@ mask_b = np.isin(band_name_b, ['SDSS_up', 'SDSS_gp', 'SDSS_rp', 'SDSS_ip', 'SDSS
                                '2MASS_J', '2MASS_H', '2MASS_Ks', 'WISE_1', 'WISE_2', 'WISE_3', 'WISE_4', 
                                'Spitzer_IRAC_1', 'Spitzer_IRAC_2', 'Spitzer_IRAC_3', 'Spitzer_IRAC_4', 'Spitzer_MIPS_1'])
 
-FF_s3_n1_disctorus = FitFrame(spec_wave_w=copy(vac_wave_w), spec_flux_w=copy(intspec_flux_w), spec_ferr_w=copy(intspec_ferr_w), 
-                              spec_valid_range=valid_wave_range(-1), spec_R_inst=spec_R_inst, spec_flux_scale=flux_scale, 
-                              phot_name_b=band_name_b[mask_b], phot_flux_b=band_flux_b[mask_b], 
-                              phot_ferr_b=(band_ferr_b - band_flux_b*0.10)[mask_b], # remove 10%flux from input
-                              phot_trans_dir='../filters/',
-                              v0_redshift=v0_redshift, 
-                              ssp_pmmc=ssp_pmmc, ssp_file=ssp_file, 
-                              agn_pmmc=agn_pmmc, 
-                              el_pmmc=el_pmmc, 
-                              torus_pmmc=torus_pmmc, torus_disc_file=torus_disc_file, torus_dust_file=torus_dust_file, 
-                              num_mock_loops=1, fitraw=True, plot=1, verbose=False)
+FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec_ferr_w, 
+              spec_valid_range=spec_valid_range, spec_R_inst=spec_R_inst, spec_flux_scale=spec_flux_scale,
+              # input of spectral data 
+              phot_name_b=phot_name_b, phot_flux_b=phot_flux_b, phot_ferr_b=phot_ferr_b, phot_trans_dir=phot_trans_dir,
+              # input of photometric data, comment this line if pure-spectral fitting is required
+              v0_redshift=v0_redshift,
+              # initial guess of systemic redshift
+              ssp_pmmc=ssp_pmmc, ssp_file=ssp_file, 
+              agn_pmmc=agn_pmmc, 
+              el_pmmc=el_pmmc, 
+              torus_pmmc=torus_pmmc, torus_disc_file=torus_disc_file, torus_dust_file=torus_dust_file,
+              # setup of models, comment the corresponding line if a model is not required
+              num_mock_loops=10,
+              # number of fitting loops for mocked data to estimate uncertainties of parameters; set to 1 if only raw data is fit
+              plot=True, verbose=False
+              # if showing plots and texts of each steps of the fit
+)
 ```
