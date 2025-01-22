@@ -1,5 +1,6 @@
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a <ins>**S**</ins>imultaneous <ins>**S**</ins>pectrum and photometric-<ins>**S**</ins>ED <ins>**Fit**</ins>ting code for extragalaxy
+[example.pdf](https://github.com/user-attachments/files/18509243/example.pdf)
 
 **Usage**
 ```python
