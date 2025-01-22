@@ -58,6 +58,7 @@ torus_disc_file =
 torus_dust_file = 
 # location of model library
 
+# initialize 
 FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec_ferr_w, 
               spec_valid_range=spec_valid_range, spec_R_inst=spec_R_inst, spec_flux_scale=spec_flux_scale,
               # input of spectral data 
@@ -74,10 +75,13 @@ FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec
               # number of fitting loops for mocked data to estimate uncertainties of parameters; set to 1 if only raw data is fit
               plot=True, verbose=False
               # if showing plots and texts of each steps of the fit
+
+# run fit
+FF.main_fit()
 )
 ```
 
-** Test environment **
+**Test environment**
 ```python
 python = 3.10
 scipy = 1.12.0
