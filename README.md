@@ -1,8 +1,6 @@
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a **S**imultaneous **S**pectrum and photometric-**S**ED **Fitting** code for extragalaxy
 
-**Install**
-
 **Usage**
 ```python
 import os, sys
@@ -77,4 +75,13 @@ FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec
               plot=True, verbose=False
               # if showing plots and texts of each steps of the fit
 )
+```
+
+** Test environment **
+```python
+python = 3.10
+scipy = 1.12.0
+numpy = 1.26.4
+astropy = 6.0.0
+matplotlib = 3.9.1
 ```
