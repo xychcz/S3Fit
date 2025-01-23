@@ -1,7 +1,7 @@
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a <ins>**S**</ins>imultaneous <ins>**S**</ins>pectrum and photometric-<ins>**S**</ins>ED <ins>**Fit**</ins>ting code for extragalaxy
 
-![example](https://github.com/user-attachments/assets/91ced4e2-c1d3-4083-a3c5-df94b367ddf1)
+![example](https://github.com/user-attachments/assets/91ced4e2-c1d3-4083-a3c5-df94b367ddf1 "Example" {width=40px height=400px})
 
 ## Basic usage
 ```python
@@ -82,7 +82,7 @@ FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec
 FF.main_fit()
 )
 ```
-Please check [example](example.ipynb) to learn about how to print and plot the best-fit results, 
+Please check [Example](example.ipynb) to learn about how to print and plot the best-fit results, 
 and [Advanced Usage](advanced_usage.md) to modify the code (e.g., add models) for your purpose. 
 
 ## Test environment
