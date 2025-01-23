@@ -3,7 +3,7 @@
 
 ![example](https://github.com/user-attachments/assets/91ced4e2-c1d3-4083-a3c5-df94b367ddf1)
 
-**Usage**
+## Basic usage
 ```python
 import os, sys
 sys.path.append(os.path.abspath("PATH_OF_THIS_CODE"))
@@ -83,7 +83,7 @@ FF.main_fit()
 )
 ```
 
-**Test environment**
+## Test environment
 ```python
 python = 3.10
 scipy = 1.12.0
@@ -92,10 +92,10 @@ astropy = 6.0.0
 matplotlib = 3.9.1
 ```
 
-**Citation**
-
+## Citation
 If you would like to use this code, please cite the paper [Chen et al. (2025)][1], in which a pure-spectral-fit mode of this code is utilized. Please find details of the configuration of star formation history and kinematic parameters of emission lines in the paper. 
 
+## Reference
 The code uses the Single Stellar Population (SSP) library [PopSTAR][2] ([paper][3]). Please download the [library][2] and run convert_ssp_templates.py in models/ to create the SSP models for this code. 
 
 This code uses the [SKIRTor][4] ([paper1][5], [paper2][6]) AGN torus model. Examples of this library are provided in models/, which are resampled and reformed to be used by this code. Please refer to [SKIRTor][4] website for details and the original library. 
