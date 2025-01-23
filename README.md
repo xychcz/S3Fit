@@ -5,7 +5,7 @@
 
 ## Basic usage
 ```python
-import os, sys
+import sys
 sys.path.append(os.path.abspath("PATH_OF_THIS_CODE"))
 from s3fit.py import FitFrame
 
