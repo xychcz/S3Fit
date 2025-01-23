@@ -24,7 +24,7 @@ phot_name_b = ['SDSS_up', 'SDSS_gp', '2MASS_J', 'WISE_1', 'WISE_2']
 # Band names, which are the same of the transmission curve files.
 phot_flux_b, phot_ferr_b =
 # Flux and error in each band, unit in mJy
-phot_trans_dir =
+phot_trans_dir = './filter/'
 # directory of transmission curve files.
 
 # Models
@@ -35,7 +35,7 @@ ssp_pmmc = [[[0, -1000, 1000], [600, 100, 1200], [0.5, 0, 5.0], '5.5e-3, None, s
 # The string at the end, '5.5e-3, None, solar_met', denotes the minimum (5,5e-3 Gyr) and maximum (None if set to Universe age) stellar ages,
 # and metallicity (currently 'solar_met' or 'all' is supported)
 ssp_file =
-# location of the PopSTAR library (one example in ...)
+# location of the PopSTAR library
 
 # Emission line models
 el_pmmc = [[[    0, -500,  500], [ 500,250, 750], [3.0,0,5], [1.2,0.5,1.45], 'NLR:all'], 
@@ -56,8 +56,7 @@ agn_pmmc = [[[0, -1000, 1000], [600, 100, 1200], [3.0, 1.5, 10.0], [-1.7, -1.7, 
 # SKIRTor torus models
 torus_pmmc = [[[0, -1000, 1000], [5, 3, 11], [30, 10, 80], [20, 10, 30], [50, 0, 90], 'disc+dust']] #'disc+dust'
 # Support parameters are voff, tau, half opening angle of torus, radii ratio, inclination angle
-torus_disc_file = 
-torus_dust_file = 
+torus_file = 
 # location of model library
 
 # initialize 
@@ -71,16 +70,17 @@ FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec
               ssp_pmmc=ssp_pmmc, ssp_file=ssp_file, 
               agn_pmmc=agn_pmmc, 
               el_pmmc=el_pmmc, 
-              torus_pmmc=torus_pmmc, torus_disc_file=torus_disc_file, torus_dust_file=torus_dust_file,
+              torus_pmmc=torus_pmmc, torus_file=torus_file, 
               # setup of models, comment the corresponding line if a model is not required
               num_mock_loops=10,
               # number of fitting loops for mocked data to estimate uncertainties of parameters; set to 1 if only raw data is fit
               plot=True, verbose=False
               # if showing plots and texts of each steps of the fit
+)
 
 # run fit
 FF.main_fit()
-)
+
 ```
 Please check [Example](example.ipynb) to learn about how to print and plot the best-fit results, 
 and [Advanced Usage](advanced_usage.md) to modify the code (e.g., add models) for your purpose. 
