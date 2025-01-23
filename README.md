@@ -82,6 +82,8 @@ FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec
 FF.main_fit()
 )
 ```
+Please check [example](example.ipynb) to learn about how to print and plot the best-fit results, 
+and [Advanced Usage](advanced_usage.md) to modify the code (e.g., add models) for your purpose. 
 
 ## Test environment
 ```python
