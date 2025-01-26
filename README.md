@@ -83,8 +83,8 @@ FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec
 FF.main_fit()
 
 ```
-Please check [Example](example.ipynb) to learn about how to print and plot the best-fit results, 
-and [Advanced Usage](advanced_usage.md) to modify the code (e.g., add models) for your purpose. 
+Please check [Example](example/example.ipynb) to learn about how to print and plot the best-fit results, 
+and [Advanced Usage](manual/advanced_usage.md) to modify the code (e.g., add models) for your purpose. 
 
 ## Test environment
 ```python
@@ -101,7 +101,7 @@ If you would like to use this code, please cite the paper [Chen et al. (2025)][1
 ## Reference
 The code uses the Single Stellar Population (SSP) library [PopSTAR][2] ([paper][3]). Please download the [library][2] and run convert_ssp_templates.py in models/ to create the SSP models for this code. 
 
-This code uses the [SKIRTor][4] ([paper1][5], [paper2][6]) AGN torus model. Examples of this library are provided in models/, which are resampled and reformed to be used by this code. Please refer to [SKIRTor][4] website for details and the original library. 
+This code uses the [SKIRTor][4] ([paper1][5], [paper2][6]) AGN torus model. Examples of this library are provided in [models](models/), which are resampled and reformed to be used by this code. Please refer to [SKIRTor][4] website for details and the original library. 
 
 [1]: <https://iopscience.iop.org/article/10.3847/1538-4357/ad93ab>
 [2]: <https://www.fractal-es.com/PopStar/>
