@@ -84,7 +84,7 @@ FF.main_fit()
 
 ```
 Please check [Example](example/example.ipynb) to learn about how to print and plot the best-fit results, 
-and [Advanced Usage](manual/advanced_usage.md) to modify the code (e.g., add models) for your purpose. 
+and [Advanced Usage](manuals/advanced_usage.md) to modify the code (e.g., add models) for your purpose. 
 
 ## Test environment
 ```python
