@@ -3,6 +3,12 @@
 
 <p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600" height="600">
 
+## Features
+- easy transition spec/spec+SED
+- flexible SFH, comp
+- flexible EL, comp/kin
+- print/plot functions
+- expand models
 
 ## Basic usage
 ```python
