@@ -2,14 +2,34 @@
 
 ## Initialize the main function
 ```python
-FF = FitFrame(spec_wave_w=spec_wave_w, spec_flux_w=spec_flux_w, spec_ferr_w=spec_ferr_w, 
-              spec_valid_range=spec_valid_range, spec_R_inst=spec_R_inst, spec_flux_scale=spec_flux_scale, 
-              phot_name_b=phot_name_b, phot_flux_b=phot_flux_b, phot_ferr_b=phot_ferr_b, phot_trans_dir=phot_trans_dir,
-              v0_redshift=v0_redshift, model_config=model_config,
-              num_mock_loops=0, plot_step=True, print_step=True, verbose=False)
+FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
+              spec_valid_range=None, spec_R_inst=None, spec_flux_scale=None, 
+              phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_fluxunit='mJy', 
+              sed_wave_w=None, sed_waveunit='angstrom', 
+              v0_redshift=None, model_config=None, 
+              num_mock_loops=0, fitraw=True, 
+              plot_step=False, print_step=True, verbose=False)
 ```
+#### Spectral data
+`spec_wave_w`: Wavelength of the input spectrum, in unit of angstrom.\
+`spec_flux_w` and `spec_ferr_w`: Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.\
+`spec_valid_range`: Valid wavelength range. For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.\
+`spec_R_inst`: Instrumental spectral resolution of the input spectrum, this is used to convolve the model spectra and estimate the intrinsic velocity width.\
+`spec_flux_scale`: Scaling ratio of the flux. The fitting is performed for spec_flux_w/spec_flux_scale to avoid too small value. 
+#### Photometric data
+`phot_name_b`: List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`. The names should be the same as the filenames of the transmission curves in each band. \
+`phot_trans_dir`: Directory of the transmission curves. \
+`phot_flux_b` and `phot_ferr_b`: Fluxes and measurement errors in each band. \
+`phot_fluxunit`: Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`. If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before fitting. \
+`sed_wave_w` and `sed_waveunit`: Wavelength array and its unit of the full SED wavelength range, which are used to create the model spectra and convert them to fluxes in each band. `sed_waveunit` can be `'angstrom'` and `'micron'`; if set to 'micron', they will be converted to 'angstrom'. 
+Note that `sed_wave_w` is not mandatory; if it is not set, the code can create the wavelength array to cover all of the transmission curves of the input bands.
+#### Model setup 
 [model setup](#model-setup)
+
+#### Fitting loop setup
 `num_mock_loops=0` to only fit the raw data, i.e., no mocked spectra
+
+#### Auxiliary
 `plot_step=True` to plot each fitting step
 
 ```python
