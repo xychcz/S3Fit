@@ -45,8 +45,37 @@ model_config = {'ssp': {'enable': True, 'config': ssp_config, 'file': ssp_file},
                 'agn': {'enable': True, 'config': agn_config}, 
                 'torus': {'enable': True, 'config': torus_config, 'file': torus_file}}
 ```
+Current version of S<sup>3</sup>Fit supports stellar continuum (`'ssp'`), emission lines (`'el'`), AGN central continuum (`'agn'`), and AGN dusty torus (`'torus'`). 
+If any models are not required, set `'enable'` to `False` or just remove the corresponding lines.
+Note that the model names (e.g., 'ssp') are fixed in the code and please do not modity them.
+The detailed set up of each model are described as follows. 
 
-#### Stellar component
+#### Stellar continuum
+```python
+ssp_file = 'DIRECTORY/popstar21_stellar_nebular_fullwave.fits'
+```
+Current version of S<sup>3</sup>Fit use the [PopSTAR][2] Single Stellar Population (SSP) model library. 
+Please run the [converting code](models/convert_popstar_ssp.py) to convert the original PopSTAR models to the format used for this code. 
+You may also want to download an example of the converted SSP model for test in [this link][7].
+
+[2]: <https://www.fractal-es.com/PopStar/>
+[7]: https://drive.google.com/file/d/1JwdBOnl6APwFmadIX8BYLcLyFNZvnuYg/view?usp=share_link
+
+An example of setup of stellar continuum
+```python
+ssp_file = 'DIRECTORY/popstar21_stellar_nebular_fullwave.fits'
+ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free'], 
+                                [0, 0.94, 'free'], [-1, 1, 'free']], 
+                       'info': {'age_min': -2.25, 'age_max': 'universe', 'met_sel': 'solar', 'sfh': 'exponential'} } }
+```
+`ssp_file`: Location of the PopSTAR SSP model library. 
+
+pars: voff, fwhm, AV, log csp_age (Gyr), log sfh_tau (Gyr)
+age_min, age_max: min and max log ssp_age (Gyr)
+met_sel: 'all', 'solar', or any combination of [0.004,0.008,0.02,0.05]
+sfh: 'nonparametric', 'exponential', 'delayed', 'constant'
+
+
 ```python
 ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free'], 
                                 [0, 0.94, 'free'], [-1, 1, 'free']], 
@@ -54,14 +83,8 @@ ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 
               'young': {'pars': [[None, None, 'ssp:main:0'], [None, None, 'ssp:main:1'], [None, None, 'ssp:main:2'], 
                                  [-2, -1, 'free'], [-1, -1, 'fix']], 
                         'info': {'age_min': -2.25, 'age_max': 0, 'met_sel': 'solar', 'sfh': 'constant'} } }
-ssp_file = '/lwk/xychen/AKARI_ULIRG/GMOS/ifufit_code/ssp/popstar21_stellar_nebular_fullwave.fits'
-```
-pars: voff, fwhm, AV, log csp_age (Gyr), log sfh_tau (Gyr)
-age_min, age_max: min and max log ssp_age (Gyr)
-met_sel: 'all', 'solar', or any combination of [0.004,0.008,0.02,0.05]
-sfh: 'nonparametric', 'exponential', 'delayed', 'constant'
-please use ../models/convert_popstar_ssp.py to create the ssp template library
 
+```
 
 ```python
 ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free'], [-1, -1, 'fix'], [-1, -1, 'fix']], 
@@ -93,6 +116,14 @@ agn_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], [None, None
 pars: voff, fwhm, AV; alpha_lambda of powerlaw at 
 
 #### AGN dusty torus
+
+This code uses the [SKIRTor][4] AGN torus model.
+Examples of this library are provided in [models](models/), 
+which are resampled and reformed to be used by this code. 
+Please refer to [SKIRTor][4] website for details and the original library. 
+
+[4]: https://sites.google.com/site/skirtorus/sed-library?authuser=0
+
 ```python
 torus_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], [3, 11, 'free'], [10, 80, 'free'], [10, 30, 'free'], [0, 90, 'free']],
                          'info': {'mod_used': ['dust']} } } # 
@@ -106,3 +137,4 @@ set 'mod_used' to ['disc', 'dust'] if use both of disc and dusty torus modules
 FF.main_fit()
 ```
 example
+
