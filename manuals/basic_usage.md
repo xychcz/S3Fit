@@ -214,7 +214,7 @@ and the inclination angle (degree) from the polar direction.
 Similar to the case of AGN powerlaw component, 
 the velocity shift of the torus component is also tied to those of emission line or stellar continuum. 
 The `'mod_used'` can be set to `['dust']` to use the pure torus module, 
-or `['disc', 'dust']` to use both of the disc and torus modules
+or `['disc','dust']` to use both of the disc and torus modules
 (do not use `'agn'` powerlaw component in this case). 
 
 ## Run fitting
