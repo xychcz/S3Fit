@@ -21,7 +21,8 @@ and append the new SFH function after the `'constant'` SFH.
 The time variable of SFH function is already defined as `evo_time`. 
 The parameters used for SFH starts from the 3rd parameter in the input `ssp_config` 
 (the 0th to 2nd parameters are used for velocity shift, FWHM, and extinction). 
-Please remember to confirm the number of the input parameters match the required one in the new SFH function. 
+> [!IMPORTANT]
+> Please remember to confirm the number of the input parameters match the required one in the new SFH function. 
 
 ## Support new emission lines
 
@@ -123,7 +124,7 @@ logw_wave_w, logw_flux_w = convert_linw_to_logw(linw_wave_w, linw_flux_w, resolu
 The function `models_unitnorm_obsframe()` is used to return the extinct, redshifted, and convolved (with both of instrumental and physical broadening)
 model spectra in the observed wavelength grid, to the main fitting functions to calculate the best-fit normalization factors.
 Please read the [fitting strategy](manuals/fitting_strategy.md) to learn about the details. 
-You may not need to largely modify the `models_unitnorm_obsframe()` function since it can be used uniformly for multiple type of models. 
+You may not need to largely modify the `models_unitnorm_obsframe()` function since it can be used uniformly for multiple types of models. 
 
 #### Create configuration dictionary
 The format of the input model configuration is as follows:
@@ -186,6 +187,7 @@ new_coeff_lcm = self.best_coeffs[:, fc0:fc1].reshape(n_loops, num_new_comps, num
 ```
 In the results, `new_x_lcp[i_l, i_c, i_p]` denotes the best-fit value of the `i_p`-th parameter of the `i_c`-th components for the `i_l`-th mocked spectra.
 The names of the `i_p`-th parameter follow the order set in the `new_config`. 
+
 `new_coeff_lcm[i_l, i_c, i_m]` denotes the best-fit normalization factor of the `i_m`-th model of the `i_c`-th components for the `i_l`-th mocked spectra.
 The meanning and unit of `new_coeff_lcm` depends on the normalization in `models_unitnorm_original()` function in the `NewModels` class. 
 For example, if the intrinsic model spectra are normalized to unit flux at rest 5500 angstrom in `models_unitnorm_original()`, 
