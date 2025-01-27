@@ -1,6 +1,8 @@
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a <ins>**S**</ins>imultaneous <ins>**S**</ins>pectrum and photometric-<ins>**S**</ins>ED <ins>**Fit**</ins>ting code for extragalaxy
 
+<p align="center"> <img src="https://github.com/user-attachments/assets/96901c47-8c44-4399-948f-3015b6a2cb58" height="600">
+
 <p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600" height="600">
 
 ## Features
