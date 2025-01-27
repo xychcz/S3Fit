@@ -1,4 +1,4 @@
-## Fitting stretagy
+## Fitting strategy
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart. 
 <p align="center"> <img src="https://github.com/user-attachments/assets/96901c47-8c44-4399-948f-3015b6a2cb58" height="800">
 
@@ -11,7 +11,7 @@ For a given group of parameters, the normalization factors of models are obtaine
 The corresponding model spectra and the $\chi^2$ value are then calculated with the normalization factors.
 The best-fit parameters are obtained by solving the non-linear least-square problem to minimize $\chi^2$, with the function `scipy.optimize.least_squares`
 and the Trust Region Reflective algorithm (read [the page][8] for details of the algorithm). 
-The stretagy, which combines the solvers of linear and non-linear least-square problem, 
+The strategy, which combines the solvers of linear and non-linear least-square problem, 
 runs faster than the method to only solve non-linear least-square problem for all variables (i.e., both of normalization factors and shape-controlled parameters); 
 and also runs faster than the method 
 that calculate $\chi^2$ for all combinations of parameters in the model parameter grids, especially when the number of parameters i huge. 
@@ -27,8 +27,27 @@ and to examine if there is a secondary solution in the parameter space.
 Since there could be several tens of parameters, it can be hard for the algorithm to find the 
 best-fit values for all models with randomly initialized input parameters. 
 In order to address the issue, the pipeline is performed in three (if only spectrum) or four cycles (if fit both of spectrum and photometric SED). 
-In the initial cycle, 
-the 
 
-An example of the fitting result is shown in the following plots. 
+- In the initial cycle, 
+the fitting for continuum models are firstly performed with the data spectrum with
+the wavelength range of emission lines masked out.
+The emission lines are then fit with the continuum subtracted spectrum.
+- In the 1st main cycle,
+the continuum fitting is firstly performed after subtracting the best-fit emission line models (from the initial cycle) from the data spectrum.
+The emission lines are then fit with the continuum (from the 1st cycle) subtracted spectrum.
+Randomly initialized parameters are used in the two fitting.
+The best-fit parameters from the pure continuum or emission line fitting
+are used as the initial parameters of the joint fitting of continuum and emission lines.
+- After the 1st main cycle, an examination of each model component is performed with each peak S/N.
+Components with a low S/N (e.g., faint broad line component) are disabled in later fitting.
+The component configuration of each model is introduced in the [basic usage manual](manuals/basic_usage.md).
+- The 2nd main cycle is a repeat of the 1st main cycle with updated model configuration.
+If a pure spectral fitting is required, the best-fit parameters and model spectra are the final output.
+- If photometric SED data is input, the 3rd fitting cycle is performed.
+The pipeline of the 3rd cycle is a repeat of the 2nd cycle,
+while the model spectra are created in the wavelength range that covers all of the data points,
+and the fitting is run simultaneously for the spectrum and photometric data points. 
+
+An example of the fitting result is provided in the following plots. 
+The best-fit model spectra for all mocked data are shown in the plot, which represent the uncertainty range of each models. 
 <p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600" height="600">
