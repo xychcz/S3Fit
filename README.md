@@ -17,7 +17,7 @@ An example of the fitting result of S<sup>3</sup>Fit is shown in the following p
 
 ## Usage
 Please find guides in [manuals](manuals/) for [basic](manuals/basic_usage.md) and [advanced](manuals/advanced_usage.md) usages of this code. 
-An example of the usage of S<sup>3</sup>Fit is provided in [Example](example/example.ipynb). 
+An example of the usage of S<sup>3</sup>Fit is provided in [example](example/example.ipynb). 
 
 ## Test environment
 ```
