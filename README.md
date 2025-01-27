@@ -63,4 +63,4 @@ Please refer to [SKIRTor][4] website for details of the original SED library.
 [5]: http://adsabs.harvard.edu/abs/2012MNRAS.420.2756S
 [6]: http://adsabs.harvard.edu/abs/2016MNRAS.458.2288S
 [7]: https://drive.google.com/file/d/1JwdBOnl6APwFmadIX8BYLcLyFNZvnuYg/view?usp=share_link
-[8]: https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html#r20fc1df64af7-stir
+
