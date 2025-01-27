@@ -1,4 +1,4 @@
-## Fitting strategy
+# Fitting strategy
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart. 
 <p align="center"> <img src="https://github.com/user-attachments/assets/4f9dec46-8f6b-48da-91a0-b704ba13d28d" height="800">
 
