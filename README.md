@@ -42,17 +42,17 @@ matplotlib = 3.9.1
 - Test support for absorption lines. 
 
 ## Citation
-If you would like to use this code, please cite the paper [Chen et al. (2025)][1], in which a pure-spectral-fit mode of this code is firstly utilized. 
+If you would like to use S<sup>3</sup>Fit, please cite the paper [Chen et al. (2025)][1], in which a pure-spectral-fit mode of this code is firstly utilized. 
 Please find details of the configuration of star formation history and kinematic parameters of emission lines in the paper. 
 
 ## Reference
 S<sup>3</sup>Fit uses the Single Stellar Population (SSP) library [PopSTAR][2] ([paper][3]). 
 Please download the [library][2] and run the [converting code](models/convert_popstar_ssp.py) 
-to create the SSP models used for this code. 
+to create the SSP models used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
 S<sup>3</sup>Fit uses the [SKIRTor][4] ([paper1][5], [paper2][6]) AGN torus model. 
-Examples of this library are provided in [models](models/) for a test of the code, 
+Examples of this library are provided in [models](models/) for a test of S<sup>3</sup>Fit, 
 which are the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
 Please refer to [SKIRTor][4] website for details of the original SED library. 
 
