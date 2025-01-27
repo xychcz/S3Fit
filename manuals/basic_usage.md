@@ -119,7 +119,7 @@ set it to any value with `'fix'` to save a free parameter
 (please do not directly delete it since all stellar components need to have the same number of parameters). 
 
 The best-fit reconstructed SFH of each component can be plotted or output by running `FF.reconstruct_sfh()`. 
-Please read [Example](example/example.ipynb) to learn about the details. 
+Please read the [example](example/example.ipynb) for an example case. 
 
 #### Emission lines
 
