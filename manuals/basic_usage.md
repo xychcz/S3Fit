@@ -26,7 +26,8 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None,
 `phot_fluxunit`: Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`. If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before fitting. \
 `sed_wave_w` and `sed_waveunit`: Wavelength array and its unit of the full SED wavelength range, which are used to create the model spectra and convert them to fluxes in each band. `sed_waveunit` can be `'angstrom'` and `'micron'`; if set to 'micron', they will be converted to 'angstrom'. 
 Note that `sed_wave_w` is not mandatory; if it is not set, the code can create the wavelength array to cover all of the transmission curves of the input bands.
-**If a pure spectral fitting is required, please  d**
+> [!TIP]
+> If a pure spectral fitting is required, please just remove all input parameters starting with `phot_` and `sed_`.
 #### Model setup 
 `v0_redshift`: Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 `model_config`: Dictionary of model configurations, see [model setup](#model-setup) section for details. 
@@ -49,7 +50,12 @@ model_config = {'ssp': {'enable': True, 'config': ssp_config, 'file': ssp_file},
 ```
 Current version of S<sup>3</sup>Fit supports stellar continuum (`'ssp'`), emission lines (`'el'`), AGN central continuum (`'agn'`), and AGN dusty torus (`'torus'`). 
 If any models are not required, set `'enable'` to `False` or just delete the corresponding lines.
-Note that the model names (e.g., 'ssp') are fixed in the code and please do not modify them.
+> [!CAUTION]
+> Note that the model names (e.g., 'ssp') are fixed in the code and please do not modify them.
+
+> [!TIP]
+> Please read guide in [advanced usage](manuals/advanced_usage.md) if you want to add a new model type. 
+
 The detailed set up of each model are described as follows. 
 
 #### Stellar continuum
@@ -111,14 +117,19 @@ ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 
                                  [-2, -1, 'free'], [-1, -1, 'fix']], 
                         'info': {'age_min': -2.25, 'age_max': 0, 'met_sel': 'solar', 'sfh': 'constant'} } }
 ```
-The above example also shows how to tie one parameter to the others. 
+> [!TIP]
+> The above example also shows how to tie one parameter to the others. 
 For instance, the velocity shift of the `'young'` component has a tie condition of `'ssp:main:0'`, 
-indicating that it is tied to the `0`-th parameter of the `'main'` component of the `'ssp'` model. 
+indicating that it is tied to the `0`-th parameter of the `'main'` component of the `'ssp'` model.
 Also note that the log $\tau$ value (the last parameter) is not used for a `'constant'` SFH, 
-set it to any value with `'fix'` to save a free parameter
-(please do not directly delete it since all stellar components need to have the same number of parameters). 
+set it to any value with `'fix'` to save a free parameter.
 
-The best-fit reconstructed SFH of each component can be plotted or output by running `FF.reconstruct_sfh()`. 
+> [!CAUTION]
+> Please do not directly delete unused parameters with multiple components
+> since all stellar components need to have the same number of parameters. 
+
+> [!TIP]
+> The best-fit reconstructed SFH of each component can be plotted or output by running `FF.reconstruct_sfh()`. 
 Please read the [example](example/example.ipynb) for an example case. 
 
 #### Emission lines
@@ -142,7 +153,8 @@ and broad lines from AGN Broad-Line-Region (`'BLR'`).
 `'NLR'` and `'outflow_1'` have `'info': {'line_used': ['all']}`, 
 which means all available emission lines are used.
 For `'outflow_2'` and `'BLR'`, only the emission lines with names specified in `'line_used'` are used. 
-Please run `FF.model_dict['el']['specmod'].line_name_n` and `FF.model_dict['el']['specmod'].line_rest_n`
+> [!TIP]
+> Please run `FF.model_dict['el']['specmod'].line_name_n` and `FF.model_dict['el']['specmod'].line_rest_n`
 to learn about the names and rest wavelengths of the available emission lines. 
 Please read guide in [advanced usage](manuals/advanced_usage.md) if you want to add new emission lines. 
 
