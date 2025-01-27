@@ -130,9 +130,10 @@ class FitFrame(object):
         # print('v5, 241211: (1) fit weight cor; (2) add flux_scale; ')
         # print('v5.1, 241217: (1) PhotFrame (2) Rename')
         # print('v5.2, 250120: (1) Joint fit (2) Add torus')
-        # print('v1, 250121: (1) S3Fit release')
+        # print('v1, 250121: (1) S3Fit initialized')
         # print('v1.2, 250125: (1) Update ConfigFrame')
-        print('v1.4, 250126: (1) support flexible SFH')
+        # print('v1.4, 250126: (1) Support flexible SFH (2) Add SFH output function'
+        print('v1.5, 250128: (1) First release of S3Fit')
         
         # read spec data
         self.spec = {'wave_w': spec_wave_w, 'flux_w': spec_flux_w/spec_flux_scale, 'ferr_w': spec_ferr_w/spec_flux_scale}
@@ -818,8 +819,9 @@ class FitFrame(object):
                                                                      np.hstack((spec_fmock_w[mask_valid_w], phot_fmock_b)), 
                                                                      np.hstack((spec_ferr_w[mask_valid_w], phot_ferr_b)), 
                                                                      model_type, mask_ssp_lite, mask_el_lite, fit_phot=True,
-                                                                     refit_rand_x0=False, accept_chi_sq=np.maximum(cont_chi_sq, el_chi_sq),
+                                                                     refit_rand_x0=False, accept_chi_sq=cont_chi_sq,
                                                                      plot_title='Spec+SED Fit, use all models (joint_fit_3)')
+                # here set accept_chi_sq=cont_chi_sq, since el_chi_sq is much larger due to non-enlarged error in el_fit_3
             ########################################
             ########################################
             
@@ -919,8 +921,8 @@ class FitFrame(object):
         chi_sq_l = self.best_chi_sq
 
         ssp_mod, ssp_cf = self.model_dict['ssp']['specmod'], self.model_dict['ssp']['cf']
-        num_ssp_comps = self.model_dict['ssp']['cf'].num_comps
-        num_ssp_pars = self.model_dict['ssp']['cf'].num_pars
+        num_ssp_comps = ssp_cf.num_comps
+        num_ssp_pars = ssp_cf.num_pars
         num_ssp_coeffs = int(self.model_dict['ssp']['num_coeffs'] / num_ssp_comps)
         fx0, fx1, fc0, fc1 = self.model_index('ssp', self.full_model_type)
 
@@ -936,9 +938,11 @@ class FitFrame(object):
         self.output_ssp_lcp = np.zeros((n_loops, num_ssp_comps, len(ind_outvals)+num_ssp_coeffs ))
         # p: chi_sq, ssp_x, output_values, ssp_coeffs
         self.output_ssp_lcp[:, :, 0] = self.best_chi_sq[:, None]
-        for i_loop in range(n_loops):
-            self.output_ssp_lcp[i_loop,:,1:(1+num_ssp_pars)] = ssp_cf.flat_to_arr(self.best_fits_x[i_loop, fx0:fx1])
-            self.output_ssp_lcp[i_loop,:,-num_ssp_coeffs:]   = ssp_cf.flat_to_arr(self.best_coeffs[i_loop, fc0:fc1])
+        # for i_loop in range(n_loops):
+        #     self.output_ssp_lcp[i_loop,:,1:(1+num_ssp_pars)] = ssp_cf.flat_to_arr(self.best_fits_x[i_loop, fx0:fx1])
+        #     self.output_ssp_lcp[i_loop,:,-num_ssp_coeffs:]   = ssp_cf.flat_to_arr(self.best_coeffs[i_loop, fc0:fc1])
+        self.output_ssp_lcp[:,:,1:(1+num_ssp_pars)] = self.best_fits_x[:, fx0:fx1].reshape(n_loops, num_ssp_comps, num_ssp_pars)
+        self.output_ssp_lcp[:,:,-num_ssp_coeffs:]   = self.best_coeffs[:, fc0:fc1].reshape(n_loops, num_ssp_comps, num_ssp_coeffs)
         self.output_ssp_lcp[:,:,ind_outvals['redshift']] = (1+self.output_ssp_lcp[:,:,ind_outvals['ssp_voff']]/299792.458)*(1+self.v0_redshift)-1
 
         ssp_x_lcp = self.output_ssp_lcp[:,:,1:(1+num_ssp_pars)]
@@ -996,6 +1000,7 @@ class FitFrame(object):
                                    [lum_l, mass_formed_l, mass_remaining_l, mass_remaining_l/lum_l]):
                 self.output_ssp_vals['total']['mean'][name] = np.average(np.log10(val), weights=1/chi_sq_l)
                 self.output_ssp_vals['total']['rms'][name] = np.std(np.log10(val), ddof=1)
+
         self.output_ssp_to_screen()
 
     def output_ssp_to_screen(self):
@@ -1219,11 +1224,11 @@ class FitFrame(object):
     def output_agn(self):
         n_loops = self.num_mock_loops
         chi_sq_l = self.best_chi_sq
-        
+
         num_agn_pars = self.model_dict['agn']['cf'].num_pars
         num_agn_coeffs = self.model_dict['agn']['num_coeffs']
         fx0, fx1, fc0, fc1 = self.model_index('agn', self.full_model_type)
-        
+
         self.output_agn_lp = np.zeros((n_loops, 1 + num_agn_pars + num_agn_coeffs ))
         self.output_agn_lp[:, 0] = self.best_chi_sq
         self.output_agn_lp[:, 1:(1+num_agn_pars)] = self.best_fits_x[:, fx0:fx1]
@@ -1235,18 +1240,25 @@ class FitFrame(object):
         self.output_agn_to_screen()
 
     def output_agn_to_screen(self):
+        agn_mod = self.model_dict['agn']['specmod']
+        dist_lum = cosmo.luminosity_distance(self.v0_redshift).to('cm').value
+        unitconv = 4*np.pi*dist_lum**2 / const.L_sun.to('erg/s').value * self.spec_flux_scale # convert intrinsic flux5500(rest) to L5500
+
         print('')
-        print('Best-fit AGN components')
-        
-        msg  = f'| Voff = {self.output_agn_vals["mean"][1]:6.4f}'
+        print('Best-fit AGN component')
+        msg  = f'| Voff (km/s)                      = {self.output_agn_vals["mean"][1]:10.4f}'
         msg += f' +/- {self.output_agn_vals["rms"][1]:0.4f}\n'
-        msg += f'| FWHM = {self.output_agn_vals["mean"][2]:8.2f}'
+        msg += f'| FWHM (km/s)                      = {self.output_agn_vals["mean"][2]:10.4f}'
         msg += f' +/- {self.output_agn_vals["rms"][2]:0.4f}\n'
-        msg += f'| AV = {self.output_agn_vals["mean"][3]:6.4f}'
+        msg += f'| Extinction (AV)                  = {self.output_agn_vals["mean"][3]:10.4f}'
         msg += f' +/- {self.output_agn_vals["rms"][3]:0.4f}\n'
-        msg += f'| Powerlaw α_λ = {self.output_agn_vals["mean"][4]:6.4f}'
-        msg += f' +/- {self.output_agn_vals["rms"][4]:0.4f}'
-        bar = '='*40
+        msg += f'| Powerlaw α_λ                     = {self.output_agn_vals["mean"][4]:10.4f}'
+        msg += f' +/- {self.output_agn_vals["rms"][4]:0.4f}\n'
+        msg += f'| F{agn_mod.w_norm}(rest) ({self.spec_flux_scale} erg/s/cm2/AA) = {self.output_agn_vals["mean"][5]:10.4f}'
+        msg += f' +/- {self.output_agn_vals["rms"][5]:0.4f}\n'
+        msg += f'| L{agn_mod.w_norm}(rest) (1e8 Lsun/AA)        = {self.output_agn_vals["mean"][5]*unitconv/1e8:10.4f}'
+        msg += f' +/- {self.output_agn_vals["rms"][5]*unitconv/1e8:0.4f}'
+        bar = '='*60
         print(bar)
         print(msg)
         print(bar)
@@ -1275,17 +1287,17 @@ class FitFrame(object):
     def output_torus_to_screen(self):
         print('')
         print('Best-fit torus components')
-        # msg  = f'| Voff (km/s)           = {self.output_torus_vals["mean"][1]:6.4f}'
+        # msg  = f'| Voff (km/s)           = {self.output_torus_vals["mean"][1]:10.4f}'
         # msg += f' +/- {self.output_torus_vals["rms"][1]:0.4f}\n'
-        msg  = f'| Opacity               = {self.output_torus_vals["mean"][2]:6.4f}'
+        msg  = f'| Opacity               = {self.output_torus_vals["mean"][2]:10.4f}'
         msg += f' +/- {self.output_torus_vals["rms"][2]:0.4f}\n'
-        msg += f'| Out/in radii ratio    = {self.output_torus_vals["mean"][4]:6.4f}'
+        msg += f'| Out/in radii ratio    = {self.output_torus_vals["mean"][4]:10.4f}'
         msg += f' +/- {self.output_torus_vals["rms"][4]:0.4f}\n'
-        msg += f'| Half OpenAng (degree) = {self.output_torus_vals["mean"][3]:6.4f}'
+        msg += f'| Half OpenAng (degree) = {self.output_torus_vals["mean"][3]:10.4f}'
         msg += f' +/- {self.output_torus_vals["rms"][3]:0.4f}\n'
-        msg += f'| Inclination (degree)  = {self.output_torus_vals["mean"][5]:6.4f}'
+        msg += f'| Inclination (degree)  = {self.output_torus_vals["mean"][5]:10.4f}'
         msg += f' +/- {self.output_torus_vals["rms"][5]:0.4f}\n'
-        msg += f'| Torus Lum (1e12 Lsun) = {self.output_torus_vals["mean"][6]:6.4f}'
+        msg += f'| Torus Lum (1e12 Lsun) = {self.output_torus_vals["mean"][6]:10.4f}'
         msg += f' +/- {self.output_torus_vals["rms"][6]:0.4f}'
         bar = '='*50
         print(bar)
@@ -1603,6 +1615,9 @@ class SSPModels(object):
             sfh_func_m = np.exp(-(evo_time) / tau) * evo_time
         if sfh_name == 'constant': 
             sfh_func_m = np.ones_like(evo_time)
+        ############################
+        # Add new SFH function here. 
+        ############################
 
         sfh_func_m[~self.mask_ssp_allowed(i_comp)] = 0 # do not use ssp out of allowed range
         sfh_func_m[evo_time < 0] = 0 # do not allow ssp older than csp_age 
@@ -1753,7 +1768,45 @@ class ELineModels(object):
         self.cframe = cframe
         self.v0_redshift = v0_redshift
         self.spec_R_inst = spec_R_inst
+
+        self.set_linelist()
+
+        self.num_comps = len(cframe.info_c)
+        self.num_lines = len(self.line_rest_n)
+        self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
+        self.mask_free_cn  = np.zeros((self.num_comps, self.num_lines), dtype='bool')
+        for i_kin in range(self.num_comps):
+            mask_valid_n  = self.line_rest_n > (self.w_min-50)
+            mask_valid_n &= self.line_rest_n < (self.w_max+50)
+            mask_free_n   = mask_valid_n & (self.linked_to_n == -1)
+            if cframe.info_c[i_kin]['line_used'][0] != 'all': 
+                mask_select_n = np.isin(self.line_name_n, cframe.info_c[i_kin]['line_used'])
+                mask_valid_n &= mask_select_n
+                mask_free_n  &= mask_select_n
+            self.mask_valid_cn[i_kin, mask_valid_n] = True
+            self.mask_free_cn[i_kin,  mask_free_n ] = True
+        self.num_coeffs = self.mask_free_cn.sum()
         
+        # set component name and enable mask for each free line; _f for free or coeffs
+        self.component_f = [] # np.zeros((self.num_coeffs), dtype='<U16')
+        for i_kin in range(self.num_comps):
+            for i_line in range(self.num_lines):
+                if self.mask_free_cn[i_kin, i_line]:
+                    self.component_f.append(cframe.info_c[i_kin]['comp_name'])
+        self.component_f = np.array(self.component_f)
+
+        mask_Balmer = self.linked_to_n == 6564.632
+        self.extHa_base_n = np.zeros_like(self.linked_ratio_n)
+        tmp = ExtLaw(self.line_rest_n[mask_Balmer]) - ExtLaw(np.array([6564.632]))
+        self.extHa_base_n[mask_Balmer] = 10.0**(-0.4 * tmp) # the base of extinction (ref to Halpha)
+        # repeat for self.extHa_base_BLR_n
+        
+        if verbose:
+            for i_kin in range(self.num_comps):
+                print('Emission line complex', i_kin, cframe.info_c[i_kin]['comp_name'], 
+                      ', total number:', self.mask_valid_cn[i_kin].sum(), ', free lines:', self.line_name_n[self.mask_free_cn[i_kin]])
+
+    def set_linelist(self):
         self.line_rest_n, self.linked_to_n, self.linked_ratio_n, self.line_name_n = [],[],[],[]
         # _n denote line; _l already used for loop id
         # [v2] vacuum wavelength calculated with lamb_air_to_vac and air values in 
@@ -1801,41 +1854,6 @@ class ELineModels(object):
         # add later
         # self.linked_ratio_BLR_n = self.linked_ratio_n.copy() 
         # self.linked_ratio_BLR_n[self.line_name_n=='Hb'] = 
-
-        self.num_comps = len(cframe.info_c)
-        self.num_lines = len(self.line_rest_n)
-        self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
-        self.mask_free_cn  = np.zeros((self.num_comps, self.num_lines), dtype='bool')
-        for i_kin in range(self.num_comps):
-            mask_valid_n  = self.line_rest_n > (self.w_min-50)
-            mask_valid_n &= self.line_rest_n < (self.w_max+50)
-            mask_free_n   = mask_valid_n & (self.linked_to_n == -1)
-            if cframe.info_c[i_kin]['line_used'][0] != 'all': 
-                mask_select_n = np.isin(self.line_name_n, cframe.info_c[i_kin]['line_used'])
-                mask_valid_n &= mask_select_n
-                mask_free_n  &= mask_select_n
-            self.mask_valid_cn[i_kin, mask_valid_n] = True
-            self.mask_free_cn[i_kin,  mask_free_n ] = True
-        self.num_coeffs = self.mask_free_cn.sum()
-        
-        # set component name and enable mask for each free line; _f for free or coeffs
-        self.component_f = [] # np.zeros((self.num_coeffs), dtype='<U16')
-        for i_kin in range(self.num_comps):
-            for i_line in range(self.num_lines):
-                if self.mask_free_cn[i_kin, i_line]:
-                    self.component_f.append(cframe.info_c[i_kin]['comp_name'])
-        self.component_f = np.array(self.component_f)
-
-        mask_Balmer = self.linked_to_n == 6564.632
-        self.extHa_base_n = np.zeros_like(self.linked_ratio_n)
-        tmp = ExtLaw(self.line_rest_n[mask_Balmer]) - ExtLaw(np.array([6564.632]))
-        self.extHa_base_n[mask_Balmer] = 10.0**(-0.4 * tmp) # the base of extinction (ref to Halpha)
-        # repeat for self.extHa_base_BLR_n
-        
-        if verbose:
-            for i_kin in range(self.num_comps):
-                print('Emission line complex', i_kin, cframe.info_c[i_kin]['comp_name'], 
-                      ', total number:', self.mask_valid_cn[i_kin].sum(), ', free lines:', self.line_name_n[self.mask_free_cn[i_kin]])
             
     def mask_el_lite(self, enabled_comps='all'):
         self.enabled_f = np.zeros((self.num_coeffs), dtype='bool')
@@ -1905,12 +1923,14 @@ class ELineModels(object):
 #############################################################################################################
 
 class AGNModels(object):
-    def __init__(self, filename=None, w_min=None, w_max=None, 
+    def __init__(self, filename=None, w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
                  cframe=None, v0_redshift=None, spec_R_inst=None):
         # add file_bac, file_iron later
         
         self.w_min = w_min
         self.w_max = w_max
+        self.w_norm = w_norm
+        self.dw_norm = dw_norm
         self.cframe = cframe 
         self.v0_redshift = v0_redshift
         self.spec_R_inst = spec_R_inst
@@ -1960,7 +1980,7 @@ class AGNModels(object):
             # read and append intrinsic templates in self.logw (rest)
             # powerlaw
             alpha_lambda = pars[i_comp,3]
-            pl = self.powerlaw_unitnorm(self.logw_wave, alpha_lambda)
+            pl = self.powerlaw_unitnorm(self.logw_wave, alpha_lambda, wave_norm=self.w_norm)
             # Balmer continuum and high-order Balmer lines
             # iorn pseudo continuum
             # combine intrinsic agn templates in logw_wave; _mw
