@@ -18,10 +18,10 @@ the best-fit results for several tens of parameters and model components.
 
 ## Fitting strategy
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart, with a detailed description of the [fitting strategy](manuals/fitting_strategy.md) in [manuals](manuals/). 
-<p align="center"> <img src="https://github.com/user-attachments/assets/4f9dec46-8f6b-48da-91a0-b704ba13d28d" height="800">
+<p align="center"> <img src="https://github.com/user-attachments/assets/4f9dec46-8f6b-48da-91a0-b704ba13d28d" width="700">
 
 An example of the fitting result of S<sup>3</sup>Fit is shown in the following plots. 
-<p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600" height="600">
+<p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600">
 
 ## Usage
 Please find guides in [manuals](manuals/) for [basic](manuals/basic_usage.md) and [advanced](manuals/advanced_usage.md) usages of this code. 
