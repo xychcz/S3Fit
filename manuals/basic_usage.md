@@ -58,7 +58,7 @@ The detailed set up of each model are described as follows.
 ssp_file = 'DIRECTORY/popstar21_stellar_nebular_fullwave.fits'
 ```
 Current version of S<sup>3</sup>Fit use the [PopSTAR][2] Single Stellar Population (SSP) model library. 
-Please run the [converting code](models/convert_popstar_ssp.py) to convert the original PopSTAR models to the format used for this code. 
+Please run the [converting code](models/convert_popstar_ssp.py) to convert the original PopSTAR models to the format used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
 [2]: <https://www.fractal-es.com/PopStar/>
