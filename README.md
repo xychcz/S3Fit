@@ -20,7 +20,7 @@ Please find guides in [manuals](manuals/) for [basic](manuals/basic_usage.md) an
 An example of the usage of S<sup>3</sup>Fit is provided in [Example](example/example.ipynb). 
 
 ## Test environment
-```python
+```
 python = 3.10
 scipy = 1.12.0
 numpy = 1.26.4
@@ -28,8 +28,14 @@ astropy = 6.0.0
 matplotlib = 3.9.1
 ```
 
+## Future updating
+- Add ISM dust and synchrotron models.
+- Add iron pseudo continuum templates and Balmer continuum of type-1 AGN.
+- Test support for absorption lines. 
+
 ## Citation
-If you would like to use this code, please cite the paper [Chen et al. (2025)][1], in which a pure-spectral-fit mode of this code is utilized. Please find details of the configuration of star formation history and kinematic parameters of emission lines in the paper. 
+If you would like to use this code, please cite the paper [Chen et al. (2025)][1], in which a pure-spectral-fit mode of this code is firstly utilized. 
+Please find details of the configuration of star formation history and kinematic parameters of emission lines in the paper. 
 
 ## Reference
 The code uses the Single Stellar Population (SSP) library [PopSTAR][2] ([paper][3]). 
