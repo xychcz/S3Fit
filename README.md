@@ -1,12 +1,20 @@
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a <ins>**S**</ins>imultaneous <ins>**S**</ins>pectrum and photometric-<ins>**S**</ins>ED <ins>**Fit**</ins>ting code for extragalaxy
 
-## Features
-- easy transition spec/spec+SED
-- flexible SFH, comp
-- flexible EL, comp/kin
-- print/plot functions
-- expand models
+S<sup>3</sup>Fit is a code for the analysis of observational data of extragalaxies, which can fit spectrum and multi-band photometric Spectral-Energy-Distribution (SED) simultaneously. It is written to improve the moderate constraints on properties of continuum models in a pure spectral fitting due to the limited wavelength coverage. 
+S<sup>3</sup>Fit support multiple models with multiple components, 
+and can handle complex systems with a mixed contribution of Active Galactic Nucleus (AGN) and its host galaxy
+in both of continua and emission lines (e.g., narrow lines and broad outflow lines). 
+The fitting strategy is optimalized to enable an efficient solution of 
+the best-fit results for several tens of parameters and model components. 
+
+## Features of S<sup>3</sup>Fit
+- Easy transition from pure spectral fitting and spectrum+SED joint fitting modes. 
+- Support for flexible combination of multiple stellar populations with different star formation histories (SFH). 
+- Support for flexible combination of multiple emission line componenets.
+- Support for AGN continuum models in the UV/optical and IR wavelength range. 
+- User-friendly functions to output and plot the fitting results. 
+- High extensibility to add new band filters, new extinction laws, new SFH functions, new emission lines, and new model types. 
 
 ## Fitting strategy
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart, with a detailed description of the [fitting strategy](manuals/fitting_strategy.md) in [manuals](manuals/). 
@@ -17,7 +25,7 @@ An example of the fitting result of S<sup>3</sup>Fit is shown in the following p
 
 ## Usage
 Please find guides in [manuals](manuals/) for [basic](manuals/basic_usage.md) and [advanced](manuals/advanced_usage.md) usages of this code. 
-An example of the usage of S<sup>3</sup>Fit is provided in [example](example/example.ipynb). 
+An example of the usage of S<sup>3</sup>Fit is provided in the [example](example/example.ipynb). 
 
 ## Test environment
 ```
