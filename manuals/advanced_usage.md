@@ -14,6 +14,15 @@ If you would like to use another extinction law, please navigate to the `Extinct
 define the the new extinction function that output $A_\lambda/A_V$, 
 and remember to specify the new extinction law as the default one by modifying `ExtLaw = ExtLaw_NEW`. 
 
+## Support new Star Formation History (SFH) function
+
+If you would like to use a new SFH function, please navigete to the `sfh_factor()` function in `SSPModels` class in `s3fit.py`, 
+and append the new SFH function after the `'constant'` SFH.
+The time variable of SFH function is already defined as `evo_time`. 
+The parameters used for SFH starts from the 3rd parameter in the input `ssp_config` 
+(the 0th to 2nd parameters are used for velocity shift, FWHM, and extinction). 
+Please remember to confirm the number of the input parameters match the required one in the new SFH function. 
+
 ## Support new emission lines
 
 Please navigate to the `set_linelist()` function in the `ELineModels` class in `s3fit.py` to add new emission lines.
