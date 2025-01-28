@@ -14,7 +14,7 @@ the best-fit results for several tens of parameters and model components.
 - Support for flexible combination of multiple emission line componenets.
 - Support for AGN continuum models in the UV/optical and IR wavelength range. 
 - User-friendly functions to output and plot the fitting results. 
-- High extensibility to add new band filters, new extinction laws, new SFH functions, new emission lines, and new model types. 
+- High extensibility for adding new functions and components by users (e.g., new band filters, new SFH functions, new emission lines, and new model types). 
 
 ## Fitting strategy
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart, 
@@ -28,7 +28,13 @@ An example of the fitting result of S<sup>3</sup>Fit is shown in the following p
 Please find guides in [manuals](manuals/) for [basic](manuals/basic_usage.md) and [advanced](manuals/advanced_usage.md) usages of this code. 
 An example of the usage of S<sup>3</sup>Fit is provided in the [example](example/example.ipynb). 
 
-## Test environment
+## Dependency
+
+S<sup>3</sup>Fit only depends on several most widely utilized repositories for science calculation, `scipy`, `numpy`, and `astropy`. 
+The core requirement of S<sup>3</sup>Fit is the two functions `least_squares` and `lsq_linear` in `scipy.optimize`
+(please read the [fitting strategy](manuals/fitting_strategy.md) for details). 
+A strong dependency of S<sup>3</sup>Fit on these repositories is not expected. 
+The test environment is list as follows. 
 ```
 python = 3.10
 scipy = 1.12.0
@@ -38,7 +44,7 @@ matplotlib = 3.9.1
 ```
 
 ## Future updating
-- Add ISM dust and synchrotron models.
+- Add ISM dust and synchrotron models (you may also add them or other models by yourself following the [advanced usage](manuals/advanced_usage.md)) manual.
 - Add iron pseudo continuum templates and Balmer continuum of type-1 AGN.
 - Test support for absorption lines. 
 
