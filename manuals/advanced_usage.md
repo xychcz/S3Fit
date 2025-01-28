@@ -28,7 +28,7 @@ The parameters used for SFH starts from the 3rd parameter in the input `ssp_conf
 
 The current version of S<sup>3</sup>Fit uses the SSP library [PopSTAR][PopSTAR_web] with an initial mass function (IMF) of Kroupa (2002). 
 If you tend to choose another IMF for PopSTAR SSP library, please download the models from [the link](https://www.fractal-es.com/PopStar/#hr_py_download)
-and re-run the [converting code](models/convert_popstar_ssp.py) to create the SSP models used for S<sup>3</sup>Fit. 
+and re-run the [converting code](../models/convert_popstar_ssp.py) to create the SSP models used for S<sup>3</sup>Fit. 
 
 [PopSTAR_web]: <https://www.fractal-es.com/PopStar/>
 
@@ -53,7 +53,7 @@ set `linked_to_n` of lineA to `line_rest_n` of lineB, and `linked_ratio_n` of li
 If the flux of lineA is a free parameter, set `linked_to_n` and `linked_ratio_n` of lineA to `-1`. 
 The follow coding block exhibits the example with [OIII] doublets, 
 where [OIII]a is tied to [OIII]b with a flux ratio of 0.335
-(please read the <ins>**Emission lines**</ins> section in [basic usage](manuals/basic_usage.md) for calculation of the flux ratio).  
+(please read the <ins>**Emission lines**</ins> section in [basic usage](../manuals/basic_usage.md) for calculation of the flux ratio).  
 ```python
 self.line_rest_n.append(5008.240); self.linked_to_n.append(-1)      ; self.linked_ratio_n.append(-1)     ; self.line_name_n.append('[OIII]b')
 self.line_rest_n.append(4960.295); self.linked_to_n.append(5008.240); self.linked_ratio_n.append(0.335)  ; self.line_name_n.append('[OIII]a')
@@ -147,7 +147,7 @@ With the normalization, the best-fit normalization factors are directly the corr
 
 The function `models_unitnorm_obsframe()` is used to return the extinct, redshifted, and convolved (with both of instrumental and physical broadening)
 model spectra in the observed wavelength grid, to the main fitting functions to calculate the best-fit normalization factors.
-Please read the [fitting strategy](manuals/fitting_strategy.md) to learn about the details. 
+Please read the [fitting strategy](../manuals/fitting_strategy.md) to learn about the details. 
 You may not need to largely modify the `models_unitnorm_obsframe()` function since it can be used uniformly for multiple types of models. 
 
 #### Create configuration dictionary
@@ -163,7 +163,7 @@ Basically the 0th parameter is always the velocity shift to redshift the model s
 The 1st parameter is velocity width if the spectral feature can be used to determine the physical dispersion. 
 The 2nd parameter is typically set to the extinction value. 
 The 3rd and later parameters are used to control the model shapes, e.g., the spectral index of AGN powerlaw. 
-Please read the <ins>**Model setup**</ins> section in [basic usage](manuals/basic_usage.md)
+Please read the <ins>**Model setup**</ins> section in [basic usage](../manuals/basic_usage.md)
 for examples of different configurations. 
 
 Please also remember to update the total `model_config` with:
@@ -189,7 +189,7 @@ if np.isin(mod, [*model_config]):
                                                        cframe=self.model_dict[mod]['cf'], v0_redshift=self.v0_redshift, spec_R_inst=self.spec_R_inst) 
 ```
 
-Now you can re-run the fitting with the new models. Please check [basic usage](manuals/basic_usage.md) for the setup of `FitFrame`. 
+Now you can re-run the fitting with the new models. Please check [basic usage](../manuals/basic_usage.md) for the setup of `FitFrame`. 
 ```python
 FF = FitFrame(......)
 FF.main_fit()
