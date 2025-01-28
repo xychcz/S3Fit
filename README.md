@@ -48,14 +48,16 @@ Please find details of the configuration of star formation history and kinematic
 
 ## Reference
 S<sup>3</sup>Fit uses the Single Stellar Population (SSP) library [PopSTAR][2] ([paper][3]). 
-Please download the [library][2] and run the [converting code](models/convert_popstar_ssp.py) 
+Please download the [PopSTAR library][2] and run the [converting code](models/convert_popstar_ssp.py) 
 to create the SSP models used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
 S<sup>3</sup>Fit uses the [SKIRTor][4] ([paper1][5], [paper2][6]) AGN torus model. 
-Examples of this library are provided in [models](models/) for a test of S<sup>3</sup>Fit, 
-which are the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
-Please refer to [SKIRTor][4] website for details of the original SED library. 
+Please download the [SKIRTor library][4] and run the [converting code](models/convert_skirtor_torus.py) 
+to create the torus models used for S<sup>3</sup>Fit. 
+Example of this library is also provided in [models](models/) for a test of S<sup>3</sup>Fit, 
+which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
+Please refer to [SKIRTor][4] website for details of the model parameters. 
 
 [1]: <https://iopscience.iop.org/article/10.3847/1538-4357/ad93ab>
 [2]: <https://www.fractal-es.com/PopStar/>
