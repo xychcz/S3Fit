@@ -41,7 +41,7 @@ The best-fit parameters from the pure continuum or emission line fitting
 are used as the initial parameters of the joint fitting of continuum and emission lines.
 - After the 1st main cycle, an examination of each model component is performed with the peak S/N of each component.
 Components with a low S/N (e.g., faint broad line component) are disabled in later fitting.
-The component configuration of each model is introduced in the [basic usage](manuals/basic_usage.md) manual.
+The component configuration of each model is introduced in the [basic usage](../manuals/basic_usage.md) manual.
 - The 2nd main cycle is a repeat of the 1st main cycle with updated model configuration.
 If a pure spectral fitting is required, the best-fit parameters and model spectra are the final output.
 - If photometric SED data is input, the 3rd fitting cycle is performed.
