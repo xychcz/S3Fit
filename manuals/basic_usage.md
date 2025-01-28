@@ -10,7 +10,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None,
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_fluxunit='mJy', 
               sed_wave_w=None, sed_waveunit='angstrom', 
               v0_redshift=None, model_config=None, 
-              num_mock_loops=0, fitraw=True, 
+              num_mock_loops=0, fit_raw=True, fit_grid=True, 
               plot_step=False, print_step=True, verbose=False)
 ```
 #### Spectral data
@@ -27,13 +27,20 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None,
 `sed_wave_w` and `sed_waveunit`: Wavelength array and its unit of the full SED wavelength range, which are used to create the model spectra and convert them to fluxes in each band. `sed_waveunit` can be `'angstrom'` and `'micron'`; if set to 'micron', they will be converted to 'angstrom'. 
 Note that `sed_wave_w` is not mandatory; if it is not set, the code can create the wavelength array to cover all of the transmission curves of the input bands.
 > [!TIP]
-> If a pure spectral fitting is required, please just remove all input parameters starting with `phot_` and `sed_`.
+> If a pure spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
+
+> [!NOTE]
+> When the joint fitting for spectrum and photometric SED is performed, the $\chi^2$ value is calculated with modified flux errors by adding 10% of the corresponding fluxes
+> for both of the input spectrum and the photometric data in each band. The purpose is to account for the calibration uncertainty among different instruments. 
+
 #### Model setup 
 `v0_redshift`: Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 `model_config`: Dictionary of model configurations, see [model setup](#model-setup) section for details. 
-#### Fitting loop setup
+#### Fitting setup
 `num_mock_loops`: Number of the mocked spectra, which is used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only fit the raw data. \
-`fitraw`: Whether or not to fit the raw data. Default is `True`. If set to `False`, the code only output results for the mocked spectra. 
+`fit_raw`: Whether or not to fit the raw data. Default is `True`. If set to `False`, the code only output results for the mocked spectra. \
+`fit_grid`: Set `fit_grid='linear'` (default) to run the fitting in linear flux grid. Set `fit_grid='log'` to run the fitting in logarithmic flux grid. 
+Note that if emisison line is the only fitting model (e.g., for continuum subtracted data spectrum), `fit_grid` is always set to `'linear'`.
 #### Auxiliary
 `plot_step`: Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. \
 `print_step`: Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`. \
@@ -209,9 +216,11 @@ In order to reduce the degeneracy between extinction and the spectral index, in 
 torus_file = '../models/skirtor_torus.fits'
 ```
 S<sup>3</sup>Fit uses the [SKIRTor][SKIRTor_web] AGN torus model.
-Examples of this library are provided in [models](models/) for a test of the code, 
-which are the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
-Please refer to [SKIRTor][SKIRTor_web] website for details of the original SED library. 
+Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](models/convert_skirtor_torus.py) 
+to create the torus models used for S<sup>3</sup>Fit. 
+Example of this library is also provided in [models](models/) for a test of S<sup>3</sup>Fit, 
+which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
+Please refer to [SKIRTor][SKIRTor_web] website for details of the model parameters. 
 
 [SKIRTor_web]: https://sites.google.com/site/skirtorus/sed-library?authuser=0
 
