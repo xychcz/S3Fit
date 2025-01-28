@@ -1,3 +1,7 @@
+# Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
+# Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
+# Contact: xiaoyang.chen.cz@gmail.com
+
 import os, time, traceback
 import numpy as np
 from copy import deepcopy as copy
@@ -120,7 +124,7 @@ class FitFrame(object):
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_fluxunit='mJy', 
                  phot_trans_dir=None, sed_wave_w=None, sed_waveunit='angstrom', 
                  v0_redshift=None, model_config=None, 
-                 num_mock_loops=0, fitraw=True, 
+                 num_mock_loops=0, fit_raw=True, fit_grid='linear', 
                  plot_step=False, print_step=True, verbose=False): 
 
         # print('v2, 240306: (1) [NII] broad 2; (2) add option of fit of raw flux (non-mocked)')
@@ -176,10 +180,13 @@ class FitFrame(object):
         # set mask_valid_w and mask_noeline_w
         self.set_masks(eline_waves=self.model_dict['el']['specmod'].line_rest_n, eline_vwin=[-4000,2000]) 
 
+        # fitting grid, can be 'linear' or 'log'; for pure-el fit only 'linear' is used
+        self.fit_grid = fit_grid
+
         # format to save fitting results
-        self.fitraw = fitraw
+        self.fit_raw = fit_raw
         self.num_mock_loops = num_mock_loops
-        if self.fitraw: self.num_mock_loops += 1
+        if self.fit_raw: self.num_mock_loops += 1
         self.best_fits_x = np.zeros((self.num_mock_loops, self.num_tot_xs), dtype='float')
         self.best_coeffs = np.zeros((self.num_mock_loops, self.num_tot_coeffs),dtype='float')
         self.best_chi_sq = np.zeros(self.num_mock_loops, dtype='float')
@@ -350,7 +357,7 @@ class FitFrame(object):
         peak_SN = np.nanpercentile(model_w[mask_valid_w] / noise_w[mask_valid_w], 90)
         return peak_SN, peak_SN >= accept_SN
 
-    def lin_lsq_func(self, flux_w, ferr_w, model_mw, freedom_w, verbose=False):
+    def lin_lsq_func(self, flux_w, ferr_w, model_mw, freedom_w, fit_grid='linear', verbose=False):
         # solve linear least-square functions to obtain the normlization values (i.e., coeffs) of each models
         
         weight_w = np.divide(1, ferr_w, where=ferr_w>0, out=np.zeros_like(ferr_w))
@@ -360,7 +367,9 @@ class FitFrame(object):
                               verbose=verbose) # max_iter=200, lsmr_tol='auto', tol=1e-12, 
         coeff_m = solution.x
         ret_model_w = np.dot(coeff_m, model_mw)
-        chi_w = np.divide(flux_w-ret_model_w, ferr_w, where=ferr_w>0, out=np.zeros_like(ferr_w))
+        if fit_grid == 'linear': chi_w = np.divide(ret_model_w-flux_w, ferr_w, where=ferr_w>0, out=np.zeros_like(ferr_w))
+        if fit_grid == 'log':    chi_w = np.divide(np.log(ret_model_w/flux_w)*flux_w, ferr_w, where=ferr_w>0, out=np.zeros_like(ferr_w))
+        # linear: (model/flux-1)*flux/ferr, log: ln(model/flux)*flux/ferr
         n_free = np.sum(freedom_w[ferr_w>0]) - (n_models + 1)
         chi_w *= np.sqrt(freedom_w/np.maximum(1, n_free)) # reduced
         chi_sq = np.sum(chi_w**2)
@@ -369,7 +378,7 @@ class FitFrame(object):
 
     def residual_func(self, x, wave_w, flux_w, ferr_w,
                       model_type, mask_ssp_lite=None, mask_el_lite=None, 
-                      fit_phot=False, ret_coeffs=False):
+                      fit_phot=False, fit_grid='linear', ret_coeffs=False):
         # for a give set of parameters, return models and residuals
         # the residuals are used to solve non-linear least-square fit
         
@@ -430,7 +439,7 @@ class FitFrame(object):
             if (mod == 'el')  & (mask_el_lite  is not None): spec_fmod_mw = spec_fmod_mw[mask_el_lite, :]
             fit_model_mw = spec_fmod_mw if (fit_model_mw is None) else np.vstack((fit_model_mw, spec_fmod_mw))
 
-        coeff_m, chi_sq, model_w, chi_w = self.lin_lsq_func(flux_w, rev_ferr_w, fit_model_mw, freedom_w, verbose=self.verbose)
+        coeff_m, chi_sq, model_w, chi_w = self.lin_lsq_func(flux_w, rev_ferr_w, fit_model_mw, freedom_w, fit_grid, verbose=self.verbose)
         if np.sum(coeff_m <0) + np.sum(fit_model_mw.sum(axis=1) < 0) > 0: 
             raise ValueError((f"Negative model coeff: {np.where(coeff_m <0), np.where(fit_model_mw.sum(axis=1) < 0)}"))
         # coeff_m[fit_model_mw.sum(axis=1) <= 0] = 0 # to remove emission lines not well covered
@@ -442,7 +451,7 @@ class FitFrame(object):
             return chi_w
         
     def nl_lsq_func(self, x0, wave_w, flux_w, ferr_w, 
-                    model_type, mask_ssp_lite=None, mask_el_lite=None, fit_phot=False, 
+                    model_type, mask_ssp_lite=None, mask_el_lite=None, fit_phot=False, fit_grid='linear', 
                     refit_rand_x0=True, max_fit_ntry=3, accept_chi_sq=5, verbose=False, plot_title=None): 
         # core fitting function to obtain solution of non-linear least-square problems
         
@@ -456,7 +465,7 @@ class FitFrame(object):
         while (fit_success == False) & (fit_ntry < max_fit_ntry): 
             try:
                 best_fit = least_squares(fun=self.residual_func, 
-                                         args=(wave_w, flux_w, ferr_w, model_type, mask_ssp_lite, mask_el_lite, fit_phot),
+                                         args=(wave_w, flux_w, ferr_w, model_type, mask_ssp_lite, mask_el_lite, fit_phot, fit_grid),
                                          x0=x0[mask_x], bounds=(bound_min_x[mask_x], bound_max_x[mask_x]), 
                                          diff_step=3, # real x_step is x * diff_step 
                                          x_scale='jac', jac='3-point', ftol=1e-4, max_nfev=10000, 
@@ -467,7 +476,7 @@ class FitFrame(object):
                 print('Exception:', ex); traceback.print_exc()
             else:
                 coeff_m, chi_sq, model_w = self.residual_func(best_fit.x, wave_w, flux_w, ferr_w, 
-                                                              model_type, mask_ssp_lite, mask_el_lite, fit_phot, ret_coeffs=True)
+                                                              model_type, mask_ssp_lite, mask_el_lite, fit_phot, fit_grid, ret_coeffs=True)
                 if chi_sq < accept_chi_sq: 
                     fit_success = best_fit.success # i.e., accept this fit 
                 else:
@@ -487,7 +496,7 @@ class FitFrame(object):
         if (fit_success == False): 
             best_fit = tmp_best_fit # back to fit with available min chi_sq
             coeff_m, chi_sq, model_w = self.residual_func(best_fit.x, wave_w, flux_w, ferr_w, 
-                                                          model_type, mask_ssp_lite, mask_el_lite, fit_phot, ret_coeffs=True)
+                                                          model_type, mask_ssp_lite, mask_el_lite, fit_phot, fit_grid, ret_coeffs=True)
         if self.print_step: 
             print(f'fit_ntry={fit_ntry}, chi_sq={chi_sq:.3f}')
             self.time_last = print_time(plot_title, self.time_last, self.time_init)
@@ -539,9 +548,9 @@ class FitFrame(object):
             print(f'#### loop {i_loop_now}/{n_loops} start: ####')
             self.time_init = time.time(); self.time_last = self.time_init
             
-            # use the raw flux for the 1st loop if fitraw is True
+            # use the raw flux for the 1st loop if fit_raw is True
             # otherwise randomly draw a mocked spectrum assuming a Gaussian distribution of the errors
-            if self.fitraw & (i_loop_now == 0): 
+            if self.fit_raw & (i_loop_now == 0): 
                 print('#### fit the raw spectrum (non-mocked) ####')
                 spec_fmock_w = spec_flux_w.copy()
                 if self.have_phot: phot_fmock_b = phot_flux_b.copy()
@@ -589,7 +598,7 @@ class FitFrame(object):
             mask_ssp_lite = ssp_mod.mask_ssp_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.print_step)
             cont_fit, cont_coeff_m, cont_chi_sq = nl_lsq_func(x0mock, spec_wave_w[mask_noeline_w], 
                                                               spec_fmock_w[mask_noeline_w], spec_ferr_w[mask_noeline_w], 
-                                                              model_type, mask_ssp_lite, 
+                                                              model_type, mask_ssp_lite, fit_grid=self.fit_grid,
                                                               plot_title='Spec Fit, init continua (cont_fit_init)')
             cont_fmod_w = spec_wave_w * 0
             for mod in model_type.split('+'):
@@ -614,7 +623,7 @@ class FitFrame(object):
             mask_ssp_lite = ssp_mod.mask_ssp_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.print_step)
             cont_fit, cont_coeff_m, cont_chi_sq = nl_lsq_func(x0mock, spec_wave_w[mask_valid_w], 
                                                               (spec_fmock_w - el_fmod_w)[mask_valid_w], spec_ferr_w[mask_valid_w], 
-                                                              model_type, mask_ssp_lite,
+                                                              model_type, mask_ssp_lite, fit_grid=self.fit_grid,
                                                               plot_title='Spec Fit, update continua (cont_fit_1)')
             cont_fmod_w = spec_wave_w * 0
             for mod in model_type.split('+'):
@@ -637,7 +646,7 @@ class FitFrame(object):
             # joint fit of continuum and emission lines with initial values from best-fit of ssp_fit_1 and el_fit_1
             joint_fit, joint_coeff_m, joint_chi_sq = nl_lsq_func(x0mock, spec_wave_w[mask_valid_w], 
                                                                  spec_fmock_w[mask_valid_w], spec_ferr_w[mask_valid_w], 
-                                                                 model_type, mask_ssp_lite,
+                                                                 model_type, mask_ssp_lite, fit_grid=self.fit_grid,
                                                                  refit_rand_x0=False, accept_chi_sq=np.maximum(cont_chi_sq, el_chi_sq),
                                                                  plot_title='Spec Fit, all models (joint_fit_1)') 
             for mod in model_type.split('+'):
@@ -694,7 +703,7 @@ class FitFrame(object):
             # repeat use initial best-fit values and subtract emission lines from joint_fit_1 (update with mask_el_lite later)
             cont_fit, cont_coeff_m, cont_chi_sq = nl_lsq_func(x0mock, spec_wave_w[mask_valid_w], 
                                                              (spec_fmock_w - el_fmod_w)[mask_valid_w], spec_ferr_w[mask_valid_w], 
-                                                              model_type, mask_ssp_lite,
+                                                              model_type, mask_ssp_lite, fit_grid=self.fit_grid,
                                                               plot_title='Spec Fit, update continua (cont_fit_2.1)') 
             for mod in model_type.split('+'):
                 fx0, fx1 = self.model_index(mod, self.full_model_type)[0:2]
@@ -707,7 +716,7 @@ class FitFrame(object):
             # use initial best-fit values from cont_fit_2.1 and subtract emission lines from joint_fit_1
             cont_fit, cont_coeff_m, cont_chi_sq = nl_lsq_func(x0mock, spec_wave_w[mask_valid_w], 
                                                              (spec_fmock_w - el_fmod_w)[mask_valid_w], spec_ferr_w[mask_valid_w], 
-                                                              model_type, mask_ssp_lite,
+                                                              model_type, mask_ssp_lite, fit_grid=self.fit_grid,
                                                               plot_title='Spec Fit, update continua (cont_fit_2.2)')
             cont_fmod_w = spec_wave_w * 0
             for mod in model_type.split('+'):
@@ -740,7 +749,7 @@ class FitFrame(object):
             # joint fit of continuum and emission lines with initial values from best-fit of cont_fit_2 and el_fit_2
             joint_fit, joint_coeff_m, joint_chi_sq = nl_lsq_func(x0mock, spec_wave_w[mask_valid_w], 
                                                                  spec_fmock_w[mask_valid_w], spec_ferr_w[mask_valid_w], 
-                                                                 model_type, mask_ssp_lite, mask_el_lite, 
+                                                                 model_type, mask_ssp_lite, mask_el_lite, fit_grid=self.fit_grid, 
                                                                  refit_rand_x0=False, accept_chi_sq=np.maximum(cont_chi_sq, el_chi_sq),
                                                                  plot_title='Spec Fit, all models (joint_fit_2)')
             for mod in model_type.split('+'):
@@ -769,7 +778,7 @@ class FitFrame(object):
                                                                   np.hstack((spec_wave_w[mask_valid_w], phot_wave_b)),
                                                                   np.hstack(((spec_fmock_w - el_fmod_w)[mask_valid_w], phot_fmock_b-el_fsed_b)),
                                                                   np.hstack((spec_ferr_w[mask_valid_w], phot_ferr_b)),
-                                                                  model_type, mask_ssp_lite, fit_phot=True,
+                                                                  model_type, mask_ssp_lite, fit_phot=True, fit_grid=self.fit_grid,
                                                                   plot_title='Spec+SED Fit, update continua (cont_fit_3.1)') 
                 for mod in model_type.split('+'):
                     fx0, fx1 = self.model_index(mod, self.full_model_type)[0:2]
@@ -784,7 +793,7 @@ class FitFrame(object):
                                                                   np.hstack((spec_wave_w[mask_valid_w], phot_wave_b)),
                                                                   np.hstack(((spec_fmock_w - el_fmod_w)[mask_valid_w], phot_fmock_b-el_fsed_b)),
                                                                   np.hstack((spec_ferr_w[mask_valid_w], phot_ferr_b)),
-                                                                  model_type, mask_ssp_lite, fit_phot=True,
+                                                                  model_type, mask_ssp_lite, fit_phot=True, fit_grid=self.fit_grid,
                                                                   plot_title='Spec+SED Fit, update continua (cont_fit_3.2)')
                 cont_fmod_w = spec_wave_w * 0
                 for mod in model_type.split('+'):
@@ -818,7 +827,7 @@ class FitFrame(object):
                                                                      np.hstack((spec_wave_w[mask_valid_w], phot_wave_b)), 
                                                                      np.hstack((spec_fmock_w[mask_valid_w], phot_fmock_b)), 
                                                                      np.hstack((spec_ferr_w[mask_valid_w], phot_ferr_b)), 
-                                                                     model_type, mask_ssp_lite, mask_el_lite, fit_phot=True,
+                                                                     model_type, mask_ssp_lite, mask_el_lite, fit_phot=True, fit_grid=self.fit_grid,
                                                                      refit_rand_x0=False, accept_chi_sq=cont_chi_sq,
                                                                      plot_title='Spec+SED Fit, use all models (joint_fit_3)')
                 # here set accept_chi_sq=cont_chi_sq, since el_chi_sq is much larger due to non-enlarged error in el_fit_3
@@ -845,7 +854,7 @@ class FitFrame(object):
             # check fitting quality after all loops finished
             # allow additional loops to remove outlier fit; exit if additional loops > 3
             if (success_count == n_loops) & (total_count <= (n_loops+3)):
-                if self.fitraw & (self.best_chi_sq.shape[0] > 1):
+                if self.fit_raw & (self.best_chi_sq.shape[0] > 1):
                     accept_chi_sq = self.best_chi_sq[1:].min() * 1.5
                 else:
                     accept_chi_sq = self.best_chi_sq.min() * 1.5
@@ -923,7 +932,7 @@ class FitFrame(object):
         ssp_mod, ssp_cf = self.model_dict['ssp']['specmod'], self.model_dict['ssp']['cf']
         num_ssp_comps = ssp_cf.num_comps
         num_ssp_pars = ssp_cf.num_pars
-        num_ssp_coeffs = int(self.model_dict['ssp']['num_coeffs'] / num_ssp_comps)
+        num_ssp_coeffs = int(ssp_mod.num_coeffs / num_ssp_comps)
         fx0, fx1, fc0, fc1 = self.model_index('ssp', self.full_model_type)
 
         name_outvals = ['chi_sq',
@@ -1470,7 +1479,7 @@ class SSPModels(object):
                     self.spec_R_rsmp = self.spec_R_init * 5
 
         # load popstar library
-        self.read_popstar()
+        self.read_ssp_library()
         # resample (wave,spec) to logw grid for following spectral convolution
         self.to_logw_grid(w_min=self.w_min, w_max=self.w_max, w_norm=self.w_norm, dw_norm=self.dw_norm, 
                           spec_R_init=self.spec_R_init, spec_R_rsmp=self.spec_R_rsmp)
@@ -1501,7 +1510,9 @@ class SSPModels(object):
             print('SSP models metallicity (Z/H):', np.unique(self.met_m[self.mask_ssp_allowed()])) 
             print('SFH pattern:', self.sfh_names)
 
-    def read_popstar(self):
+    def read_ssp_library(self):
+        ##############################################################
+        ###### Modify this section to use a different SSP model ######
         self.header = fits.open(self.filename)[0].header
         # wave_axis = 1
         # crval = self.header[f'CRVAL{wave_axis}']
@@ -1516,8 +1527,8 @@ class SSPModels(object):
         self.orig_flux_mw = fits.open(self.filename)[0].data
         # load remaining mass fraction
         self.remainmassfrac_m = fits.open(self.filename)[2].data
+        # leave remainmassfrac_m = 1 if not provided. 
 
-        self.num_models = self.header['NAXIS2']
         self.age_m = np.zeros(self.num_models, dtype='float')
         self.met_m = self.age_m.copy()
         for i in range(self.num_models):
@@ -1525,11 +1536,15 @@ class SSPModels(object):
             self.age_m[i] = 10**float(age.replace('logt',''))/1e9
             self.met_m[i] = float(met.replace('Z',''))
             # self.mtol_m[i] = 1/float(self.header[f'NORM{i}'])
+        ##############################################################
+        ##############################################################
+
         self.num_ages = np.unique(self.age_m).shape[0]
         self.num_mets = np.unique(self.met_m).shape[0]
+        self.num_models = self.num_ages * self.num_mets # self.header['NAXIS2']
 
         # obtain the duration (i.e., bin width) of each ssp if considering a continous SFH
-        age_a = self.age_m[:106]
+        age_a = np.unique(self.age_m) # self.age_m[:self.num_ages]
         mn_a = (age_a[1:] + age_a[:-1]) / 2
         duration_a = mn_a[1:] - mn_a[:-1]
         duration_a = np.hstack((duration_a[0],duration_a,duration_a[-1]))
@@ -1571,8 +1586,9 @@ class SSPModels(object):
         # self.logw_flux_mw / sfrtol_m return models renormalized to unit SFR, i.e., 1 Mun/yr.
         self.sfrtol_m = self.mtol_m / (self.duration_m * 1e9)
 
-        # extend NIR models
-        if w_max > 2.3e4:
+        # extend to longer wavelength in NIR-MIR (e.g., > 3 micron)
+        # please comment these lines if moving to another SSP library that initially covers the NIR-MIR range. 
+        if  (self.orig_wave_w.max() < 3e4) & (w_max > 2.3e4):
             tmp_log_w = np.log10(logw_wave_w)
             tmp_dlog = tmp_log_w[-1] - tmp_log_w[-2]
             tmp_addn = 1+int((np.log10(w_max) - tmp_log_w[-1]) / tmp_dlog)
@@ -1589,7 +1605,6 @@ class SSPModels(object):
             ext_flux_mw = np.array(ext_flux_mw)
             self.logw_flux_mw = ext_flux_mw
             self.logw_wave_w = ext_wave_w
-        # end  
 
     def sfh_factor(self, i_comp, sfh_name, sfh_pars):
         # For a given SFH, i.e., SFR(t) = SFR(csp_age-ssp_age_m), in unit of Msun/yr, 
