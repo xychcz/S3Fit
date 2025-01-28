@@ -57,4 +57,4 @@ ssp_Mnow_rmf_mp = np.loadtxt('/lwk/xychen/AKARI_ULIRG/GMOS/ifufit_code/'+
 hdu2 = fits.ImageHDU(ssp_Mnow_rmf_mp[:,2])
 
 hdul = fits.HDUList([hdu0, hdu1, hdu2])
-hdul.writeto('popstar21_stellar_nebular_fullwave.fits', overwrite=True, output_verify='silentfix')
+hdul.writeto('popstar_for_s3fit.fits', overwrite=True, output_verify='silentfix')
