@@ -10,7 +10,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None,
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_fluxunit='mJy', 
               sed_wave_w=None, sed_waveunit='angstrom', 
               v0_redshift=None, model_config=None, 
-              num_mock_loops=0, fit_raw=True, fit_grid=True, 
+              num_mock_loops=0, fit_raw=True, fit_grid='linear', 
               plot_step=False, print_step=True, verbose=False)
 ```
 #### Spectral data
