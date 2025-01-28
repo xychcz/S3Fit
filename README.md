@@ -1,7 +1,7 @@
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a <ins>**S**</ins>imultaneous <ins>**S**</ins>pectrum and photometric-<ins>**S**</ins>ED <ins>**Fit**</ins>ting code for extragalaxy
 
-S<sup>3</sup>Fit is a code for the analysis of observational data of extragalaxies, which can fit spectrum and multi-band photometric Spectral-Energy-Distribution (SED) simultaneously. It is written to improve the moderate constraints on properties of continuum models in a pure spectral fitting due to the limited wavelength coverage. 
+S<sup>3</sup>Fit is a python code for the analysis of observational data of extragalaxies, which can fit spectrum and multi-band photometric Spectral-Energy-Distribution (SED) simultaneously. It is written to improve the moderate constraints on properties of continuum models in a pure spectral fitting due to the limited wavelength coverage. 
 S<sup>3</sup>Fit support multiple models with multiple components, 
 and can handle complex systems with a mixed contribution of Active Galactic Nucleus (AGN) and its host galaxy
 in both of continua and emission lines (e.g., narrow lines and broad outflow lines). 
