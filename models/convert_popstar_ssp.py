@@ -6,8 +6,11 @@ ret_names, ret_ages, ret_mets, ret_waves, ret_specs = [], [], [], [], []
 wmin, wmax = 50, 24050
 # real range: 91--24000 AA
 
+# please download the library from https://www.fractal-es.com/PopStar/#hr_py_download
+# for the required initial mass function 
 dir_prefix = 'pyPopStar_Kroupa/Total/' # 
 dir_suffixes = ['Z004/','Z008/','Z02/','Z05/']
+
 for dir_suffix in dir_suffixes: 
     print(dir_suffix)
     files = np.array(os.listdir(dir_prefix+dir_suffix))
@@ -51,8 +54,10 @@ for i, ret_name in enumerate(ret_names):
 
 hdu1 = fits.ImageHDU(ret_waves[0])
 
-ssp_Mnow_rmf_mp = np.loadtxt('/lwk/xychen/AKARI_ULIRG/GMOS/ifufit_code/'+
-                             'ssp/remaining_stellar_mass_fraction_KRO.dat', skiprows=1)
+# please download the remaining mass function  
+# from https://www.fractal-es.com/PopStar/#hr_py_download
+# for the required initial mass function 
+ssp_Mnow_rmf_mp = np.loadtxt('remaining_stellar_mass_fraction_KRO.dat', skiprows=1)
 # logage, met, remaining mass fraction
 hdu2 = fits.ImageHDU(ssp_Mnow_rmf_mp[:,2])
 
