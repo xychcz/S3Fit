@@ -47,6 +47,7 @@ eb_stack = -9999
 lumD_stack = wave
 lumT_stack = wave
 
+# Pick up the parameter ranges to be used in s3fit
 tau = [ '3', '5', '7', '9', '11' ]
 radial_index = ['1'] #[ '0.5' ]
 polar_index = [ '0.5' ] #[ '0' ]
@@ -99,28 +100,6 @@ for params in iter_params:
     eb_stack = np.column_stack(( eb_stack, eb )) 
     lumD_stack = np.column_stack(( lumD_stack, uL_disc ))     
     lumT_stack = np.column_stack(( lumT_stack, uL_torus ))     
-
-    if (0): 
-        plt.figure()
-        #plt.plot( wave, lamF_dirPri, label = 'direct primary' )
-        #plt.plot( wave, lamF_scaPri, label = 'scattered primary' )
-        #plt.plot( wave, lamF_dirDust, label = 'direct dust' )
-        #plt.plot( wave, lamF_scaDust, label = 'scattered dust' )
-        #plt.plot( wave, lamF_iniPri, label = 'initial primary' )
-        #plt.plot( wave, lamF_total, label = 'total' )
-        #plt.ylim(1e-18, 1e-10)
-        plt.plot( wave, wave * uL_disc, label = 'disc' )
-        plt.plot( wave, wave * uL_torus, label = 'torus' )
-        plt.ylim(1e30, 1e34)
-        plt.xlim(1e0, 1e3)
-        plt.xscale('log')
-        plt.yscale('log')
-        plt.xlabel('wavelength ($\mu$m)')
-        #plt.ylabel('$\lambda F_{\lambda}$ (W/m2, d = 10 Mpc)')
-        plt.ylabel('$\lambda L_{\lambda}$ (erg/s, intPri=1Lsun)')
-        plt.legend()
-        plt.title( "t{}_p{}_q{}_oa{}_R{}_Mcl{}_i{}_sed".format(*params) )
-        plt.savefig( "t{}_p{}_q{}_oa{}_R{}_Mcl{}_i{}_sed.pdf".format(*params), dpi=100, transparent=False)
  
 skirtor_disc_output = np.row_stack(( tau_stack, oa_stack, rratio_stack, incl_stack, mass_stack, eb_stack, lumD_stack ))
 np.savetxt( "skirtor_disc.dat", skirtor_disc_output, fmt='%8e' )
@@ -128,47 +107,3 @@ skirtor_torus_output = np.row_stack(( tau_stack, oa_stack, rratio_stack, incl_st
 np.savetxt( "skirtor_torus.dat", skirtor_torus_output, fmt='%8e' )
 
 fits.PrimaryHDU(np.array([skirtor_disc, skirtor_torus])).writeto('skirtor_for_s3fit.fits', overwrite=True, output_verify='silentfix')
-
-# plt.figure()
-# tau, oa, rratio, incl = 3, 30, 30, 0 #type1
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_disc_output[ 5:, 0 ], skirtor_disc_output[ 5:, 0 ]**2 * skirtor_disc_output[ 5:, mask ][:,0], color='C7', alpha=0.5 )
-# 
-# tau, oa, rratio, incl = 3, 30, 30, 80 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_disc_output[ 5:, 0 ], skirtor_disc_output[ 5:, 0 ]**2 * skirtor_disc_output[ 5:, mask ][:,0], color='C1', alpha=0.75, label = r'$\tau_{9.7}$ = '+'{0:.0f}'.format(tau) +', $\psi$ = ' + '{0:.0f}'.format(incl)+'$^{\circ}$' )
-# tau, oa, rratio, incl = 3, 30, 30, 80 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_torus_output[ 5:, 0 ], skirtor_torus_output[ 5:, 0 ]**2 * skirtor_torus_output[ 5:, mask ][:,0], '--', color='C1', alpha=0.75 )
-# 
-# tau, oa, rratio, incl = 3, 30, 30, 60 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_disc_output[ 5:, 0 ], skirtor_disc_output[ 5:, 0 ]**2 * skirtor_disc_output[ 5:, mask ][:,0], color='C0', alpha=0.75, label = r'$\tau_{9.7}$ = '+'{0:.0f}'.format(tau) +', $\psi$ = ' + '{0:.0f}'.format(incl)+'$^{\circ}$' )
-# tau, oa, rratio, incl = 3, 30, 30, 60 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_torus_output[ 5:, 0 ], skirtor_torus_output[ 5:, 0 ]**2 * skirtor_torus_output[ 5:, mask ][:,0], '--' , color='C0', alpha=0.75)
-# 
-# tau, oa, rratio, incl = 11, 30, 30, 80 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_disc_output[ 5:, 0 ], skirtor_disc_output[ 5:, 0 ]**2 * skirtor_disc_output[ 5:, mask ][:,0], color='C3', alpha=0.75, label = r'$\tau_{9.7}$ = '+'{0:.0f}'.format(tau) +', $\psi$ = ' + '{0:.0f}'.format(incl)+'$^{\circ}$' )
-# tau, oa, rratio, incl = 11, 30, 30, 80 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_torus_output[ 5:, 0 ], skirtor_torus_output[ 5:, 0 ]**2 * skirtor_torus_output[ 5:, mask ][:,0], '--', color='C3', alpha=0.75 )
-# 
-# tau, oa, rratio, incl = 11, 30, 30, 60 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_disc_output[ 5:, 0 ], skirtor_disc_output[ 5:, 0 ]**2 * skirtor_disc_output[ 5:, mask ][:,0], color='C2', alpha=0.75, label = r'$\tau_{9.7}$ = '+'{0:.0f}'.format(tau) +', $\psi$ = ' + '{0:.0f}'.format(incl)+'$^{\circ}$' )
-# tau, oa, rratio, incl = 11, 30, 30, 60 #type2
-# mask = ( skirtor_disc_output[ 0, : ] == tau ) * ( skirtor_disc_output[ 1, : ] == oa ) * ( skirtor_disc_output[ 2, : ] == rratio ) * ( skirtor_disc_output[ 3, : ] == incl )
-# plt.plot( skirtor_torus_output[ 5:, 0 ], skirtor_torus_output[ 5:, 0 ]**2 * skirtor_torus_output[ 5:, mask ][:,0], '--', color='C2', alpha=0.75 )
-# 
-# plt.ylim(1e29, 1e35)
-# plt.xlim(1e-1, 1e3)
-# plt.xscale('log')
-# plt.yscale('log')
-# plt.xlabel('wavelength ($\mu$m)')
-# plt.ylabel(r'$F_{\nu}$ (arbitrary unit)')
-# #plt.ylabel('$\lambda L_{\lambda}$ (erg/s, intPri=1Lsun)')
-# plt.legend()
-# #plt.title( "t{}_p{}_q{}_oa{}_R{}_Mcl{}_i{}_sed".format(*params) )
-# plt.savefig( "skirtor_sed.pdf", dpi=100, transparent=False)
