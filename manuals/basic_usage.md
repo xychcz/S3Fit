@@ -61,7 +61,7 @@ If any models are not required, set `'enable'` to `False` or just delete the cor
 > Note that the model names (e.g., 'ssp') are fixed in the code and please do not modify them.
 
 > [!TIP]
-> Please read guide in [advanced usage](manuals/advanced_usage.md) if you want to add a new model type. 
+> Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add a new model type. 
 
 The detailed set up of each model are described as follows. 
 
@@ -71,7 +71,7 @@ The detailed set up of each model are described as follows.
 ssp_file = 'DIRECTORY/popstar21_stellar_nebular_fullwave.fits'
 ```
 Current version of S<sup>3</sup>Fit use the [PopSTAR][2] Single Stellar Population (SSP) model library. 
-Please run the [converting code](models/convert_popstar_ssp.py) to convert the original PopSTAR models to the format used for S<sup>3</sup>Fit. 
+Please run the [converting code](../models/convert_popstar_ssp.py) to convert the original PopSTAR models to the format used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
 [2]: <https://www.fractal-es.com/PopStar/>
@@ -103,7 +103,7 @@ or any combination of values in a list, e.g., `[0.004,0.008]` or `[0.02,0.05]`.
 `'sfh'` denotes the SFH used in this `'main'` component. 
 Current version of S<sup>3</sup>Fit supports the following SFH functions:
 `'nonparametric'`, `'exponential'`, `'delayed'`, `'constant'`. 
-Please read guide in [advanced usage](manuals/advanced_usage.md) if you want to add a new SFH function. 
+Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add a new SFH function. 
 An example of `'nonparametric'` SFH is shown as follows:
 ```python
 ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free']], 
@@ -137,7 +137,7 @@ set it to any value with `'fix'` to save a free parameter.
 
 > [!TIP]
 > The best-fit reconstructed SFH of each component can be plotted or output by running `FF.reconstruct_sfh()`. 
-Please read the [example](example/example.ipynb) for an example case. 
+Please read the [example](../example/example.ipynb) for an example case. 
 
 #### Emission lines
 
@@ -163,7 +163,7 @@ For `'outflow_2'` and `'BLR'`, only the emission lines with names specified in `
 > [!TIP]
 > Please run `FF.model_dict['el']['specmod'].line_name_n` and `FF.model_dict['el']['specmod'].line_rest_n`
 to learn about the names and rest wavelengths of the available emission lines. 
-Please read guide in [advanced usage](manuals/advanced_usage.md) if you want to add new emission lines. 
+Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add new emission lines. 
 
 For a given emission line component (e.g., `'NLR'`), every line shares the same parameter values. 
 In the current version of S<sup>3</sup>Fit, there are four parameters for each component (from the left):
@@ -203,7 +203,7 @@ and the spectral index of powerlaw.
 Since the velocity shift cannot be determined with only powerlaw, it is tied with `'el:NLR:0;ssp:main:0'`, 
 which means the value is tied to the `0`-th parameter (i.e., velocity shift) of the `'NLR'` component of the `'el'` model, 
 or the `0`-th parameter of the `'main'` component of the `'ssp'` model when the `'el'` model is not available 
-(e.g., in several intermediate fitting steps with only continuum models, see [fitting strategy](manuals/fitting_strategy.md.md) for details).
+(e.g., in several intermediate fitting steps with only continuum models, see [fitting strategy](../manuals/fitting_strategy.md.md) for details).
 Similarly, the velocity FWHM is also not applicable with only powerlaw model, 
 and thus fixed arbitrarily to save a free parameter. 
 Both of velocity shift and FWHM will be determined when the iron pseudo continuum model is supported. 
@@ -216,9 +216,9 @@ In order to reduce the degeneracy between extinction and the spectral index, in 
 torus_file = '../models/skirtor_torus.fits'
 ```
 S<sup>3</sup>Fit uses the [SKIRTor][SKIRTor_web] AGN torus model.
-Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](models/convert_skirtor_torus.py) 
+Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](../models/convert_skirtor_torus.py) 
 to create the torus models used for S<sup>3</sup>Fit. 
-Example of this library is also provided in [models](models/) for a test of S<sup>3</sup>Fit, 
+Example of this library is also provided in [models](../models/) for a test of S<sup>3</sup>Fit, 
 which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
 Please refer to [SKIRTor][SKIRTor_web] website for details of the model parameters. 
 
@@ -244,5 +244,5 @@ After finishing the configuration of all models, run the fitting with the follow
 ```python
 FF.main_fit()
 ```
-Please read the [example](example/example.ipynb) to learn about the method to output and plot the best-fit results. 
+Please read the [example](../example/example.ipynb) to learn about the method to output and plot the best-fit results. 
 
