@@ -203,7 +203,7 @@ and the spectral index of powerlaw.
 Since the velocity shift cannot be determined with only powerlaw, it is tied with `'el:NLR:0;ssp:main:0'`, 
 which means the value is tied to the `0`-th parameter (i.e., velocity shift) of the `'NLR'` component of the `'el'` model, 
 or the `0`-th parameter of the `'main'` component of the `'ssp'` model when the `'el'` model is not available 
-(e.g., in several intermediate fitting steps with only continuum models, see [fitting strategy](../manuals/fitting_strategy.md.md) for details).
+(e.g., in several intermediate fitting steps with only continuum models, see [fitting strategy](../manuals/fitting_strategy.md) for details).
 Similarly, the velocity FWHM is also not applicable with only powerlaw model, 
 and thus fixed arbitrarily to save a free parameter. 
 Both of velocity shift and FWHM will be determined when the iron pseudo continuum model is supported. 
