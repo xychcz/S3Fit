@@ -22,15 +22,35 @@ The time variable of SFH function is already defined as `evo_time`.
 The parameters used for SFH starts from the 3rd parameter in the input `ssp_config` 
 (the 0th to 2nd parameters are used for velocity shift, FWHM, and extinction). 
 > [!IMPORTANT]
-> Please remember to confirm the number of the input parameters match the required one in the new SFH function. 
+> Please remember to confirm the number of the input parameters match the required one in the new SFH function.
 
-## Support new emission lines
+## Change to a new Single Stellar Population (SSP) library.
+
+The current version of S<sup>3</sup>Fit uses the SSP library [PopSTAR][PopSTAR_web] with an initial mass function (IMF) of Kroupa (2002). 
+If you tend to choose another IMF for PopSTAR SSP library, please download the models from [the link](https://www.fractal-es.com/PopStar/#hr_py_download)
+and re-run the [converting code](models/convert_popstar_ssp.py) to create the SSP models used for S<sup>3</sup>Fit. 
+
+[PopSTAR_web]: <https://www.fractal-es.com/PopStar/>
+
+If you would like to utilize a different SSP library, you can modify the `read_ssp_library()` function in the `SSPModels` class.
+In order to utilize the auxiliary functions in S<sup>3</sup>Fit, please ensure the new SSP model library has a three-dimentional shape, 
+e.g., `orig_flux_zaw[i_z,i_a,i_w]` to represent the flux at the `i_w`-th wavelength value for the model
+with the `i_z`-th metallicity and `i_a`-th age. 
+The model library `orig_flux_mw` to be used by S<sup>3</sup>Fit can be converted as
+```python
+orig_flux_mw = orig_flux_zaw.reshape(num_metallicities, num_ages, num_wavelengths)
+```
+In order to calculate the best-fit total stellar mass and reconstruct the best-fit SFH, 
+please make sure the model spectra is normalized by one solar mass in the unit of L<sub>sun</sub> per angstrom. 
+
+## Add new emission lines
 
 Please navigate to the `set_linelist()` function in the `ELineModels` class in `s3fit.py` to add new emission lines.
 The rest wavelengths and names are stored in the lists `line_rest_n` and `line_name_n`
 (note that the rest wavelength is given in vacuum).
 If lineA is tied to lineB with a fixed flux ratio, 
 set `linked_to_n` of lineA to `line_rest_n` of lineB, and `linked_ratio_n` of lineA to the flux ratio of lineA/lineB. 
+If the flux of lineA is a free parameter, set `linked_to_n` and `linked_ratio_n` of lineA to `-1`. 
 The follow coding block exhibits the example with [OIII] doublets, 
 where [OIII]a is tied to [OIII]b with a flux ratio of 0.335
 (please read the <ins>**Emission lines**</ins> section in [basic usage](manuals/basic_usage.md) for calculation of the flux ratio).  
@@ -39,7 +59,7 @@ self.line_rest_n.append(5008.240); self.linked_to_n.append(-1)      ; self.linke
 self.line_rest_n.append(4960.295); self.linked_to_n.append(5008.240); self.linked_ratio_n.append(0.335)  ; self.line_name_n.append('[OIII]a')
 ```
 
-## Support new models
+## Support new types of models
 
 Please follow these steps to add a new model into S<sup>3</sup>Fit. 
 
@@ -109,17 +129,21 @@ For the example of stellar continuum models with two components that have `'expo
 For emission line models, `num_coeffs` is the sum of numbers of free lines for which the flux is not tied to the other ones. 
 For AGN powerlaw and torus models, `num_coeffs=1` since typically only one component with one model is generated for a given parameter set. 
 
-The purpose of `models_unitnorm_original()` function is to return the intrinsic model spectra for a given parameter set of a given component.
-It is better to normalize the model spectra to a unit value, e.g., intrinsic flux = 1 at 5500 angstrom for stellar and AGN powerlaw continua, 
-and velocity-integrated observed flux = 1 for emission lines.
-With the normalization, the best-fit normalization factors are directly the corresponding fluxes of each models. 
-In order to speed up the convolution in the later steps to account the instrumental and physical dispersion, 
-the intrinsic model is required to be projected to a wavelength array spaced evenly on a log scale, 
-with the following function:
+The purpose of `models_unitnorm_original()` function is to return the model spectra `logw_flux_int_mw` 
+for a given parameter set of a given component.
+`logw_flux_int_mw[i_m,i_w]` denotes the intrinsic model flux at the `i_w`-th wavelength value
+for the `i_m`-th model. 
+The value of `i_m` starts from `0` to `num_coeffs-1` defined in `__init__()`. 
+`logw_` means the original model spectra is re-projected to a wavelength array spaced evenly on a log scale, 
+to speed up the convolution in the later steps to account the instrumental and physical dispersion. 
+The conversion can be performed with the following function in `s3fit.py`:
 ```python
 logw_wave_w, logw_flux_w = convert_linw_to_logw(linw_wave_w, linw_flux_w, resolution=spec_R_rsmp)
 ```
 , where `spec_R_rsmp` is the resampling resolution, can be set to `spec_R_inst * 3` to achieve a good accuracy. 
+It is better to normalize the model spectra to a unit value, e.g., intrinsic flux = 1 at 5500 angstrom for stellar and AGN powerlaw continua, 
+and velocity-integrated observed flux = 1 for emission lines.
+With the normalization, the best-fit normalization factors are directly the corresponding fluxes of each models. 
 
 The function `models_unitnorm_obsframe()` is used to return the extinct, redshifted, and convolved (with both of instrumental and physical broadening)
 model spectra in the observed wavelength grid, to the main fitting functions to calculate the best-fit normalization factors.
