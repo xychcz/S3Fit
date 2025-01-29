@@ -35,7 +35,7 @@ Note that `sed_wave_w` is not mandatory; if it is not set, the code can create t
 
 #### Model setup 
 `v0_redshift`: Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
-`model_config`: Dictionary of model configurations, see [model setup](#model-setup) section for details. 
+`model_config`: Dictionary of model configurations, see [model setup](#configure-models) section for details. 
 #### Fitting setup
 `num_mock_loops`: Number of the mocked spectra, which is used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only fit the raw data. \
 `fit_raw`: Whether or not to fit the raw data. Default is `True`. If set to `False`, the code only output results for the mocked spectra. \
@@ -48,7 +48,7 @@ Note that if emisison line is the only fitting model (e.g., for continuum subtra
 
 
 
-## Model setup
+## Configure models
 ```python
 model_config = {'ssp': {'enable': True, 'config': ssp_config, 'file': ssp_file}, 
                 'el': {'enable': True, 'config': el_config},
