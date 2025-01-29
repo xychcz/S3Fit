@@ -163,7 +163,7 @@ Basically the 0th parameter is always the velocity shift to redshift the model s
 The 1st parameter is velocity width if the spectral feature can be used to determine the physical dispersion. 
 The 2nd parameter is typically set to the extinction value. 
 The 3rd and later parameters are used to control the model shapes, e.g., the spectral index of AGN powerlaw. 
-Please read the <ins>**Model setup**</ins> section in [basic usage](../manuals/basic_usage.md)
+Please read the <ins>**Configure Models**</ins> section in [basic usage](../manuals/basic_usage.md)
 for examples of different configurations. 
 
 Please also remember to update the total `model_config` with:
