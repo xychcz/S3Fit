@@ -129,8 +129,10 @@ For the example of stellar continuum models with two components that have `'expo
 For emission line models, `num_coeffs` is the sum of numbers of free lines for which the flux is not tied to the other ones. 
 For AGN powerlaw and torus models, `num_coeffs=1` since typically only one component with one model is generated for a given parameter set. 
 
-The purpose of `models_unitnorm_original()` function is to return the model spectra `logw_flux_int_mw` 
+The purpose of `models_unitnorm_original()` function is to return the original model spectra `logw_flux_int_mw` 
 for a given parameter set of a given component.
+The original model spectra can be read from an input model library (e.g., SSP models) with the location specified in `filename`;
+or created with a function (e.g., gaussian-profile emission lines, powerlaw or blackbody functions). 
 `logw_flux_int_mw[i_m,i_w]` denotes the intrinsic model flux at the `i_w`-th wavelength value
 for the `i_m`-th model. 
 The value of `i_m` starts from `0` to `num_coeffs-1` defined in `__init__()`. 
