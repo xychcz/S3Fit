@@ -7,14 +7,14 @@ two columns, wavelengths (in angstrom) and transmission values.
 Save the curve with a filename of `Bandname.dat` and put it in the directory set in `phot_trans_dir`, 
 and then the new band can be used in S<sup>3</sup>Fit. 
 
-## Modify extinction laws
+## Switch extinction laws
 
 The default extinction law of S<sup>3</sup>Fit is [Calzetti00](http://www.bo.astro.it/~micol/Hyperz/old_public_v1/hyperz_manual1/node10.html).
 If you would like to use another extinction law, please navigate to the `Extinction Functions` section of the S<sup>3</sup>Fit, 
 define the the new extinction function that output $A_\lambda/A_V$, 
 and remember to specify the new extinction law as the default one by modifying `ExtLaw = ExtLaw_NEW`. 
 
-## Support new Star Formation History (SFH) function
+## Support new Star Formation History (SFH) functions
 
 If you would like to use a new SFH function, please navigete to the `sfh_factor()` function in `SSPModels` class in `s3fit.py`, 
 and append the new SFH function after the `'constant'` SFH.
@@ -24,7 +24,7 @@ The parameters used for SFH starts from the 3rd parameter in the input `ssp_conf
 > [!IMPORTANT]
 > Please remember to confirm the number of the input parameters match the required one in the new SFH function.
 
-## Change to a new Single Stellar Population (SSP) library.
+## Change to a different Single Stellar Population (SSP) library
 
 The current version of S<sup>3</sup>Fit uses the [HR-pyPopStar][PopSTAR_web] SSP library with an initial mass function (IMF) of Kroupa (2002). 
 If you tend to choose another IMF for HR-pyPopStar SSP library, please download the models from [the link](https://www.fractal-es.com/PopStar/#hr_py_download)
@@ -150,7 +150,7 @@ model spectra in the observed wavelength grid, to the main fitting functions to 
 Please read the [fitting strategy](../manuals/fitting_strategy.md) to learn about the details. 
 You may not need to largely modify the `models_unitnorm_obsframe()` function since it can be used uniformly for multiple types of models. 
 
-#### Create configuration dictionary
+#### Create the configuration dictionary
 The format of the input model configuration is as follows:
 ```python
 new_config = {'comp0': {'pars': [[min0, max0, tie0], [min1, max1, tie1], [min2, max2, tie2], ... ], 
