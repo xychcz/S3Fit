@@ -26,8 +26,8 @@ The parameters used for SFH starts from the 3rd parameter in the input `ssp_conf
 
 ## Change to a new Single Stellar Population (SSP) library.
 
-The current version of S<sup>3</sup>Fit uses the SSP library [PopSTAR][PopSTAR_web] with an initial mass function (IMF) of Kroupa (2002). 
-If you tend to choose another IMF for PopSTAR SSP library, please download the models from [the link](https://www.fractal-es.com/PopStar/#hr_py_download)
+The current version of S<sup>3</sup>Fit uses the [HR-pyPopStar][PopSTAR_web] SSP library with an initial mass function (IMF) of Kroupa (2002). 
+If you tend to choose another IMF for HR-pyPopStar SSP library, please download the models from [the link](https://www.fractal-es.com/PopStar/#hr_py_download)
 and re-run the [converting code](../models/convert_popstar_ssp.py) to create the SSP models used for S<sup>3</sup>Fit. 
 
 [PopSTAR_web]: <https://www.fractal-es.com/PopStar/>
@@ -123,7 +123,7 @@ A `ModelFrame` has three basic functions, `__init__()`, `models_unitnorm_origina
 
 The most important value in `__init__()` is `num_coeffs`, which is the number of models for which the normalization factors are free
 (i.e., not tied to the other models). 
-For the example of stellar continuum models with `'nonparametric'` SFH, `num_coeffs=424` is the number of the full PopSTAR library. 
+For the example of stellar continuum models with `'nonparametric'` SFH, `num_coeffs=424` is the number of the full HR-pyPopStar library. 
 For the example of stellar continuum models with two components that have `'exponential'` and `'constant'` SFH, respectively, 
 `num_coeffs=2*4` since the models with different stellar ages are regulated with the SFH functions. 
 For emission line models, `num_coeffs` is the sum of numbers of free lines for which the flux is not tied to the other ones. 
