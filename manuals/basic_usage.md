@@ -68,10 +68,10 @@ The detailed set up of each model are described as follows.
 #### Stellar continuum
 
 ```python
-ssp_file = 'DIRECTORY/popstar21_stellar_nebular_fullwave.fits'
+ssp_file = 'DIRECTORY/popstar_for_s3fit.fits'
 ```
-Current version of S<sup>3</sup>Fit use the [PopSTAR][2] Single Stellar Population (SSP) model library. 
-Please run the [converting code](../models/convert_popstar_ssp.py) to convert the original PopSTAR models to the format used for S<sup>3</sup>Fit. 
+Current version of S<sup>3</sup>Fit use the [HR-pyPopStar][2] Single Stellar Population (SSP) model library. 
+Please run the [converting code](../models/convert_popstar_ssp.py) to convert the original HR-pyPopStar models to the format used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
 [2]: <https://www.fractal-es.com/PopStar/>
@@ -93,10 +93,10 @@ In this example, all parameters are free parameters in fitting.
 
 `'info'` lists the regulation of the stellar models. 
 `'age_min'` and `'age_max'` are the minimum and maximum stellar ages (log Gyr) of the used SSP models.
-Set `'age_min': None` if the youngest PopSTAR model is used. 
+Set `'age_min': None` if the youngest HR-pyPopStar model is used. 
 Set `'age_max': 'universe'` to use the universe age in the input `v0_redshift`. 
 `'met_sel'` limit the metallicity, which can be set to 
-`'all'` to use all metallicities in PopSTAR models (Z = 0.004, 0.008, 0.02, 0.05), 
+`'all'` to use all metallicities in HR-pyPopStar models (Z = 0.004, 0.008, 0.02, 0.05), 
 `'solar'` to only use solar metallicity (Z = 0.002), 
 or any combination of values in a list, e.g., `[0.004,0.008]` or `[0.02,0.05]`. 
 
@@ -213,7 +213,7 @@ In order to reduce the degeneracy between extinction and the spectral index, in 
 #### AGN dusty torus
 
 ```python
-torus_file = '../models/skirtor_torus.fits'
+torus_file = '../models/skirtor_for_s3fit.fits'
 ```
 S<sup>3</sup>Fit uses the [SKIRTor][SKIRTor_web] AGN torus model.
 Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](../models/convert_skirtor_torus.py) 
