@@ -53,8 +53,8 @@ If you would like to use S<sup>3</sup>Fit, please cite the paper [Chen et al. (2
 Please find details of the configuration of star formation history and kinematic parameters of emission lines in the paper. 
 
 ## Reference
-S<sup>3</sup>Fit uses the Single Stellar Population (SSP) library [PopSTAR][2] ([paper][3]). 
-Please download the [PopSTAR library][2] and run the [converting code](models/convert_popstar_ssp.py) 
+S<sup>3</sup>Fit uses the Single Stellar Population (SSP) library [HR-pyPopStar][2] ([paper][3]). 
+Please download the [HR-pyPopStar library][2] and run the [converting code](models/convert_popstar_ssp.py) 
 to create the SSP models used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
