@@ -68,19 +68,61 @@ please make sure the model spectra is normalized by one solar mass in the unit o
 
 ## Add new emission lines
 
-Please navigate to the `set_linelist()` function in the `ELineModels` class in `s3fit.py` to add new emission lines.
-The rest wavelengths and names are stored in the lists `line_rest_n` and `line_name_n`
-(note that the rest wavelength is given in vacuum).
-If lineA is tied to lineB with a fixed flux ratio, 
-set `linked_to_n` of lineA to `line_rest_n` of lineB, and `linked_ratio_n` of lineA to the flux ratio of lineA/lineB. 
-If the flux of lineA is a free parameter, set `linked_to_n` and `linked_ratio_n` of lineA to `-1`. 
-The follow coding block exhibits the example with [OIII] doublets, 
-where [OIII]a is tied to [OIII]b with a flux ratio of 0.335
-(please read the <ins>**Emission lines**</ins> section in [basic usage](../manuals/basic_usage.md) for calculation of the flux ratio).  
+You can re-edit the emisison line configuration after initializing `FitFrame`.
 ```python
-self.line_rest_n.append(5008.240); self.linked_to_n.append(-1)      ; self.linked_ratio_n.append(-1)     ; self.line_name_n.append('[OIII]b')
-self.line_rest_n.append(4960.295); self.linked_to_n.append(5008.240); self.linked_ratio_n.append(0.335)  ; self.line_name_n.append('[OIII]a')
+FF = FitFrame(......)
+el_mod = FF.model_dict['el']['specmod']
 ```
+If you would like to add new lines into the line list, just run `add_line()`.
+If PyNeb is installed and `use_pyneb=True`, only the names of new lines are required, 
+otherwise the rest wavelengths (in vacuum) are also required in the input parameters. 
+```python
+el_mod.add_line(['Lya','[O III]:4364'], use_pyneb=True)
+el_mod.add_line(['Lya','[O III]:4364'], linerests=[1215.67,4364.44], use_pyneb=False)
+```
+You can add as many as new lines. S<sup>3</sup>Fit will only enable the lines that 
+can be covered in the wavelength range of the input data spectrum. 
+Use `delete_line()` if you would like to delete given lines from the list. 
+```python
+el_mod.delete_line(['Lya','[O III]:4364'])
+```
+
+You can also edit the line ties following the example of [OIII] doublets.
+```python
+el_mod.tie_pair('[O III]:4960', '[O III]:5008', use_pyneb=True)
+el_mod.tie_pair('[O III]:4960', '[O III]:5008', ratio=0.335, use_pyneb=False)
+```
+In this case, [OIII]4960 is tied to [OIII]5008 with a flux ratio of [OIII]4960/5008. 
+If PyNeb is installed and `use_pyneb=True`, only the names of new lines are required.
+The line ratio used in the fit will be calculated based on the density and temperature of electrons.
+If `use_pyneb=True`, the line ratio needs to be given as input and 
+S<sup>3</sup>Fit use the fixed ratio in the fitting
+(except for [SII]6718/6733, which ratio is calculated from electron density using 
+the [Proxauf et al. (2014) equation](https://ui.adsabs.harvard.edu/abs/2014A%26A...561A..10P)
+). 
+
+If you want to remove a tying relation, just run:
+```python
+el_mod.release_pair('[O III]:4960')
+```
+Please remember to update the configuration of the emission line models as follows
+after adding or removing tying relations.
+```python
+el_mod.update_freemask()
+el_mod.update_lineratio()
+```
+> [!NOTE]
+> In order to utilize PyNeb to identify line transitions and to calculate the emissivities,
+> please use a naming format of `'Element Notation:Wavelength'` for permitted lines
+> or `'[Element Notation]:Wavelength'` for forbidden lines.
+> Wavelength can be given in angstrom or micron, e.g., `'H I:12820'` or `'H I:1.28um'` for Paschen $\beta$.
+> For Hydrogen recombination lines, you can also use short names, e.g., `'Pab'` for Paschen $\beta$.
+> The prefixes of short names of Lyman, Balmer, Paschen, and Brackett series are
+> `'Ly'`, `'H'`, `'Pa'`, and `'Br'`, respectively.
+> The suffixes of line transitions can be given as `'a'` ($\alpha$), `'b'` ($\beta$), `'g'` ($\gamma$), `'d'` ($\delta$),
+> and upper levels of transitions (e.g., `'H7'` for the transition from n=7 to n=2). 
+
+
 
 ## Support new types of models
 
