@@ -16,13 +16,36 @@ and remember to specify the new extinction law as the default one by modifying `
 
 ## Support new Star Formation History (SFH) functions
 
-If you would like to use a new SFH function, please navigete to the `sfh_factor()` function in `SSPModels` class in `s3fit.py`, 
-and append the new SFH function after the `'constant'` SFH.
-The time variable of SFH function is already defined as `evo_time`. 
-The parameters used for SFH starts from the 3rd parameter in the input `ssp_config` 
-(the 0th to 2nd parameters are used for velocity shift, FWHM, and extinction). 
+If you would like to use a new SFH function, you can just define the function 
+```python
+def sfh_user(time, sfh_pars):
+    t_peak = 10.0**sfh_pars[1]
+    tau = 10.0**sfh_pars[2]
+    return np.exp(-(time-t_peak)**2 / tau**2/2)
+```
+and add the name of the function into `ssp_config` by setting `'sfh_name'` to `'user'`.
+```python
+ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free'], 
+                                [0, 0.94, 'free'], [0, 0.94, 'free'], [-1, 1, 'free']], 
+                       'info': {'age_min': -2.25, 'age_max': 'universe', 'met_sel': 'solar', 'sfh_name': 'user', 'sfh_func': sfh_user} }, 
+              'young': {'pars': [[None, None, 'ssp:main:0'], [None, None, 'ssp:main:1'], [None, None, 'ssp:main:2'], 
+                                 [-2, -0.5, 'free'], [-2, -1.5, 'free'], [-2, -1, 'free']],
+                        'info': {'age_min': -2.25, 'age_max': 0, 'met_sel': 'solar', 'sfh_name': 'user', 'sfh_func': sfh_user} } }
+model_config['ssp'] = {'enable': True, 'config': ssp_config, 'file': ssp_file}
+```
+The example uses a Gaussian profile SFH for both of the main and young population (but with different parameter ranges).
+In the definition of SFH function, `time` is the evolutionary time from the begining of the component, i.e., 
+the age of the oldest single stellar population (SSP). 
+`sfh_pars` is the parameter list for a given SFH. 
+Note that `sfh_pars[0]` is always set as the age of the composite stellar population (CSP), 
+please use `sfh_pars[1:]` for other parameters. 
+In the above example, `sfh_pars[1]` is the peak time of the SFH, and `sfh_pars[2]` is the duration of the CSP. 
+The parameters used for SFH starts from the 3rd parameter in the input `ssp_config`, e.g., `ssp_config['main']['pars'][3:]`, 
+and the 0th to 2nd parameters are always used for velocity shift, FWHM, and extinction. 
 > [!IMPORTANT]
-> Please remember to confirm the number of the input parameters match the required one in the new SFH function.
+> Please remember to confirm the number of the input parameters match the required one in the new SFH function;
+> and make sure the multiple components have the same number of parameters, even if they use different SFH functions.
+> Just fix the parameter to an arbitrary value if it is not required to calculate the SFH. 
 
 ## Change to a different Single Stellar Population (SSP) library
 
