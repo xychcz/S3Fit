@@ -51,7 +51,7 @@ Note that if emisison line is the only fitting model (e.g., for continuum subtra
 ## Configure models
 ```python
 model_config = {'ssp': {'enable': True, 'config': ssp_config, 'file': ssp_file}, 
-                'el': {'enable': True, 'config': el_config},
+                'el': {'enable': True, 'config': el_config, 'use_pyneb': True},
                 'agn': {'enable': True, 'config': agn_config}, 
                 'torus': {'enable': True, 'config': torus_config, 'file': torus_file}}
 ```
@@ -81,7 +81,7 @@ An example of stellar continuum configuration:
 ```python
 ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free'], 
                                 [0, 0.94, 'free'], [-1, 1, 'free']], 
-                       'info': {'age_min': -2.25, 'age_max': 'universe', 'met_sel': 'solar', 'sfh': 'exponential'} } }
+                       'info': {'age_min': -2.25, 'age_max': 'universe', 'met_sel': 'solar', 'sfh_name': 'exponential'} } }
 ```
 In this example, one stellar component (e.g., one stellar population) is set up, which has the name `'main'`; the name can be set freely. 
 `'pars'` stores the setup for each parameter. 
@@ -100,7 +100,7 @@ Set `'age_max': 'universe'` to use the universe age in the input `v0_redshift`.
 `'solar'` to only use solar metallicity (Z = 0.002), 
 or any combination of values in a list, e.g., `[0.004,0.008]` or `[0.02,0.05]`. 
 
-`'sfh'` denotes the SFH used in this `'main'` component. 
+`'sfh_name'` denotes the SFH used in this `'main'` component. 
 Current version of S<sup>3</sup>Fit supports the following SFH functions:
 `'nonparametric'`, `'exponential'`, `'delayed'`, `'constant'`. 
 Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add a new SFH function. 
@@ -144,14 +144,14 @@ Please read the [example](../example/example.ipynb) for an example case.
 S<sup>3</sup>Fit supports combination of multiple emission line components. 
 An example of emission line configuration is shown as follows:
 ```python
-el_config = {'NLR': {'pars':       [[ -500,   500, 'free'], [250,  750, 'free'], [0, 5, 'free'], [0.5, 1.45, 'free']], 
+el_config = {'NLR': {'pars':       [[ -500,   500, 'free'], [250,  750, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
                      'info': {'line_used': ['all']}}, 
-             'outflow_1': {'pars': [[-2000,   100, 'free'], [750, 2500, 'free'], [0, 5, 'free'], [0.5, 1.45, 'free']], 
+             'outflow_1': {'pars': [[-2000,   100, 'free'], [750, 2500, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
                            'info': {'line_used': ['all']}}, 
-             'outflow_2': {'pars': [[-3000, -2000, 'free'], [750, 2500, 'free'], [0, 5, 'free'], [0.5, 1.45, 'free']], 
-                           'info': {'line_used': ['[OIII]a', '[OIII]b', '[NII]a', 'Ha', '[NII]b']}},
-             'BLR': {'pars':       [[ -500,   500, 'free'], [750, 9900, 'free'], [0, 5, 'free'], [0.5, 1.45, 'free']], 
-                     'info': {'line_used': ['Ha']}} }
+             'outflow_2': {'pars': [[-3000, -2000, 'free'], [750, 2500, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
+                           'info': {'line_used': ['[O III]:4960', '[O III]:5008', '[N II]:6550', 'Ha', '[N II]:6585'] }},
+             'BLR': {'pars':       [[ -500,   500, 'free'], [750, 9900, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [9, None, 'fix']], 
+                     'info': {'line_used': ['Ha'] }} }
 ```
 In this example, four components are used:
 narrow lines (`'NLR'`), the primary outflow component (`'outflow_1'`), 
@@ -161,28 +161,40 @@ and broad lines from AGN Broad-Line-Region (`'BLR'`).
 which means all available emission lines are used.
 For `'outflow_2'` and `'BLR'`, only the emission lines with names specified in `'line_used'` are used. 
 > [!TIP]
-> Please run `FF.model_dict['el']['specmod'].line_name_n` and `FF.model_dict['el']['specmod'].line_rest_n`
-to learn about the names and rest wavelengths of the available emission lines. 
+> Please run `FF.model_dict['el']['specmod'].linename_n` and `FF.model_dict['el']['specmod'].linerest_n`
+to learn about the names and rest wavelengths (in vacuum) of the available emission lines. 
 Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add new emission lines. 
 
 For a given emission line component (e.g., `'NLR'`), every line shares the same parameter values. 
-In the current version of S<sup>3</sup>Fit, there are four parameters for each component (from the left):
-velocity shift (km/s, in relative to the input `v0_redshift`), velocity FWHM (km/s), extinction (AV, from Hydrogen Balmer decrement), 
-and the flux ratio of [SII]6716/[SII]6731. 
-The flux ratio of  [SII]6716 and [SII]6731 is set as a free parameter since it is sensitive to electron density. 
-The lower and upper bounds of the ratio corresponds to electron density from 1e4 to 1 cm<sup>-3</sup>. 
-The flux ratio of other doublets, such as [OIII]4959 and [OIII]5007, are set to a fixed value (e.g., 0.335 for [OIII] doublets).
-Please run the following codes to learn about the tied lines and their flux ratios. 
+In the current version of S<sup>3</sup>Fit, there are five parameters for each component (from the left):
+velocity shift (km/s, in relative to the input `v0_redshift`), velocity FWHM (km/s), extinction (AV), 
+electron density (log cm<sup>-3</sup>) and electron temperature (log K). 
+The extinction, electron density and temperature are included to calculated the observed flux ratios of
+line transitions, for which the line fitting is affected by other factors, 
+such as the effect of absorption of stellar continuum on Hydrogen emission lines, 
+and the blurring of neighboring line doublets (e.g., broad components of [OIII]4960 and [OIII]5008 doublets). 
+
+If `model_config['el']['use_pyneb']` is set to `True`, 
+S<sup>3</sup>Fit can use [PyNeb](http://research.iac.es/proyecto/PyNeb/) 
+to calculate the intrinsic line ratios based on the given electron density and temperature. 
+Since the currently line ties are not sensitive to the electron temperature, 
+the temperature is fixed to a typical value of the ionized medium, $10^4$ K
+(for AGN BLR, a higher value of $10^9$ K is adopted in the above example). 
+If PyNeb is not enabled, S<sup>3</sup>Fit use fixed flux ratios for each line pairs, 
+which are calculated for an electron temperature of 10<sup>4</sup> K
+and an electron density of 100 cm<sup>-3</sup>
+(except for [SII]6718/6733, which ratio is calculated from electron density using 
+the [Proxauf et al. (2014) equation](https://ui.adsabs.harvard.edu/abs/2014A%26A...561A..10P)
+). 
+Please run the following codes to learn about the default tied lines and their flux ratios. 
 ```python
 el_mod = FF.model_dict['el']['specmod']
 for i_line in range(el_mod.num_lines):
-    if el_mod.linked_to_n[i_line] == -1: continue
-    if el_mod.linked_ratio_n[i_line] == -1: continue
-    i_ref = np.where(el_mod.line_rest_n == el_mod.linked_to_n[i_line])[0][0]
-    print(f'The flux of {el_mod.line_name_n[i_line]} {el_mod.line_rest_n[i_line]} is tied to {el_mod.line_name_n[i_ref]} {el_mod.line_rest_n[i_ref]} with a ratio of {el_mod.linked_ratio_n[i_line]}.')
+    if el_mod.lineratio_n[i_line] < 0: continue
+    i_ref = np.where(el_mod.linename_n == el_mod.linelink_n[i_line])[0][0]
+    print(f'The flux of {el_mod.linename_n[i_line]} {el_mod.linerest_n[i_line]} is tied to {el_mod.linename_n[i_ref]} {el_mod.linerest_n[i_ref]} with a ratio of {el_mod.lineratio_n[i_line]}.')
 ```
-All of the flux ratios are calculated with [PyNeb](http://research.iac.es/proyecto/PyNeb/) for an electron temperature of 10<sup>4</sup> K
-and an electron density of 100 cm<sup>-3</sup>.
+Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add or delete line tying relations. 
 
 #### AGN central continuum
 
