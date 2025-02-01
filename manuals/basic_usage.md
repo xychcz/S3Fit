@@ -188,11 +188,12 @@ the [Proxauf et al. (2014) equation](https://ui.adsabs.harvard.edu/abs/2014A%26A
 ). 
 Please run the following codes to learn about the default tied lines and their flux ratios. 
 ```python
-el_mod = FF.model_dict['el']['specmod']
+el_mod = copy(FF.model_dict['el']['specmod'])
+el_mod.update_lineratio()
 for i_line in range(el_mod.num_lines):
     if el_mod.lineratio_n[i_line] < 0: continue
     i_ref = np.where(el_mod.linename_n == el_mod.linelink_n[i_line])[0][0]
-    print(f'The flux of {el_mod.linename_n[i_line]} {el_mod.linerest_n[i_line]} is tied to {el_mod.linename_n[i_ref]} {el_mod.linerest_n[i_ref]} with a ratio of {el_mod.lineratio_n[i_line]}.')
+    print(f'The flux of {el_mod.linename_n[i_line]} is tied to {el_mod.linename_n[i_ref]} with a ratio of {el_mod.lineratio_n[i_line]:2.4f}.')
 ```
 Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add or delete line tying relations. 
 
