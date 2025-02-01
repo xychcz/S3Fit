@@ -30,10 +30,13 @@ An example of the usage of S<sup>3</sup>Fit is provided in the [example](example
 
 ## Dependency
 
-S<sup>3</sup>Fit only depends on several most widely utilized repositories for science calculation, `scipy`, `numpy`, and `astropy`. 
+S<sup>3</sup>Fit mainly depends on several most widely utilized repositories for science calculation, `scipy`, `numpy`, and `astropy`. 
 The core requirement of S<sup>3</sup>Fit is the two functions `least_squares` and `lsq_linear` in `scipy.optimize`
 (please read the [fitting strategy](manuals/fitting_strategy.md) for details). 
 A strong dependency of S<sup>3</sup>Fit on these repositories is not expected. 
+It is optional to run S<sup>3</sup>Fit with [PyNeb](http://research.iac.es/proyecto/PyNeb/), 
+which is used to calculate intrinsic flux ratios of emission lines.
+
 The test environment is list as follows. 
 ```
 python = 3.10
@@ -41,6 +44,7 @@ scipy = 1.12.0
 numpy = 1.26.4
 astropy = 6.0.0
 matplotlib = 3.9.1
+pyneb = 1.1.23 (optional)
 ```
 
 ## Future updating
