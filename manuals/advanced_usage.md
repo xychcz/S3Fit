@@ -51,7 +51,7 @@ and the 0th to 2nd parameters are always used for velocity shift, FWHM, and exti
 
 The current version of S<sup>3</sup>Fit uses the [HR-pyPopStar][PopSTAR_web] SSP library with an initial mass function (IMF) of Kroupa (2002). 
 If you tend to choose another IMF for HR-pyPopStar SSP library, please download the models from [the link](https://www.fractal-es.com/PopStar/#hr_py_download)
-and re-run the [converting code](../models/convert_popstar_ssp.py) to create the SSP models used for S<sup>3</sup>Fit. 
+and re-run the [converting code](../model_libraries/convert_popstar_ssp.py) to create the SSP models used for S<sup>3</sup>Fit. 
 
 [PopSTAR_web]: <https://www.fractal-es.com/PopStar/>
 
