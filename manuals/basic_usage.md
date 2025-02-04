@@ -231,7 +231,7 @@ torus_file = '../model_libraries/skirtor_for_s3fit.fits'
 S<sup>3</sup>Fit uses the [SKIRTor][SKIRTor_web] AGN torus model.
 Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](../model_libraries/convert_skirtor_torus.py) 
 to create the torus models used for S<sup>3</sup>Fit. 
-Example of this library is also provided in [models](../model_libraries/) for a test of S<sup>3</sup>Fit, 
+Example of this library is also provided in [model libraries](../model_libraries/) for a test of S<sup>3</sup>Fit, 
 which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
 Please refer to [SKIRTor][SKIRTor_web] website for details of the model parameters. 
 
