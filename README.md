@@ -18,24 +18,36 @@ the best-fit results for several tens of parameters and model components.
 
 ## Fitting strategy
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart, 
-with a detailed description of the [fitting strategy](manuals/fitting_strategy.md) in [manuals](manuals/). 
-<p align="center"> <img src="/manuals/Flowcharts.png" width="1200">
+with a detailed description of the [fitting strategy](https://github.com/xychcz/S3Fit/blob/main/manuals/fitting_strategy.md) in 
+[manuals](https://github.com/xychcz/S3Fit/blob/main/manuals/). 
+<p align="center"> <img src="https://github.com/user-attachments/assets/658a29b3-a2d8-470a-a08f-e4a045ef3ec3" width="1200">
 
 An example of the fitting result of S<sup>3</sup>Fit is shown in the following plots. 
 <p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600">
 
 ## Usage
-Please find guides in [manuals](manuals/) for [basic](manuals/basic_usage.md) and [advanced](manuals/advanced_usage.md) usages of this code. 
-An example of the usage of S<sup>3</sup>Fit is provided in the [example](example/example.ipynb). 
+Please find guides in [manuals](https://github.com/xychcz/S3Fit/blob/main/manuals/) 
+for [basic](https://github.com/xychcz/S3Fit/blob/main/manuals/basic_usage.md) 
+and [advanced](https://github.com/xychcz/S3Fit/blob/main/manuals/advanced_usage.md) usages of this code. 
+An example of the usage of S<sup>3</sup>Fit is provided in the 
+[example](https://github.com/xychcz/S3Fit/blob/main/example/example.ipynb). 
 
-## Dependency
+## Installation
 
+You can install S<sup>3</sup>Fit with pip:
+```
+pip install s3fit
+```
 S<sup>3</sup>Fit mainly depends on several most widely utilized repositories for science calculation, `scipy`, `numpy`, and `astropy`. 
 The core requirement of S<sup>3</sup>Fit is the two functions `least_squares` and `lsq_linear` in `scipy.optimize`
-(please read the [fitting strategy](manuals/fitting_strategy.md) for details). 
+(please read the 
+[fitting strategy](https://github.com/xychcz/S3Fit/blob/main/manuals/fitting_strategy.md) for details). 
 A strong dependency of S<sup>3</sup>Fit on these repositories is not expected. 
 It is optional to run S<sup>3</sup>Fit with [PyNeb](http://research.iac.es/proyecto/PyNeb/), 
-which is used to calculate intrinsic flux ratios of emission lines.
+which is used to calculate intrinsic flux ratios of emission lines:
+```
+pip install s3fit[pyneb]
+```
 
 The test environment is list as follows. 
 ```
@@ -48,7 +60,8 @@ pyneb = 1.1.23 (optional)
 ```
 
 ## Future updating
-- Add ISM dust and synchrotron models (you may also add them or other models by yourself following the [advanced usage](manuals/advanced_usage.md)) manual.
+- Add ISM dust and synchrotron models (you may also add them or other models by yourself following the
+  [advanced usage](https://github.com/xychcz/S3Fit/blob/main/manuals/advanced_usage.md)) manual.
 - Add iron pseudo continuum templates and Balmer continuum of type-1 AGN.
 - Test support for absorption lines. 
 
@@ -58,14 +71,17 @@ Please find details of the configuration of star formation history and kinematic
 
 ## Reference
 S<sup>3</sup>Fit uses the Single Stellar Population (SSP) library [HR-pyPopStar][2] ([paper][3]). 
-Please download the [HR-pyPopStar library][2] and run the [converting code](model_libraries/convert_popstar_ssp.py) 
+Please download the [HR-pyPopStar library][2] and run the 
+[converting code](https://github.com/xychcz/S3Fit/blob/main/model_libraries/convert_popstar_ssp.py) 
 to create the SSP models used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
 S<sup>3</sup>Fit uses the [SKIRTor][4] ([paper1][5], [paper2][6]) AGN torus model. 
-Please download the [SKIRTor library][4] and run the [converting code](model_libraries/convert_skirtor_torus.py) 
+Please download the [SKIRTor library][4] and run the 
+[converting code](https://github.com/xychcz/S3Fit/blob/main/model_libraries/convert_skirtor_torus.py) 
 to create the torus models used for S<sup>3</sup>Fit. 
-Example of this library is also provided in [model libraries](model_libraries/) for a test of S<sup>3</sup>Fit, 
+Example of this library is also provided in 
+[model libraries](https://github.com/xychcz/S3Fit/blob/main/model_libraries/) for a test of S<sup>3</sup>Fit, 
 which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
 Please refer to [SKIRTor][4] website for details of the model parameters. 
 
