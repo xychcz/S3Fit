@@ -2,9 +2,7 @@
 
 ## Initialize the main function
 ```python
-import sys
-sys.path.append(os.path.abspath("PATH_OF_THIS_CODE"))
-from s3fit.py import FitFrame
+from s3fit.fit_frame import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
               spec_valid_range=None, spec_R_inst=None, spec_flux_scale=None, 
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_fluxunit='mJy', 
@@ -148,9 +146,9 @@ el_config = {'NLR': {'pars':       [[ -500,   500, 'free'], [250,  750, 'free'],
                      'info': {'line_used': ['all']}}, 
              'outflow_1': {'pars': [[-2000,   100, 'free'], [750, 2500, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
                            'info': {'line_used': ['all']}}, 
-             'outflow_2': {'pars': [[-3000, -2000, 'free'], [750, 2500, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
+             'outflow_2': {'pars': [[-3000, -2000, 'free'], [750, 2500, 'free'], [0, None, 'fix'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
                            'info': {'line_used': ['[O III]:4960', '[O III]:5008', '[N II]:6550', 'Ha', '[N II]:6585'] }},
-             'BLR': {'pars':       [[ -500,   500, 'free'], [750, 9900, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [9, None, 'fix']], 
+             'BLR': {'pars':       [[ -500,   500, 'free'], [750, 9900, 'free'], [0, None, 'fix'], [1.3, 4.3, 'free'], [9, None, 'fix']], 
                      'info': {'line_used': ['Ha'] }} }
 ```
 In this example, four components are used:
@@ -173,6 +171,9 @@ The extinction, electron density and temperature are included to calculated the 
 line transitions, for which the line fitting is affected by other factors, 
 such as the effect of absorption of stellar continuum on Hydrogen emission lines, 
 and the blurring of neighboring line doublets (e.g., broad components of [OIII]4960 and [OIII]5008 doublets). 
+> [!TIP]
+> In the above example, the extinction for `'outflow_2'` and `'BLR'` is set to a arbitrarily fixed value `[0, None, 'fix']`
+> since only Hα is used among Balmer lines for those components. 
 
 If `model_config['el']['use_pyneb']` is set to `True`, 
 S<sup>3</sup>Fit can use [PyNeb](http://research.iac.es/proyecto/PyNeb/) 
