@@ -10,8 +10,8 @@ and then the new band can be used in S<sup>3</sup>Fit.
 ## Switch extinction laws
 
 The default extinction law of S<sup>3</sup>Fit is [Calzetti00](http://www.bo.astro.it/~micol/Hyperz/old_public_v1/hyperz_manual1/node10.html).
-If you would like to use another extinction law, please navigate to the `Extinction Functions` section of the S<sup>3</sup>Fit, 
-define the the new extinction function that output $A_\lambda/A_V$, 
+If you would like to use another extinction law, please 
+add the extinction function that output $A_\lambda/A_V$ into `s3fit/extinct_law.py`, 
 and remember to specify the new extinction law as the default one by modifying `ExtLaw = ExtLaw_NEW`. 
 
 ## Support new Star Formation History (SFH) functions
@@ -55,7 +55,7 @@ and re-run the [converting code](../model_libraries/convert_popstar_ssp.py) to c
 
 [PopSTAR_web]: <https://www.fractal-es.com/PopStar/>
 
-If you would like to utilize a different SSP library, you can modify the `read_ssp_library()` function in the `SSPModels` class.
+If you would like to utilize a different SSP library, you can modify the `read_ssp_library()` function in the `SSPModels` class (`s3fit/model_frames/ssp_frame.py`).
 In order to utilize the auxiliary functions in S<sup>3</sup>Fit, please ensure the new SSP model library has a three-dimentional shape, 
 e.g., `orig_flux_zaw[i_z,i_a,i_w]` to represent the flux at the `i_w`-th wavelength value for the model
 with the `i_z`-th metallicity and `i_a`-th age. 
@@ -129,10 +129,11 @@ el_mod.update_lineratio()
 Please follow these steps to add a new model into S<sup>3</sup>Fit. 
 
 #### Create a new ModelFrame
+In the first step, please create a `ModelFrame` class for the new model and save it in `s3fit/model_frames/newmodel_frame.py`. 
 `ModelFrame` is the class to handle the model templates and to return the reduced model spectra back to the main fitting functions. 
 The following block shows a rough structure for a new model.
 ```python
-class NewModels(object):
+class NewModelFrame(object):
     def __init__(self, filename=None, cframe=None, v0_redshift=None, spec_R_inst=None):
         self.filename = filename
         self.cframe = cframe
@@ -237,22 +238,23 @@ Please also remember to update the total `model_config` with:
 ```python
 model_config['new'] = {'enable': True, 'config': new_config, 'file': new_file}
 ```
-`'file'` is not required if the new model does not need an input template, e.g., AGN powerlaw continuum and emission lines. 
+`'file'` is not required if the new model does not need an input template, e.g., Blackbody template, AGN powerlaw continuum or emission line profiless. 
 
 #### Initial the new model in FitFrame
 
-The models are initialized in `FitFrame` (the main fitting class) with the `load_models()` function. 
-Please add the following coding block into the `load_models()` function with the `NewModels` class defined above. 
+The models are initialized in `FitFrame` (the main fitting class, in `s3fit/fit_frame.py`) with the `load_models()` function. 
+Please add the following coding block into the `load_models()` function with the `NewModelFrame` class defined above. 
 ```python
 mod = 'new'
 if np.isin(mod, [*model_config]):
     if model_config[mod]['enable']: 
         self.full_model_type += mod + '+'
         self.model_dict[mod] = {'cf': ConfigFrame(model_config[mod]['config'])}
-        self.model_dict[mod]['specmod'] = NewModels(filename=model_config[mod]['file'], w_min=self.spec_wmin, w_max=self.spec_wmax, 
+        from .model_frames.newmodel_frame import NewModelFrame
+        self.model_dict[mod]['specmod'] = NewModelFrame(filename=model_config[mod]['file'], w_min=self.spec_wmin, w_max=self.spec_wmax, 
                                                     cframe=self.model_dict[mod]['cf'], v0_redshift=self.v0_redshift, spec_R_inst=self.spec_R_inst) 
         if self.have_phot:
-            self.model_dict[mod]['sedmod'] = NewModels(filename=model_config[mod]['file'], w_min=self.sed_wmin, w_max=self.sed_wmax, 
+            self.model_dict[mod]['sedmod'] = NewModelFrame(filename=model_config[mod]['file'], w_min=self.sed_wmin, w_max=self.sed_wmax, 
                                                        cframe=self.model_dict[mod]['cf'], v0_redshift=self.v0_redshift, spec_R_inst=self.spec_R_inst) 
 ```
 
@@ -266,33 +268,32 @@ FF.main_fit()
 
 The best-fit results for the new model can be obtained from the following code block. 
 ```python
-self = FF
-n_loops = self.num_mock_loops
-new_mod, new_cf = self.model_dict['new']['specmod'], self.model_dict['new']['cf']
+n_loops = FF.num_mock_loops
+new_mod, new_cf = FF.model_dict['new']['specmod'], FF.model_dict['new']['cf']
 num_new_comps = new_cf.num_comps
 num_new_pars = new_cf.num_pars
 num_new_coeffs = int(new_mod.num_coeffs / num_new_comps)
-fx0, fx1, fc0, fc1 = self.model_index('new', self.full_model_type)
-new_x_lcp = self.best_fits_x[:, fx0:fx1].reshape(n_loops, num_new_comps, num_new_pars)
-new_coeff_lcm = self.best_coeffs[:, fc0:fc1].reshape(n_loops, num_new_comps, num_new_coeffs)
+fx0, fx1, fc0, fc1 = FF.model_index('new', FF.full_model_type)
+new_x_lcp = FF.best_fits_x[:, fx0:fx1].reshape(n_loops, num_new_comps, num_new_pars)
+new_coeff_lcm = FF.best_coeffs[:, fc0:fc1].reshape(n_loops, num_new_comps, num_new_coeffs)
 ```
 In the results, `new_x_lcp[i_l, i_c, i_p]` denotes the best-fit value of the `i_p`-th parameter of the `i_c`-th components for the `i_l`-th mocked spectra.
 The names of the `i_p`-th parameter follow the order set in the `new_config`. 
 
 `new_coeff_lcm[i_l, i_c, i_m]` denotes the best-fit normalization factor of the `i_m`-th model of the `i_c`-th components for the `i_l`-th mocked spectra.
-The meanning and unit of `new_coeff_lcm` depends on the normalization in `models_unitnorm_original()` function in the `NewModels` class. 
+The meanning and unit of `new_coeff_lcm` depends on the normalization in `models_unitnorm_original()` function in the `NewModelFrame` class. 
 For example, if the intrinsic model spectra are normalized to unit flux at rest 5500 angstrom in `models_unitnorm_original()`, 
 the value of `new_coeff_lcm[i_l, i_c, i_m]` is the the best-fit intrinsic flux at rest 5500 angstrom
 of the `i_m`-th model of the `i_c`-th components for the `i_l`-th mocked spectra.
 The intrinsic flux can be converted to intrinsic luminosity by multiplying `unitconv`, where `unitconv` is calculated as:
 ```python
-dist_lum = cosmo.luminosity_distance(self.v0_redshift).to('cm').value
-unitconv = 4*np.pi*dist_lum**2 / const.L_sun.to('erg/s').value * self.spec_flux_scale 
+dist_lum = cosmo.luminosity_distance(FF.v0_redshift).to('cm').value
+unitconv = 4*np.pi*dist_lum**2 / const.L_sun.to('erg/s').value * FF.spec_flux_scale 
 ```
 
 The best-fit total model spectrum `new_spec_w` of the `i_c`-th components for the `i_l`-th mocked spectra can be obtained with the following code block:
 ```python
-new_spec_mw = self.model_dict['new']['specfunc'](self.spec['wave_w'], self.best_fits_x[i_l, fx0:fx1])
+new_spec_mw = FF.model_dict['new']['specfunc'](FF.spec['wave_w'], FF.best_fits_x[i_l, fx0:fx1])
 new_spec_cmw = new_spec_mw.reshape(num_new_comps, num_new_coeffs, new_spec_mw.shape[1])
 new_spec_w = np.dot(new_coeff_lcm[i_l,i_c], new_spec_cmw[i_c])
 ```
