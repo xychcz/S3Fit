@@ -71,7 +71,7 @@ The detailed set up of each model are described as follows.
 ssp_file = 'DIRECTORY/popstar_for_s3fit.fits'
 ```
 Current version of S<sup>3</sup>Fit use the [HR-pyPopStar][2] Single Stellar Population (SSP) model library. 
-Please run the [converting code](../models/convert_popstar_ssp.py) to convert the original HR-pyPopStar models to the format used for S<sup>3</sup>Fit. 
+Please run the [converting code](../model_libraries/convert_popstar_ssp.py) to convert the original HR-pyPopStar models to the format used for S<sup>3</sup>Fit. 
 You may also want to download an example of the converted SSP model for test in [this link][7].
 
 [2]: <https://www.fractal-es.com/PopStar/>
@@ -226,12 +226,12 @@ In order to reduce the degeneracy between extinction and the spectral index, in 
 #### AGN dusty torus
 
 ```python
-torus_file = '../models/skirtor_for_s3fit.fits'
+torus_file = '../model_libraries/skirtor_for_s3fit.fits'
 ```
 S<sup>3</sup>Fit uses the [SKIRTor][SKIRTor_web] AGN torus model.
-Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](../models/convert_skirtor_torus.py) 
+Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](../model_libraries/convert_skirtor_torus.py) 
 to create the torus models used for S<sup>3</sup>Fit. 
-Example of this library is also provided in [models](../models/) for a test of S<sup>3</sup>Fit, 
+Example of this library is also provided in [models](../model_libraries/) for a test of S<sup>3</sup>Fit, 
 which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
 Please refer to [SKIRTor][SKIRTor_web] website for details of the model parameters. 
 
