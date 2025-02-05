@@ -61,7 +61,7 @@ pyneb = 1.1.23 (optional)
 
 ## Future updating
 - Add ISM dust and synchrotron models (you may also add them or other models by yourself following the
-  [advanced usage](https://github.com/xychcz/S3Fit/blob/main/manuals/advanced_usage.md)) manual.
+  [advanced usage](https://github.com/xychcz/S3Fit/blob/main/manuals/advanced_usage.md) manual).
 - Add iron pseudo continuum templates and Balmer continuum of type-1 AGN.
 - Test support for absorption lines. 
 
