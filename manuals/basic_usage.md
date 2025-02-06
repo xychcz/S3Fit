@@ -2,7 +2,7 @@
 
 ## Initialize the main function
 ```python
-from s3fit.fit_frame import FitFrame
+from s3fit import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
               spec_valid_range=None, spec_R_inst=None, spec_flux_scale=None, 
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_fluxunit='mJy', 
