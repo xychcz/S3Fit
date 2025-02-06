@@ -70,6 +70,11 @@ class FitFrame(object):
 
         # fitting grid, can be 'linear' or 'log'; for pure-el fit only 'linear' is used
         self.fit_grid = fit_grid
+        if self.fit_grid == 'log':
+            for name in ['flux_w', 'ferr_w']:
+                if (self.spec[name][self.spec['mask_valid_w']] <= 0).sum() > 0:
+                    raise ValueError((f"The input spec_{name} has non-positive values, "+
+                                      f"please mask out them use spec_valid_range, or change fit_grid to 'linear'."))
 
         # format to save fitting results
         self.fit_raw = fit_raw
