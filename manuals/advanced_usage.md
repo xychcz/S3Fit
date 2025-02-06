@@ -287,6 +287,7 @@ the value of `new_coeff_lcm[i_l, i_c, i_m]` is the the best-fit intrinsic flux a
 of the `i_m`-th model of the `i_c`-th components for the `i_l`-th mocked spectra.
 The intrinsic flux can be converted to intrinsic luminosity by multiplying `unitconv`, where `unitconv` is calculated as:
 ```python
+from astropy.cosmology import WMAP9 as cosmo
 dist_lum = cosmo.luminosity_distance(FF.v0_redshift).to('cm').value
 unitconv = 4*np.pi*dist_lum**2 / const.L_sun.to('erg/s').value * FF.spec_flux_scale 
 ```
