@@ -77,8 +77,11 @@ You may also want to download an example of the converted SSP model for test in 
 
 An example of stellar continuum configuration:
 ```python
-ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free'], 
-                                [0, 0.94, 'free'], [-1, 1, 'free']], 
+ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], # velocity shift (km/s)
+                                [100, 1200, 'free'], # velocity FWHM (km/s)
+                                [0, 5.0, 'free'], # extinction (AV)
+                                [0, 0.94, 'free'], # CSP age (log Gyr)
+                                [-1, 1, 'free']], # declining timescale of SFH (log Gyr)
                        'info': {'age_min': -2.25, 'age_max': 'universe', 'met_sel': 'solar', 'sfh_name': 'exponential'} } }
 ```
 In this example, one stellar component (e.g., one stellar population) is set up, which has the name `'main'`; the name can be set freely. 
@@ -134,21 +137,41 @@ set it to any value with `'fix'` to save a free parameter.
 > since all stellar components need to have the same number of parameters. 
 
 > [!TIP]
-> The best-fit reconstructed SFH of each component can be plotted or output by running `FF.reconstruct_sfh()`. 
-Please read the [example](../example/example.ipynb) for an example case. 
+> The best-fit reconstructed SFH of each component can be plotted or output
+> by running
+> ```python
+> FF.model_dict['ssp']['specmod'].reconstruct_sfh()
+> ```
+> Please read the [example](../example/example.ipynb) for an example case. 
 
 #### Emission lines
 
 S<sup>3</sup>Fit supports combination of multiple emission line components. 
 An example of emission line configuration is shown as follows:
 ```python
-el_config = {'NLR': {'pars':       [[ -500,   500, 'free'], [250,  750, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
+el_config = {'NLR': {'pars': [[-500, 500, 'free'], # velocity shift (km/s)
+                              [ 250, 750, 'free'], # velocity FWHM (km/s)
+                              [0, 5, 'free'], # extinction (AV)
+                              [1.3, 4.3, 'free'], # electron density (log cm-3)
+                              [4, None, 'fix']], # electron temperature (log K)
                      'info': {'line_used': ['all']}}, 
-             'outflow_1': {'pars': [[-2000,   100, 'free'], [750, 2500, 'free'], [0, 5, 'free'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
+             'outflow_1': {'pars': [[-2000,  100, 'free'], # velocity shift (km/s)
+                                    [  750, 2500, 'free'], # velocity FWHM (km/s)
+                                    [0, 5, 'free'], # extinction (AV)
+                                    [1.3, 4.3, 'free'], # electron density (log cm-3)
+                                    [4, None, 'fix']], # electron temperature (log K)
                            'info': {'line_used': ['all']}}, 
-             'outflow_2': {'pars': [[-3000, -2000, 'free'], [750, 2500, 'free'], [0, None, 'fix'], [1.3, 4.3, 'free'], [4, None, 'fix']], 
+             'outflow_2': {'pars': [[-3000, -2000, 'free'], # velocity shift (km/s)
+                                    [  750,  2500, 'free'], # velocity FWHM (km/s)
+                                    [0, None, 'fix'], # extinction (AV)
+                                    [2, None, 'fix'], # electron density (log cm-3)
+                                    [4, None, 'fix']], # electron temperature (log K)
                            'info': {'line_used': ['[O III]:4960', '[O III]:5008', '[N II]:6550', 'Ha', '[N II]:6585'] }},
-             'BLR': {'pars':       [[ -500,   500, 'free'], [750, 9900, 'free'], [0, None, 'fix'], [1.3, 4.3, 'free'], [9, None, 'fix']], 
+             'BLR': {'pars': [[ -500,  500, 'free'], # velocity shift (km/s)
+                              [  750, 9900, 'free'], # velocity FWHM (km/s)
+                              [0, None, 'fix'], # extinction (AV)
+                              [2, None, 'fix'], # electron density (log cm-3)
+                              [9, None, 'fix']], # electron temperature (log K)
                      'info': {'line_used': ['Ha'] }} }
 ```
 In this example, four components are used:
@@ -173,7 +196,9 @@ such as the effect of absorption of stellar continuum on Hydrogen emission lines
 and the blurring of neighboring line doublets (e.g., broad components of [OIII]4960 and [OIII]5008 doublets). 
 > [!TIP]
 > In the above example, the extinction for `'outflow_2'` and `'BLR'` is set to a arbitrarily fixed value `[0, None, 'fix']`
-> since only Hα is used among Balmer lines for those components. 
+> since only Hα is used among Balmer lines for those components.
+> The electron density is also fixed to a typical value, 10<sup>2</sup> cm<sup>-3</sup>,
+> since the flux ratios of used lines are not sensitive to electron density. 
 
 If `model_config['el']['use_pyneb']` is set to `True`, 
 S<sup>3</sup>Fit can use [PyNeb](http://research.iac.es/proyecto/PyNeb/) 
@@ -189,10 +214,10 @@ the [Proxauf et al. (2014) equation](https://ui.adsabs.harvard.edu/abs/2014A%26A
 ). 
 Please run the following codes to learn about the default tied lines and their flux ratios. 
 ```python
-el_mod = copy(FF.model_dict['el']['specmod'])
+el_mod = FF.model_dict['el']['specmod']
 el_mod.update_lineratio()
 for i_line in range(el_mod.num_lines):
-    if el_mod.lineratio_n[i_line] < 0: continue
+    if el_mod.lineratio_n[i_line] < 0: continue # i.e., skip lines witha free flux normalization
     i_ref = np.where(el_mod.linename_n == el_mod.linelink_n[i_line])[0][0]
     print(f'The flux of {el_mod.linename_n[i_line]} is tied to {el_mod.linename_n[i_ref]} with a ratio of {el_mod.lineratio_n[i_line]:2.4f}.')
 ```
@@ -207,7 +232,10 @@ Other modules of AGN central radiation in UV/optical range, e.g., iron pseudo co
 will be supported in future versions. 
 
 ```python
-agn_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], [0, 0, 'fix'], [1.5, 10.0, 'free'], [-1.7, None, 'fix']],
+agn_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], # velocity shift (km/s)
+                                [0, 0, 'fix'], # velocity FWHM (km/s)
+                                [1.5, 10.0, 'free'], # extinction (AV)
+                                [-1.7, None, 'fix']], # spectral index of powerlaw
                        'info': {'mod_used': ['powerlaw']} } }
 ```
 An example of the powerlaw component is shown as above. 
@@ -220,7 +248,7 @@ or the `0`-th parameter of the `'main'` component of the `'ssp'` model when the 
 (e.g., in several intermediate fitting steps with only continuum models, see [fitting strategy](../manuals/fitting_strategy.md) for details).
 Similarly, the velocity FWHM is also not applicable with only powerlaw model, 
 and thus fixed arbitrarily to save a free parameter. 
-Both of velocity shift and FWHM will be determined when the iron pseudo continuum model is supported. 
+Both of velocity shift and FWHM could be determined independently when the iron pseudo continuum model is supported. 
 
 In order to reduce the degeneracy between extinction and the spectral index, in this example the later is fixed to -1.7. 
 
@@ -240,12 +268,19 @@ Please refer to [SKIRTor][SKIRTor_web] website for details of the model paramete
 
 An example of the configuration of torus model is given as follows:
 ```python
-torus_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], [3, 11, 'free'], [10, 80, 'free'], [10, 30, 'free'], [0, 90, 'free']],
+torus_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], # velocity shift (km/s)
+                                  [3, 11, 'free'], # optical depth at 9.7 micron 
+                                  [10, 80, 'free'], # half-opening angle (degree) of torus
+                                  [10, 30, 'free'], # ratio of outer to inner radius
+                                  [0, 90, 'free']], # inclination angle (degree) from the polar direction
                          'info': {'mod_used': ['dust']} } } 
 ```
-The listed parameters are velocity shift (km/s, in relative to the input `v0_redshift`), 
-half-opening angle (degree) of the dusty torus, ratio of outer to inner radius, 
-and the inclination angle (degree) from the polar direction. 
+The listed parameters are 
+velocity shift (km/s, in relative to the input `v0_redshift`), 
+optical depth at 9.7 micron, 
+half-opening angle (degree) of the dusty torus, 
+ratio of outer to inner radius, 
+and inclination angle (degree) from the polar direction. 
 Similar to the case of AGN powerlaw component, 
 the velocity shift of the torus component is also tied to those of emission line or stellar continuum. 
 The `'mod_used'` can be set to `['dust']` to use the pure torus module, 
