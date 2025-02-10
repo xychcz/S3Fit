@@ -1,20 +1,26 @@
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a <ins>**S**</ins>imultaneous <ins>**S**</ins>pectrum and photometric-<ins>**S**</ins>ED <ins>**Fit**</ins>ting code for observation of galaxies
 
-S<sup>3</sup>Fit is a python code for the analysis of observational data of extragalaxies, which can fit spectrum and multi-band photometric Spectral Energy Distribution (SED) simultaneously. It is written to improve the moderate constraints on properties of continuum models in a pure spectral fitting due to the limited wavelength coverage. 
-S<sup>3</sup>Fit support multiple models with multiple components, 
-and can handle complex systems with a mixed contribution of Active Galactic Nucleus (AGN) and its host galaxy
-in both of continua and emission lines (e.g., narrow lines and broad outflow lines). 
-The fitting strategy is optimized to enable an efficient solution of 
-the best-fit results for several tens of parameters and model components. 
+S<sup>3</sup>Fit is a Python-based tool for analyzing observational data of galaxies.
+It offers powerful capabilities for decomposing spectroscopic data 
+by supporting multiple continuum and emission line models with multiple components, 
+making it well-suited for complex systems with mixed contributions 
+from Active Galactic Nuclei (AGNs) and their host galaxies.
+By simultaneously fitting the spectrum and multi-band photometric Spectral Energy Distribution (SED), 
+S<sup>3</sup>Fit improves constraints on continuum model properties, 
+which may be poorly determined when fitting spectral data alone due to its limited wavelength coverage.
+With an optimized fitting strategy, 
+S<sup>3</sup>Fit efficiently derives the best-fit solution for dozens of model parameters. 
+Additionally, it provides an extensible and user-friendly framework, 
+allowing users to modify model configurations and incorporate new model components as needed.
 
 ## Features of S<sup>3</sup>Fit
-- Easy switch between pure spectral fitting and spectrum+SED joint fitting modes. 
+- Easy switch between pure spectral fitting and joint spectrum+SED fitting modes.
 - Support for flexible combination of multiple stellar populations with different star formation histories (SFH). 
 - Support for flexible combination of multiple emission line components.
-- Support for AGN continuum models in the UV/optical and IR wavelength range. 
-- User-friendly functions to output and plot the fitting results. 
-- High extensibility for adding new functions and components by users (e.g., new band filters, new SFH functions, new emission lines, and also new types of models). 
+- Support for AGN continuum models across UV/optical and IR wavelength ranges.
+- User-friendly functions for outputting and visualizing fitting results.
+- Highly extensible framework, allowing users to add new features such as new SFH functions, emission lines, and custom model types.
 
 ## Fitting strategy
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart, 
@@ -34,7 +40,7 @@ An example of the usage of S<sup>3</sup>Fit is provided in the
 
 ## Installation
 
-You can install S<sup>3</sup>Fit with pip:
+You can install S<sup>3</sup>Fit with [pip](https://pypi.org/project/s3fit/):
 ```
 pip install s3fit
 ```
