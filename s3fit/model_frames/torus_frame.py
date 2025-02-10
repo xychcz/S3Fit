@@ -201,15 +201,15 @@ class TorusFrame(object):
             print(f'Best-fit properties of torus component: <{self.cframe.comp_c[i_comp]}>')
             # msg  = f'| Voff (km/s)           = {self.output_torus_vals["mean"][1]:10.4f}'
             # msg += f' +/- {self.output_torus_vals["rms"][1]:0.4f}\n'
-            msg  = f'| Opacity               = {self.output_torus_vals["mean"][i_comp,2]:10.4f}'
+            msg  = f'| Optical depth at 9.7 um = {self.output_torus_vals["mean"][i_comp,2]:10.4f}'
             msg += f' +/- {self.output_torus_vals["rms"][i_comp,2]:0.4f}\n'
-            msg += f'| Out/in radii ratio    = {self.output_torus_vals["mean"][i_comp,4]:10.4f}'
+            msg += f'| Out/in radii ratio      = {self.output_torus_vals["mean"][i_comp,4]:10.4f}'
             msg += f' +/- {self.output_torus_vals["rms"][i_comp,4]:0.4f}\n'
-            msg += f'| Half OpenAng (degree) = {self.output_torus_vals["mean"][i_comp,3]:10.4f}'
+            msg += f'| Half OpenAng (degree)   = {self.output_torus_vals["mean"][i_comp,3]:10.4f}'
             msg += f' +/- {self.output_torus_vals["rms"][i_comp,3]:0.4f}\n'
-            msg += f'| Inclination (degree)  = {self.output_torus_vals["mean"][i_comp,5]:10.4f}'
+            msg += f'| Inclination (degree)    = {self.output_torus_vals["mean"][i_comp,5]:10.4f}'
             msg += f' +/- {self.output_torus_vals["rms"][i_comp,5]:0.4f}\n'
-            msg += f'| Torus Lum (1e12 Lsun) = {self.output_torus_vals["mean"][i_comp,6]:10.4f}'
+            msg += f'| Torus Lum (1e12 Lsun)   = {self.output_torus_vals["mean"][i_comp,6]:10.4f}'
             msg += f' +/- {self.output_torus_vals["rms"][i_comp,6]:0.4f}'
             bar = '='*50
             print(bar)
