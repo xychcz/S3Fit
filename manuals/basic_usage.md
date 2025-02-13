@@ -170,8 +170,8 @@ el_config = {'NLR': {'pars': [[-500, 500, 'free'], # velocity shift (km/s)
              'BLR': {'pars': [[ -500,  500, 'free'], # velocity shift (km/s)
                               [  750, 9900, 'free'], # velocity FWHM (km/s)
                               [0, None, 'fix'], # extinction (AV)
-                              [2, None, 'fix'], # electron density (log cm-3)
-                              [9, None, 'fix']], # electron temperature (log K)
+                              [9, None, 'fix'], # electron density (log cm-3)
+                              [4, None, 'fix']], # electron temperature (log K)
                      'info': {'line_used': ['Ha'] }} }
 ```
 In this example, four components are used:
@@ -197,18 +197,18 @@ and the blurring of neighboring line doublets (e.g., broad components of [OIII]4
 > [!TIP]
 > In the above example, the extinction for `'outflow_2'` and `'BLR'` is set to a arbitrarily fixed value `[0, None, 'fix']`
 > since only Hα is used among Balmer lines for those components.
-> The electron density is also fixed to a typical value, 10<sup>2</sup> cm<sup>-3</sup>,
+> The electron density is also fixed to typical values,
+> i.e., 10<sup>2</sup> cm<sup>-3</sup> for outflow and 10<sup>9</sup> cm<sup>-3</sup> for AGN BLR,
 > since the flux ratios of used lines are not sensitive to electron density. 
 
 If `model_config['el']['use_pyneb']` is set to `True`, 
 S<sup>3</sup>Fit can use [PyNeb](http://research.iac.es/proyecto/PyNeb/) 
 to calculate the intrinsic line ratios based on the given electron density and temperature. 
 Since the currently line ties are not sensitive to the electron temperature, 
-the temperature is fixed to a typical value of the ionized medium, $10^4$ K
-(for AGN BLR, a higher value of $10^9$ K is adopted in the above example). 
+the temperature is fixed to a typical value of the ionized medium, $10^4$ K. 
 If PyNeb is not enabled, S<sup>3</sup>Fit use fixed flux ratios for each line pairs, 
 which are calculated for an electron temperature of 10<sup>4</sup> K
-and an electron density of 100 cm<sup>-3</sup>
+and an electron density of 10<sup>2</sup> cm<sup>-3</sup>
 (except for [SII]6718/6733, which ratio is calculated from electron density using 
 the [Proxauf et al. (2014) equation](https://ui.adsabs.harvard.edu/abs/2014A%26A...561A..10P)
 ). 
