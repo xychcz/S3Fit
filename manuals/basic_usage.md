@@ -44,19 +44,19 @@ i.e., to calculate $\chi^2$ values and to search for the best-fit by minimizing 
 (please refer to [fitting strategy](./fitting_strategy.md) for details). \
 `multinst_reverr_mock`: If set to `True` then the revised errors are also used to create mocked spectra for estimation of parameter uncentainties. 
 Default is `False`, i.e., mocked spectra are generated with original measurement errors. \
-`fit_grid`: Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, and the reduced $\chi^2$ value is calculated as:
-```math
-\large
-\chi_{\nu}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \left(\frac{m_i}{d_i}-1 \right) \right]^2}
-```
+`fit_grid`: Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
 Set `fit_grid='log'` to run the fitting in logarithmic flux grid. 
+The reduced $\chi^2$ value is calculated as follows in the two cases,
 ```math
 \large
-\chi_{\nu}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \ln{ \left(\frac{m_i}{d_i} \right) } \right]^2}
+\chi_{\nu,\mathrm{linear}}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \left(\frac{m_i}{d_i}-1 \right) \right]^2}, \ \ \ \ \ \ 
+\chi_{\nu,\mathrm{log}}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \ln{ \left(\frac{m_i}{d_i} \right) } \right]^2},
 ```
-Note that if emisison line is the only fitting model (e.g., for continuum subtracted data spectrum), `fit_grid` is always set to `'linear'`.\
-`max_fit_ntry`=3, \
-`accept_chi_sq`=5,
+where $d_i$ and $m_i$ are the data and model fluxes in the $i$-th wavelength;
+$e_i$ is the error of flux; $w_i$ is the weight to account for the data resampling and degree of freedom
+(please refer to [fitting strategy](./fitting_strategy.md) for details). 
+Note that if emisison line is the only fitting model (e.g., for continuum subtracted data spectrum), `fit_grid` is always set to `'linear'`.
+<!-- `max_fit_ntry`=3 `accept_chi_sq`=5 -->
 #### Auxiliary
 `plot_step`: Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. \
 `print_step`: Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`. \
