@@ -8,7 +8,8 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None,
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_fluxunit='mJy', 
               sed_wave_w=None, sed_waveunit='angstrom', 
               v0_redshift=None, model_config=None, 
-              num_mock_loops=0, fit_raw=True, fit_grid='linear', 
+              num_mock_loops=0, fit_raw=True, multinst_reverr_ratio=0.1, multinst_reverr_mock=False, 
+              fit_grid='linear', max_fit_ntry=3, accept_chi_sq=5,
               plot_step=False, print_step=True, verbose=False)
 ```
 #### Spectral data
@@ -37,8 +38,25 @@ Note that `sed_wave_w` is not mandatory; if it is not set, the code can create t
 #### Fitting setup
 `num_mock_loops`: Number of the mocked spectra, which is used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only fit the raw data. \
 `fit_raw`: Whether or not to fit the raw data. Default is `True`. If set to `False`, the code only output results for the mocked spectra. \
-`fit_grid`: Set `fit_grid='linear'` (default) to run the fitting in linear flux grid. Set `fit_grid='log'` to run the fitting in logarithmic flux grid. 
-Note that if emisison line is the only fitting model (e.g., for continuum subtracted data spectrum), `fit_grid` is always set to `'linear'`.
+`multinst_reverr_ratio`: The ratio to scale the original error to account calibration uncertainties across multiple instruments. 
+Default is `0.1`, i.e., revised errors by adding 10% of the corresponding fluxes are used in the fitting, 
+i.e., to calculate $\chi^2$ values and to search for the best-fit by minimizing $\chi^2$ values 
+(please refer to [fitting strategy](./fitting_strategy.md) for details). \
+`multinst_reverr_mock`: If set to `True` then the revised errors are also used to create mocked spectra for estimation of parameter uncentainties. 
+Default is `False`, i.e., mocked spectra are generated with original measurement errors. \
+`fit_grid`: Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, and the reduced $\chi^2$ value is calculated as:
+```math
+\large
+\chi_{\nu}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \left(\frac{m_i}{d_i}-1 \right) \right]^2}
+```
+Set `fit_grid='log'` to run the fitting in logarithmic flux grid. 
+```math
+\large
+\chi_{\nu}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \ln{ \left(\frac{m_i}{d_i} \right) } \right]^2}
+```
+Note that if emisison line is the only fitting model (e.g., for continuum subtracted data spectrum), `fit_grid` is always set to `'linear'`.\
+`max_fit_ntry`=3, \
+`accept_chi_sq`=5,
 #### Auxiliary
 `plot_step`: Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. \
 `print_step`: Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`. \
