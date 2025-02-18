@@ -313,5 +313,6 @@ FF.main_fit()
 ```
 Please read the [example](../example/example.ipynb) to learn about the method to output and plot the best-fit results. 
 
-![ScreenRecording_02-19-2025 06-21-16_1](https://github.com/user-attachments/assets/de2aaa34-ccdc-419a-ba7d-80660854d012)
+<p align="center"> <img src="https://github.com/user-attachments/assets/de2aaa34-ccdc-419a-ba7d-80660854d012" width="1200">
+<p align="center"> <img src="https://github.com/user-attachments/assets/ae283b48-4097-4c47-901c-34c8c100e69b" width="1200">
 
