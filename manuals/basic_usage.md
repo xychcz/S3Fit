@@ -313,3 +313,5 @@ FF.main_fit()
 ```
 Please read the [example](../example/example.ipynb) to learn about the method to output and plot the best-fit results. 
 
+![Screenshot 2025-02-19 06 08 19](https://github.com/user-attachments/assets/679984dd-b580-4f1c-bce1-972587fc253a)
+
