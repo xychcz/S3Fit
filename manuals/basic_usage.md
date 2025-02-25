@@ -1,5 +1,8 @@
 # Basic usage
 
+> [!NOTE]
+> The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+
 ## Initialize the main function
 ```python
 from s3fit import FitFrame
