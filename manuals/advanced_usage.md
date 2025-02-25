@@ -1,5 +1,8 @@
 # Advanced usage
 
+> [!NOTE]
+> The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+
 ## Support new band filters
 
 The transmission curve supported by S<sup>3</sup>Fit needs to have 
