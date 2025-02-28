@@ -26,7 +26,7 @@ allowing users to modify model configurations and incorporate new model componen
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart, 
 with a detailed description of the [fitting strategy](https://github.com/xychcz/S3Fit/blob/main/manuals/fitting_strategy.md) in 
 [manuals](https://github.com/xychcz/S3Fit/blob/main/manuals/). 
-<p align="center"> <img src="https://github.com/user-attachments/assets/51cb250f-7b4c-4a66-a398-cf08e8c68225" width="1200">
+<p align="center"> <img src="https://github.com/user-attachments/assets/e84119ec-931c-49c8-8639-69217ff8bb38" width="1200">
 
 An example of the fitting result of S<sup>3</sup>Fit is shown in the following plots. 
 <p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600">
