@@ -104,7 +104,7 @@
    A small number of `conv_nbin_max` works well for a smooth function of wavelength-dependent resolution.
    Increasing the number will slow down the fitting process significantly. 
 
-#### Auxiliary
+### Auxiliary
 - `print_step` (bool) \
    Whether or not to print the information each intermediate step (e.g., the examination of each model component).
    Default is `True`.
