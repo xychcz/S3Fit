@@ -127,7 +127,9 @@ el_mod.update_lineratio()
 
 ## 6. Support new types of models
 
-Please follow these steps to add a new model into S<sup>3</sup>Fit. 
+S<sup>3</sup>Fit has a uniform framework for models (see [fitting strategy](./fitting_strategy.md)), 
+which enables users to incorporate new models into S<sup>3</sup>Fit 
+with the following steps. 
 
 #### 6.1 Create a new ModelFrame
 In the first step, please create a `ModelFrame` class for the new model and save it as `s3fit/model_frames/newmodel_frame.py`. 
