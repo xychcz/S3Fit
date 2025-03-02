@@ -6,14 +6,11 @@
 ## Initialize the main function
 ```python
 from s3fit import FitFrame
-FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
-              spec_valid_range=None, spec_R_inst=None, spec_flux_scale=None, 
-              phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_fluxunit='mJy', 
-              sed_wave_w=None, sed_waveunit='angstrom', 
+FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_w=None, spec_valid_range=None, 
+              phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
               v0_redshift=None, model_config=None, 
-              num_mock_loops=0, fit_raw=True, multinst_reverr_ratio=0.1, multinst_reverr_mock=False, 
-              fit_grid='linear', max_fit_ntry=3, accept_chi_sq=5,
-              plot_step=False, print_step=True, verbose=False)
+              num_mocks=0, inst_calib_ratio=0.1, fit_grid='linear', 
+              print_step=True, plot_step=False, canvas=None)
 ```
 #### Spectral data
 `spec_wave_w`: Wavelength of the input spectrum, in unit of angstrom.\
@@ -32,8 +29,7 @@ Note that `sed_wave_w` is not mandatory; if it is not set, the code can create t
 > If a pure spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
 
 > [!NOTE]
-> When the joint fitting for spectrum and photometric SED is performed, the $\chi^2$ value is calculated with modified flux errors by adding 10% of the corresponding fluxes
-> for both of the input spectrum and the photometric data in each band. The purpose is to account for the calibration uncertainty among different instruments. 
+> Please refer to [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 
 #### Model setup 
 `v0_redshift`: Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
