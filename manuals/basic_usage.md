@@ -3,64 +3,68 @@
 > [!NOTE]
 > The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
-## Initialize the main function
+## Initialization
+As the first step, please initialize the `FitFrame`, which is the main class of S<sup>3</sup>Fit. 
 ```python
 from s3fit import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_w=None, spec_valid_range=None, 
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
               v0_redshift=None, model_config=None, 
-              num_mocks=0, inst_calib_ratio=0.1, fit_grid='linear', 
+              num_mocks=0, fit_grid='linear', 
               print_step=True, plot_step=False, canvas=None)
 ```
-#### Spectral data
-`spec_wave_w`: Wavelength of the input spectrum, in unit of angstrom.\
-`spec_flux_w` and `spec_ferr_w`: Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.\
-`spec_valid_range`: Valid wavelength range. For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.\
-`spec_R_inst`: Instrumental spectral resolution of the input spectrum, this is used to convolve the model spectra and estimate the intrinsic velocity width.\
-`spec_flux_scale`: Scaling ratio of the flux (e.g., `1e-15`). The fitting is performed for spec_flux_w/spec_flux_scale to avoid too small value. 
-#### Photometric data
-`phot_name_b`: List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`. The names should be the same as the filenames of the transmission curves in each band. \
-`phot_trans_dir`: Directory of the transmission curves. \
-`phot_flux_b` and `phot_ferr_b`: Fluxes and measurement errors in each band. \
-`phot_fluxunit`: Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`. If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before fitting. \
-`sed_wave_w` and `sed_waveunit`: Wavelength array and its unit of the full SED wavelength range, which are used to create the model spectra and convert them to fluxes in each band. `sed_waveunit` can be `'angstrom'` and `'micron'`; if set to 'micron', they will be converted to 'angstrom'. 
-Note that `sed_wave_w` is not mandatory; if it is not set, the code can create the wavelength array to cover all of the transmission curves of the input bands.
+#### Input spectroscopic data
+- `spec_wave_w` (numpy array of floats) \
+   Wavelength of the input spectrum, in unit of angstrom.
+- `spec_flux_w` and `spec_ferr_w` (numpy array of floats) \
+   Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.
+- `spec_R_inst_w` (numpy array of floats, or 2-element list) \
+   Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum,
+   this is used to convolve the model spectra and estimate the intrinsic velocity width. 
+  `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
+   or given as a constant value as `spec_R_inst_w=[wave,R]` to specify the resolution `R` at the wavelength `wave` (in angstrom). 
+- `spec_valid_range` (nested list of floats) \
+   Valid wavelength range.
+   For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.
+#### Input photometric data
+- `phot_name_b` (numpy array of strings) \
+   List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
+   The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
+- `phot_flux_b` and `phot_ferr_b` (numpy array of floats) \
+   Fluxes and measurement errors in each band. 
+- `phot_fluxunit` (string) \
+   Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
+   If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
+- `phot_trans_dir` (string) \
+   Directory of files of the transmission curves.
 > [!TIP]
-> If a pure spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
-
-> [!NOTE]
-> Please refer to [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
-
+> If a pure-spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
 #### Model setup 
-`v0_redshift`: Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
-`model_config`: Dictionary of model configurations, see [model setup](#configure-models) section for details. 
-#### Fitting setup
-`num_mock_loops`: Number of the mocked spectra, which is used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only fit the raw data. \
-`fit_raw`: Whether or not to fit the raw data. Default is `True`. If set to `False`, the code only output results for the mocked spectra. \
-`multinst_reverr_ratio`: The ratio to scale the original error to account calibration uncertainties across multiple instruments. 
-Default is `0.1`, i.e., revised errors by adding 10% of the corresponding fluxes are used in the fitting, 
-i.e., to calculate $\chi^2$ values and to search for the best-fit by minimizing $\chi^2$ values 
-(please refer to [fitting strategy](./fitting_strategy.md) for details). \
-`multinst_reverr_mock`: If set to `True` then the revised errors are also used to create mocked spectra for estimation of parameter uncentainties. 
-Default is `False`, i.e., mocked spectra are generated with original measurement errors. \
-`fit_grid`: Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
-Set `fit_grid='log'` to run the fitting in logarithmic flux grid. 
-The reduced $\chi^2$ value is calculated as follows in the two cases,
-```math
-\large
-\chi_{\nu,\mathrm{linear}}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \left(\frac{m_i}{d_i}-1 \right) \right]^2}, \ \ \ \ \ \ 
-\chi_{\nu,\mathrm{log}}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \ln{ \left(\frac{m_i}{d_i} \right) } \right]^2},
-```
-where $d_i$ and $m_i$ are the data and model fluxes in the $i$-th wavelength;
-$e_i$ is the error of flux; $w_i$ is the weight to account for the data resampling and degree of freedom
-(please refer to [fitting strategy](./fitting_strategy.md) for details). 
-Note that if emisison line is the only fitting model (e.g., for continuum subtracted data spectrum), `fit_grid` is always set to `'linear'`.
-<!-- `max_fit_ntry`=3 `accept_chi_sq`=5 -->
+- `v0_redshift` (float) \
+   Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
+- `model_config` (nested dictionary) \
+   Dictionary of model configurations, see [model setup](#configure-models) section for details. 
+#### Control of fitting
+- `num_mocks` (int) \
+   Number of the mock spectra for the Monte Carlo method.  
+   The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
+- `fit_grid` (string) \
+   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
+   Set `fit_grid='log'` to run the fitting in logarithmic flux grid.
+   Note that if emisison line is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`.
+   (please refer to [fitting strategy](./fitting_strategy.md) for details). 
 #### Auxiliary
-`plot_step`: Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. \
-`print_step`: Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`. \
-`verbose`: Whether or not to print the running information of least-square solvers. Default is `False`. 
-
+- `print_step` (bool) \
+   Whether or not to print the information each intermediate step (e.g., the examination of each model component).
+   Default is `True`.
+- `plot_step` (bool) \
+   Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step.
+   Default is `False`. 
+- `canvas` (tuple) \
+   Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
+   Please read the [example](../example/example.ipynb) for an example case. 
+> [!NOTE]
+> Please refer to the [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 
 
 ## Configure models
