@@ -63,7 +63,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Default is `False`. 
 - `canvas` (tuple) \
    Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
-   Please read the [example](../example/example.ipynb) for an example case. 
+   Please read the [Jupyter Notebook](../example/example.ipynb) for an example case. 
 > [!NOTE]
 > Please refer to the [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 
@@ -164,7 +164,7 @@ set it to any value with `'fix'` to save a free parameter.
 > ```python
 > FF.model_dict['ssp']['spec_mod'].reconstruct_sfh()
 > ```
-> Please read the [example](../example/example.ipynb) for an example case. 
+> Please read the [Jupyter Notebook](../example/example.ipynb) for an example case. 
 
 #### 2.2 Emission lines
 
@@ -204,7 +204,7 @@ and broad lines from AGN Broad-Line-Region (`'BLR'`).
 which means all available emission lines are used.
 For `'outflow_2'` and `'BLR'`, only the emission lines with names specified in `'line_used'` are used. 
 > [!TIP]
-> Please run `FF.model_dict['el']['specmod'].linename_n` and `FF.model_dict['el']['specmod'].linerest_n`
+> Please run `FF.model_dict['el']['spec_mod'].linename_n` and `FF.model_dict['el']['spec_mod'].linerest_n`
 to learn about the names and rest wavelengths (in vacuum) of the available emission lines. 
 Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add new emission lines. 
 
@@ -236,7 +236,7 @@ the [Proxauf et al. (2014) equation](https://ui.adsabs.harvard.edu/abs/2014A%26A
 ). 
 Please run the following codes to learn about the default tied lines and their flux ratios. 
 ```python
-el_mod = FF.model_dict['el']['specmod']
+el_mod = FF.model_dict['el']['spec_mod']
 el_mod.update_lineratio()
 for i_line in range(el_mod.num_lines):
     if el_mod.lineratio_n[i_line] < 0: continue # i.e., skip lines witha free flux normalization
@@ -315,9 +315,16 @@ After finishing the configuration of all models, run the fitting with the follow
 ```python
 FF.main_fit()
 ```
-Please read the [example](../example/example.ipynb) to learn about the method to output and plot the best-fit results. 
-
+The followng figures denote cases if you would like to check each fitting step by setting `plot_step=True`.
+You can choose to list figures in each step (left) or show them dynamically in a given window (right) by specifying the `canvas`. 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/de2aaa34-ccdc-419a-ba7d-80660854d012" width="48%" />
   <img src="https://github.com/user-attachments/assets/ae283b48-4097-4c47-901c-34c8c100e69b" width="48%" />
 </p>
+
+Please read the [Jupyter Notebook](../example/example.ipynb) for examples of actual fitting. 
+The notebook also exhibits 
+the method to save the fitting results to a file and reload them from the file, 
+and 
+the methods to output and display the best-fit results, e.g., model spectra and properties. 
+
