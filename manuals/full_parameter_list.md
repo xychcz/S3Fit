@@ -45,7 +45,7 @@
    Minimum number of data points to resample the transmission curves within their FWHM.
    Default is 10, i.e., at least 10 data points will be used to resample all of the transmission curves in the ranges with half of their maximum transmission values. 
 > [!TIP]
-> If a pure spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
+> If a pure-spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
 
 ### Model setup 
 - `v0_redshift` (float) \
