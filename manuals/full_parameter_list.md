@@ -89,27 +89,27 @@
    Default is `0.01`, i.e., the `ftol` parameter of `scipy.optimize.least_squares`
    will be given as 0.01*sqrt(n), where n is the number of input data in wavelength (combining both of spectroscopic and photometric data).
 - `fit_grid` (string) \
-   
-   Default is `'linear'`. 
+   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
+   Set `fit_grid='log'` to run the fitting in logarithmic flux grid.
+   Note that if emisison line is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`.
+   (please refer to [fitting strategy](./fitting_strategy.md) for details). 
 - `conv_nbin_max` (int) \
-   Default is `5`. 
-
-`fit_grid`: Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
-Set `fit_grid='log'` to run the fitting in logarithmic flux grid. 
-The reduced $\chi^2$ value is calculated as follows in the two cases,
-```math
-\large
-\chi_{\nu,\mathrm{linear}}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \left(\frac{m_i}{d_i}-1 \right) \right]^2}, \ \ \ \ \ \ 
-\chi_{\nu,\mathrm{log}}^2 = \sum_i{w_i \left[\frac{d_i}{e_i} \ln{ \left(\frac{m_i}{d_i} \right) } \right]^2},
-```
-where $d_i$ and $m_i$ are the data and model fluxes in the $i$-th wavelength;
-$e_i$ is the error of flux; $w_i$ is the weight to account for the data resampling and degree of freedom
-(please refer to [fitting strategy](./fitting_strategy.md) for details). 
-Note that if emisison line is the only fitting model (e.g., for continuum subtracted data spectrum), `fit_grid` is always set to `'linear'`.
-<!-- `max_fit_ntry`=3 `accept_chi_sq`=5 -->
+   Maximum bin number to perform FFT accelerated convolution of continuum model spectra with variable Gaussian kernel widths (e.g., wavelength-dependent spectral resolution).
+   Default is `5`, i.e., the convolution will be performed with kernel widths at 5 evenly-spaced wavelengths.
+   The convolved spectrum at wavelengths between the 5 selected wavelengths will be interploted linearly using the
+   spectra convolved with the kernel at the two neighboring selected wavelengths. 
+   A small number of `conv_nbin_max` works well for a smooth function of wavelength-dependent resolution.
+   Increasing the number will slow down the fitting process significantly. 
 
 #### Auxiliary
-`plot_step`: Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. \
-`print_step`: Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`. \
-`verbose`: Whether or not to print the running information of least-square solvers. Default is `False`. 
-
+- `print_step` (bool) \
+   Whether or not to print the information each intermediate step (e.g., the examination of each model component).
+   Default is `True`.
+- `plot_step` (bool) \
+   Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step.
+   Default is `False`. 
+- `canvas` (tuple) \
+   Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
+   Please read the [example](../example/example.ipynb) for an example case. 
+- `verbose` (bool) \
+   Whether or not to print the running information of least-square solvers. Default is `False`. 
