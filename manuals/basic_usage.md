@@ -3,7 +3,7 @@
 > [!NOTE]
 > The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
-## Initialization
+## 1. Initialization
 As the first step, please initialize the `FitFrame`, which is the main class of S<sup>3</sup>Fit, 
 by providing the following input parameters. 
 ```python
@@ -14,7 +14,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
               num_mocks=0, fit_grid='linear', 
               print_step=True, plot_step=False, canvas=None)
 ```
-#### Input spectroscopic data
+#### 1.1 Input spectroscopic data
 - `spec_wave_w` (numpy array of floats) \
    Wavelength of the input spectrum, in unit of angstrom.
 - `spec_flux_w` and `spec_ferr_w` (numpy array of floats) \
@@ -27,7 +27,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 - `spec_valid_range` (nested list of floats) \
    Valid wavelength range.
    For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.
-#### Input photometric data
+#### 1.2 Input photometric data
 - `phot_name_b` (numpy array of strings) \
    List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
    The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
@@ -40,12 +40,12 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Directory of files of the transmission curves.
 > [!TIP]
 > If a pure-spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
-#### Model setup 
+#### 1.3 Model setup 
 - `v0_redshift` (float) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 - `model_config` (nested dictionary) \
    Dictionary of model configurations, see [model setup](#configure-models) section for details. 
-#### Control of fitting
+#### 1.4 Control of fitting
 - `num_mocks` (int) \
    Number of the mock spectra for the Monte Carlo method.  
    The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
@@ -54,7 +54,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Set `fit_grid='log'` to run the fitting in logarithmic flux grid.
    Note that if emisison line is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`.
    (please refer to [fitting strategy](./fitting_strategy.md) for details). 
-#### Auxiliary
+#### 1.5 Auxiliary
 - `print_step` (bool) \
    Whether or not to print the information each intermediate step (e.g., the examination of each model component).
    Default is `True`.
@@ -68,7 +68,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 > Please refer to the [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 
 
-## Model configuration
+## 2. Model configuration
 Current version of S<sup>3</sup>Fit supports stellar continuum (`'ssp'`), emission lines (`'el'`), AGN central continuum (`'agn'`), and AGN dusty torus (`'torus'`). 
 If any models are not required, set `'enable': False` or just delete the corresponding lines.
 ```python
@@ -85,7 +85,7 @@ model_config = {'ssp'  : {'enable': True, 'config': ssp_config,   'file': ssp_fi
 
 The detailed set up of each model are described as follows. 
 
-#### Stellar continuum
+#### 2.1 Stellar continuum
 
 ```python
 ssp_file = 'DIRECTORY/popstar_for_s3fit.fits'
@@ -162,11 +162,11 @@ set it to any value with `'fix'` to save a free parameter.
 > The best-fit reconstructed SFH of each component can be plotted or output
 > by running
 > ```python
-> FF.model_dict['ssp']['specmod'].reconstruct_sfh()
+> FF.model_dict['ssp']['spec_mod'].reconstruct_sfh()
 > ```
 > Please read the [example](../example/example.ipynb) for an example case. 
 
-#### Emission lines
+#### 2.2 Emission lines
 
 S<sup>3</sup>Fit supports combination of multiple emission line components. 
 An example of emission line configuration is shown as follows:
@@ -245,7 +245,7 @@ for i_line in range(el_mod.num_lines):
 ```
 Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add or delete line tying relations. 
 
-#### AGN central continuum
+#### 2.3 AGN central continuum
 
 Current version of S<sup>3</sup>Fit supports a powerlaw model to account for the radiation from the AGN accretion disc. 
 The powerlaw model has a flexible spectral index in wavelength from 0.1 micron to 5 micron, 
@@ -274,7 +274,7 @@ Both of velocity shift and FWHM could be determined independently when the iron 
 
 In order to reduce the degeneracy between extinction and the spectral index, in this example the later is fixed to -1.7. 
 
-#### AGN dusty torus
+#### 2.4 AGN dusty torus
 
 ```python
 torus_file = '../model_libraries/skirtor_for_s3fit.fits'
@@ -309,7 +309,7 @@ The `'mod_used'` can be set to `['dust']` to use the pure torus module,
 or `['disc','dust']` to use both of the disc and torus modules
 (do not use `'agn'` powerlaw component in this case). 
 
-## Run fitting
+## 3. Run fitting
 
 After finishing the configuration of all models, run the fitting with the following command:
 ```python
