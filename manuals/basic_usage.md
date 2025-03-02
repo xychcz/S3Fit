@@ -4,7 +4,8 @@
 > The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 ## Initialization
-As the first step, please initialize the `FitFrame`, which is the main class of S<sup>3</sup>Fit. 
+As the first step, please initialize the `FitFrame`, which is the main class of S<sup>3</sup>Fit, 
+by providing the following input parameters. 
 ```python
 from s3fit import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_w=None, spec_valid_range=None, 
@@ -67,15 +68,15 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 > Please refer to the [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 
 
-## Configure models
+## Model configuration
+Current version of S<sup>3</sup>Fit supports stellar continuum (`'ssp'`), emission lines (`'el'`), AGN central continuum (`'agn'`), and AGN dusty torus (`'torus'`). 
+If any models are not required, set `'enable': False` or just delete the corresponding lines.
 ```python
-model_config = {'ssp': {'enable': True, 'config': ssp_config, 'file': ssp_file}, 
-                'el': {'enable': True, 'config': el_config, 'use_pyneb': True},
-                'agn': {'enable': True, 'config': agn_config}, 
+model_config = {'ssp'  : {'enable': True, 'config': ssp_config,   'file': ssp_file}, 
+                'el'   : {'enable': True, 'config': el_config,    'use_pyneb': True},
+                'agn'  : {'enable': True, 'config': agn_config}, 
                 'torus': {'enable': True, 'config': torus_config, 'file': torus_file}}
 ```
-Current version of S<sup>3</sup>Fit supports stellar continuum (`'ssp'`), emission lines (`'el'`), AGN central continuum (`'agn'`), and AGN dusty torus (`'torus'`). 
-If any models are not required, set `'enable'` to `False` or just delete the corresponding lines.
 > [!CAUTION]
 > Note that the model names (e.g., 'ssp') are fixed in the code and please do not modify them.
 
