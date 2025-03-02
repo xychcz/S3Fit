@@ -3,6 +3,9 @@
 > 'Parameters' here means the input arguments of `FitFrame` (the main framework of S<sup>3</sup>Fit).
 > Please do not be confused with the non-linear fitting 'parameters' of models discussed in  [fitting strategy](./fitting_strategy.md).
 
+> [!NOTE]
+> The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+
 ### Input spectroscopic data
 - `spec_wave_w` (numpy array of floats) \
    Wavelength of the input spectrum, in unit of angstrom.
@@ -112,4 +115,4 @@
    Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
    Please read the [example](../example/example.ipynb) for an example case. 
 - `verbose` (bool) \
-   Whether or not to print the running information of least-square solvers. Default is `False`. 
+   Whether or not to print the running information of the Linear and Non-linear Least-square solvers. Default is `False`. 
