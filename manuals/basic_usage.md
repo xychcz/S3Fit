@@ -15,11 +15,11 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
               print_step=True, plot_step=False, canvas=None)
 ```
 #### 1.1 Input spectroscopic data
-- `spec_wave_w` (numpy array of floats) \
+- `spec_wave_w` (list or numpy array of floats) \
    Wavelength of the input spectrum, in unit of angstrom.
-- `spec_flux_w` and `spec_ferr_w` (numpy array of floats) \
+- `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats) \
    Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.
-- `spec_R_inst_w` (numpy array of floats, or 2-element list) \
+- `spec_R_inst_w` (list or numpy array of floats, or 2-element list) \
    Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum,
    this is used to convolve the model spectra and estimate the intrinsic velocity width. 
   `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
@@ -28,10 +28,10 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Valid wavelength range.
    For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.
 #### 1.2 Input photometric data
-- `phot_name_b` (numpy array of strings) \
+- `phot_name_b` (list or numpy array of strings) \
    List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
    The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
-- `phot_flux_b` and `phot_ferr_b` (numpy array of floats) \
+- `phot_flux_b` and `phot_ferr_b` (list or numpy array of floats) \
    Fluxes and measurement errors in each band.
 - `phot_calib_b` (list or numpy array of strings) \
    List of band names of photometric data that is used for calibration of spectrum.
