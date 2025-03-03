@@ -7,11 +7,11 @@
 > The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 ### Input spectroscopic data
-- `spec_wave_w` (numpy array of floats) \
+- `spec_wave_w` (list or numpy array of floats) \
    Wavelength of the input spectrum, in unit of angstrom.
-- `spec_flux_w` and `spec_ferr_w` (numpy array of floats) \
+- `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats) \
    Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.
-- `spec_R_inst_w` (numpy array of floats, or 2-element list) \
+- `spec_R_inst_w` (list or numpy array of floats, or 2-element list) \
    Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum,
    this is used to convolve the model spectra and estimate the intrinsic velocity width. 
   `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
@@ -23,17 +23,23 @@
    Scaling ratio of the input flux (e.g., `spec_flux_scale=1e-15`) to avoid too small values of flux in the fitting. 
   `spec_flux_scale` is not mandatory and it can be determined automatically if setting `spec_flux_scale=None` (default). 
 ### Input photometric data
-- `phot_name_b` (numpy array of strings) \
+- `phot_name_b` (list or numpy array of strings) \
    List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
    The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
-- `phot_flux_b` and `phot_ferr_b` (numpy array of floats) \
-   Fluxes and measurement errors in each band. 
+- `phot_flux_b` and `phot_ferr_b` (list or numpy array of floats) \
+   Fluxes and measurement errors in each band.
+- `phot_calib_b` (list or numpy array of strings) \
+   List of band names of photometric data that is used for calibration of spectrum.
+   For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum,
+   set `phot_calib_b=['SDSS_rp','SDSS_ip']`
+   and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w`
+   with `phot_flux_b` in the two bands. 
 - `phot_fluxunit` (string) \
    Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
    If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
 - `phot_trans_dir` (string) \
    Directory of files of the transmission curves.
-- `sed_wave_w` (numpy array of floats) and `sed_waveunit` (string) \
+- `sed_wave_w` (list or numpy array of floats) and `sed_waveunit` (string) \
    Wavelength array and its unit of the full SED wavelength range,
    which are used to create the model spectra and convert them to fluxes in each band.
   `sed_waveunit` can be `'angstrom'` and `'micron'`; if set to 'micron', they will be converted to 'angstrom'. 
