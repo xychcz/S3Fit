@@ -1,5 +1,6 @@
 # Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
 # Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
+# Repository: https://github.com/xychcz/S3Fit
 # Contact: xiaoyang.chen.cz@gmail.com
 
 import os
@@ -10,30 +11,36 @@ import astropy.constants as const
 
 class PhotFrame(object):
     def __init__(self, 
-                 name_b=None, flux_b=None, ferr_b=None, fluxunit='mJy', # on input data
-                 trans_dir=None, wave_w=None, waveunit='angstrom'): # on transmission curves
+                 name_b=None, flux_b=None, ferr_b=None, flux_unit='mJy', # on input data
+                 trans_dir=None, trans_rsmp=10, # on transmission curves
+                 wave_w=None, wave_unit='angstrom', wave_num=None): # on corresonding SED range
         # add file_bac, file_iron later
         
         self.name_b = copy(name_b)
         self.flux_b = copy(flux_b)
         self.ferr_b = copy(ferr_b) 
-        self.fluxunit = fluxunit
-        
+        self.flux_unit = flux_unit
+
         self.trans_dir = trans_dir
+        self.trans_rsmp = trans_rsmp
+
         self.wave_w = copy(wave_w)
-        self.waveunit = waveunit
-        if (self.wave_w is not None) & (self.waveunit == 'micron'): self.wave_w *= 1e4 # convert to AA
+        self.wave_unit = wave_unit
+        if (self.wave_w is not None) & (self.wave_unit == 'micron'): self.wave_w *= 1e4 # convert to AA
+        self.wave_num = wave_num
                 
-        self.trans_dict, self.trans_bw, self.wave_w = self.read_transmission(self.trans_dir, name_b=self.name_b, wave_w=self.wave_w)
+        self.trans_dict, self.trans_bw, self.wave_w = self.read_transmission(name_b=self.name_b, 
+                                                                             trans_dir=self.trans_dir, trans_rsmp=self.trans_rsmp,  
+                                                                             wave_w=self.wave_w, wave_num=self.wave_num)
         self.rFnuFlam_w = self.rFnuFlam_func(self.wave_w)
         self.rFnuFlam_b = self.rFnuFlam_func(self.wave_w, self.trans_bw)
         self.wave_b = self.spec2phot(self.wave_w, self.wave_w, self.trans_bw)
         
-        if self.fluxunit == 'mJy': 
+        if self.flux_unit == 'mJy': 
             self.flux_b /= self.rFnuFlam_b # convert to erg/s/cm2/AA
             self.ferr_b /= self.rFnuFlam_b # convert to erg/s/cm2/AA
         
-    def read_transmission(self, trans_dir, name_b=None, wave_w=None):        
+    def read_transmission(self, name_b=None, trans_dir=None, trans_rsmp=None, wave_w=None, wave_num=None):        
         if name_b is None:
             file_list = np.array(os.listdir(trans_dir))
             file_list = file_list[np.array([f[-4:] for f in file_list]) == '.dat']
@@ -44,12 +51,18 @@ class PhotFrame(object):
 
         if wave_w is None:
             w_min, w_max = 1e16, 0
+            logw_width_min = 1e16
             for name in name_b: 
                 filterdata = np.loadtxt(trans_dir+name+'.dat')
                 wave_ini, trans_ini = filterdata[:,0], filterdata[:,1]
                 w_min = np.minimum(w_min, wave_ini.min())
                 w_max = np.maximum(w_max, wave_ini.max())
-            wave_w = np.logspace(np.log10(w_min)-0.1, np.log10(w_max)+0.1, num=5000)
+                mask_w = trans_ini/trans_ini.max() > 0.5 
+                logw_width = np.log10(wave_ini[mask_w].max()) - np.log10(wave_ini[mask_w].min()) # FWHM in log
+                logw_width_min = np.minimum(logw_width_min, logw_width)
+            if wave_num is None: 
+                wave_num = int((np.log10(w_max) - np.log10(w_min)) / (logw_width_min / trans_rsmp))
+            wave_w = np.logspace(np.log10(w_min)-0.1, np.log10(w_max)+0.1, num=wave_num)
 
         trans_dict = {}
         for name in name_b:

@@ -1,5 +1,6 @@
 # Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
 # Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
+# Repository: https://github.com/xychcz/S3Fit
 # Contact: xiaoyang.chen.cz@gmail.com
 
 from .fit_frame import FitFrame
@@ -29,4 +30,8 @@ __all__ = ["FitFrame", "ConfigFrame", "PhotFrame",
 # print('v1.4, 250126: (1) Support flexible SFH (2) Add SFH output function'
 # print('v1.5, 250128: (1) First release of S3Fit')
 # print('v1.6, 250131: (1) Update ELineFrame line setup')
-print('v2.0, 250204: (1) Split into multiple files; (2) Support pip installation')
+# print('v2.0, 250204: (1) Split into multiple files; (2) Support pip installation')
+# print('You are now using S3Fit v2.1') 
+# updates: (1) revise log-space fitting (2) upgrade process flow and output formats
+print('You are now using S3Fit v2.2') 
+# updates: (1) revise calibration error estimation (2) add convolution with variable width (3) revise annealing process

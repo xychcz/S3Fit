@@ -1,5 +1,6 @@
 # Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
 # Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
+# Repository: https://github.com/xychcz/S3Fit
 # Contact: xiaoyang.chen.cz@gmail.com
 
 import numpy as np
@@ -37,16 +38,17 @@ def ExtLaw_CCM89(wave, RV=3.1):
     return a_out + b_out / RV # A_lambda / AV
 
 # http://www.bo.astro.it/~micol/Hyperz/old_public_v1/hyperz_manual1/node10.html
-def ExtLaw_Calzetti00(wave, RV=4.05):
+# modify default gap=6300AA to 7000AA for a smooth connection
+def ExtLaw_Calzetti00(wave, RV=4.05, gap=7000):
     # wave in Angstorm
     x = 1e4 / wave # in um-1
     k_out = np.zeros_like(x)
-    # extend short-wave edge from 1200 to 90
-    mask_w = (wave >= 90) & (wave <= 6300)
+    # extend short-wave edge from 1200 to 91
+    mask_w = (wave >= 91) & (wave < gap)
     k = 2.659*(-2.156 + 1.509*x - 0.198*x**2 + 0.011*x**3) + RV
     k_out[mask_w] = k[mask_w]
     # 6300 -> 22000 AA
-    mask_w = (wave > 6300) & (wave <= 22000)
+    mask_w = (wave >= gap) & (wave <= 22000)
     k = 2.659*(-1.857 + 1.040*x) + RV
     k_out[mask_w] = k[mask_w]
     if np.sum(wave > 22000) > 0:
