@@ -33,7 +33,8 @@
    For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum,
    set `phot_calib_b=['SDSS_rp','SDSS_ip']`
    and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w`
-   with `phot_flux_b` in the two bands. 
+   with `phot_flux_b` in the two bands, e.g., to correct for aperture loss of the input spectrum. 
+   Set `phot_calib_b=None` (default) if the calibration is not required.  
 - `phot_fluxunit` (string) \
    Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
    If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
