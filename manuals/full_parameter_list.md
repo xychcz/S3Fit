@@ -54,7 +54,7 @@
    Dictionary of model configurations, see [model setup](#configure-models) section for details. 
 - `norm_wave` and `norm_width` (float) \
    Wavelength and width (in angstrom) used to normalize continuum models.
-   Default values are 5500 and 25 angstrom, respectively. 
+   Default values are `5500` and `25` angstrom, respectively. 
 
 ### Control of fitting quality
 - `num_mocks` (int) \
