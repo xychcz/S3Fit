@@ -20,10 +20,11 @@ class FitFrame(object):
     def __init__(self, 
                  spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
                  spec_R_inst_w=None, spec_valid_range=None, spec_flux_scale=None, 
-                 phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', 
+                 phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, 
+                 phot_calib_b=None, phot_flux_unit='mJy', 
                  phot_trans_dir=None, phot_trans_rsmp=10, 
                  sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, 
-                 v0_redshift=None, model_config=None, norm_wave=None, norm_width=None, 
+                 v0_redshift=None, model_config=None, norm_wave=5500, norm_width=25, 
                  num_mocks=0, inst_calib_ratio=0.1, 
                  examine_result=True, accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
@@ -42,21 +43,22 @@ class FitFrame(object):
         print_log(center_string('Initialize FitFrame', 80), self.log_message)
 
         # save spectral data and related properties
-        self.spec_wave_w = spec_wave_w
-        self.spec_flux_w = spec_flux_w
-        self.spec_ferr_w = spec_ferr_w
-        self.spec_R_inst_w = spec_R_inst_w
+        self.spec_wave_w = np.array(spec_wave_w) if spec_wave_w is not None else None
+        self.spec_flux_w = np.array(spec_flux_w) if spec_flux_w is not None else None
+        self.spec_ferr_w = np.array(spec_ferr_w) if spec_ferr_w is not None else None
+        self.spec_R_inst_w = np.array(spec_R_inst_w) if spec_R_inst_w is not None else None
         self.spec_valid_range = spec_valid_range
         self.spec_flux_scale = spec_flux_scale # flux_scale is used to avoid too small values
 
         # save photometric-SED data and related properties
-        self.phot_name_b = phot_name_b
-        self.phot_flux_b = phot_flux_b
-        self.phot_ferr_b = phot_ferr_b
+        self.phot_name_b = np.array(phot_name_b) if phot_name_b is not None else None
+        self.phot_flux_b = np.array(phot_flux_b) if phot_flux_b is not None else None
+        self.phot_ferr_b = np.array(phot_ferr_b) if phot_ferr_b is not None else None
+        self.phot_calib_b = np.array(phot_calib_b) if phot_calib_b is not None else None
         self.phot_flux_unit = phot_flux_unit
         self.phot_trans_dir = phot_trans_dir
         self.phot_trans_rsmp = phot_trans_rsmp
-        self.sed_wave_w = sed_wave_w
+        self.sed_wave_w = np.array(sed_wave_w) if sed_wave_w is not None else None
         self.sed_wave_unit = sed_wave_unit
         self.sed_wave_num = sed_wave_num
 
@@ -189,6 +191,21 @@ class FitFrame(object):
             self.sed_wmin = self.pframe.wave_w.min() / (1+self.v0_redshift)
             self.sed_wmax = self.pframe.wave_w.max() / (1+self.v0_redshift)
             print_log(f'SED wavelength range (rest frame, AA): from {self.sed_wmin:.3f} to {self.sed_wmax:.3f}', self.log_message, verbose) 
+
+            if self.phot_calib_b is not None:
+                # corrent spectrum based on selected photometeic points
+                # select fluxes and transmission curves in calibration bands in the order of phot_calib_b
+                calib_flux_b = [self.phot['flux_b'][np.where(self.phot_name_b == name_b)[0][0]] for name_b in self.phot_calib_b]
+                calib_trans_bw = self.pframe.read_transmission(name_b=self.phot_calib_b, trans_dir=self.phot_trans_dir, wave_w=self.spec['wave_w'])[1]
+                # interplote spectrum by masking out invalid range
+                spec_flux_interp_w = np.interp(self.spec['wave_w'], self.spec['wave_w'][self.spec['mask_valid_w']], 
+                                                                    self.spec['flux_w'][self.spec['mask_valid_w']])
+                spec_calib_ratio_b = calib_flux_b / self.pframe.spec2phot(self.spec['wave_w'], spec_flux_interp_w, calib_trans_bw)
+                self.spec_calib_ratio = spec_calib_ratio_b.mean()
+                self.spec['flux_w'] *= self.spec_calib_ratio
+                self.spec['ferr_w'] *= self.spec_calib_ratio
+                print_log(f'[Note] The input spectrum is calibrated with photometric fluxes in the bands: {self.phot_calib_b}.', self.log_message, verbose)
+                print_log(f'[Note] The calibration ratio for spectrum is {self.spec_calib_ratio}.', self.log_message, verbose)
 
         self.input_initialized = True
 
