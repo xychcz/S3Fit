@@ -1,4 +1,8 @@
 # Fitting strategy
+
+> [!NOTE]
+> The page is being edited. 
+
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart. 
 <p align="center"> <img src="/manuals/Flowcharts.png" width="1200">
 
