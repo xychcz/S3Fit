@@ -1,24 +1,27 @@
 # Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
 # Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
+# Repository: https://github.com/xychcz/S3Fit
 # Contact: xiaoyang.chen.cz@gmail.com
 
 import numpy as np
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
+from ..auxiliary_func import print_log
 from ..extinct_law import ExtLaw
 
 class ELineFrame(object):
     def __init__(self, rest_wave_w=None, mask_valid_w=None, 
-                 cframe=None, v0_redshift=0, spec_R_inst=1e8, use_pyneb=False, verbose=True):
+                 cframe=None, v0_redshift=0, R_inst_rw=None, use_pyneb=False, verbose=True, log_message=[]):
 
         self.rest_wave_w = rest_wave_w
         self.mask_valid_w = mask_valid_w
         self.cframe = cframe
         self.v0_redshift = v0_redshift
-        self.spec_R_inst = spec_R_inst
+        self.R_inst_rw = R_inst_rw
         self.use_pyneb = use_pyneb
         self.verbose = verbose
+        self.log_message = log_message
 
         if self.use_pyneb: 
             self.initialize_linelist_pyneb()
@@ -57,6 +60,14 @@ class ELineFrame(object):
         self.update_linelist()
         
     def initialize_linelist_pyneb(self):
+        if self.verbose: 
+            print_log('[Note] PyNeb is used in the fitting to derive line emissivities and ratios of line doublets.', self.log_message)
+        import pyneb
+        self.pyneb = pyneb
+        self.pyneblib = {'RecAtom':{'list': pyneb.atomicData.getAllAtoms(coll=False, rec=True)}, 
+                         'Atom':{'list': pyneb.atomicData.getAllAtoms(coll=True, rec=False)}} 
+        # save to avoid duplicate reading
+
         full_linelist = ['Ha', 'Hb', 'Hg', 'Hd', 'H7', 'H8', '[S II]:6733', '[S II]:6718',
                '[N II]:6585', '[N II]:6550', '[O I]:6366', '[O I]:6302',
                '[N I]:5202', '[N I]:5199', '[Fe VI]:5099', '[O III]:5008',
@@ -74,7 +85,7 @@ class ELineFrame(object):
         self.update_linelist()
         
     def add_line(self, linenames=None, linerests=None, lineratios=None, force=False, use_pyneb=False):
-        if not isinstance(linenames, list): linenames = [linenames]        
+        if not isinstance(linenames, list): linenames = [linenames]
         for (i_line, linename) in enumerate(linenames):
             if use_pyneb:
                 linename, linerest = self.search_pyneb(linename)
@@ -88,10 +99,10 @@ class ELineFrame(object):
                 self.linename_n  = np.hstack((self.linename_n, [linename]))
                 self.linerest_n  = np.hstack((self.linerest_n, [linerest]))
                 self.lineratio_n = np.hstack((self.lineratio_n, [lineratio]))
-                print(f"{linename, linerest} with linkratio={lineratio} is added into the line list.")
+                print_log(f"{linename, linerest} with linkratio={lineratio} is added into the line list.", self.log_message)
             else:
-                print(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest}", 
-                      ", set force=True to add this line.")
+                print_log(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest}"
+                         +f", set force=True to add this line.", self.log_message)
         self.update_linelist()
 
     def delete_line(self, linenames=None):
@@ -112,7 +123,6 @@ class ELineFrame(object):
         self.initialize_linelink()
             
     def search_pyneb(self, name, ret_atomdata=False):
-        import pyneb
         # due to the current coverage of elements and atoms of pyneb, 
         # currently only use pyneb to identify Hydrogen recombination lines
         # add other recombination lines manually
@@ -137,7 +147,9 @@ class ELineFrame(object):
         for i in range(num_HI_highorder): HI_lv_low_dict['Br'+str(9+i)] = 4
         if name in HI_lv_low_dict:
             element = 'H'; notation = 1; line_id = name
-            atomdata = pyneb.RecAtom(element, notation) # , extrapolate=False
+            if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
+                self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+            atomdata = self.pyneblib['RecAtom'][element+str(notation)]
             lv_low = HI_lv_low_dict[name]
             if np.isin(name[-1], ['a','b','g','d']): 
                 lv_up = lv_low + {'a':1,'b':2,'g':3,'d':4}[name[-1]] 
@@ -152,11 +164,15 @@ class ELineFrame(object):
                 element, notation = ion.split(' ')    
             notation = roman_to_int(notation)
             if np.isin(element+str(notation), ['H1', 'He2']):
-                atomdata = pyneb.RecAtom(element, notation) # , extrapolate=False
+                if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
+                    self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+                atomdata = self.pyneblib['RecAtom'][element+str(notation)]
             else:
-                if ~np.isin(element+str(notation), pyneb.atomicData.getAllAtoms(coll=True, rec=False)):
+                if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
                     raise ValueError((f"{name} not provided in pyneb, please add it into ELineFrame.initialize_linelist() manually."))
-                atomdata = pyneb.Atom(element, notation) # , noExtrapol=True
+                if ~np.isin(element+str(notation), [*self.pyneblib['Atom']]):
+                    self.pyneblib['Atom'][element+str(notation)] = self.pyneb.Atom(element, notation) # , noExtrapol=True
+                atomdata = self.pyneblib['Atom'][element+str(notation)]
             wave = float(wave[:-2])*1e4 if wave[-2:] == 'um' else float(wave)
             lv_up, lv_low = atomdata.getTransition(wave=wave)
             wave_vac = 1/(atomdata._Energy[lv_up-1] - atomdata._Energy[lv_low-1])
@@ -181,14 +197,11 @@ class ELineFrame(object):
             if use_pyneb:
                 tied_wave, tied_atomdata = self.search_pyneb(tied_name, ret_atomdata=True)[1:]
                 ref_wave,  ref_atomdata  = self.search_pyneb( ref_name, ret_atomdata=True)[1:]
-                logdens = np.linspace(0, 5, 11)
+                logdens = np.linspace(0, 12, 25)
                 logtems = np.linspace(np.log10(5e2), np.log10(3e4), 11)
-                ratio_dt = np.zeros((len(logdens), len(logtems)))
-                for i_d in range(len(logdens)):
-                    for i_t in range(len(logtems)):
-                        tied_emissivity = tied_atomdata.getEmissivity(den=10.0**logdens[i_d], tem=10.0**logtems[i_t], wave=int(tied_wave))
-                        ref_emissivity  =  ref_atomdata.getEmissivity(den=10.0**logdens[i_d], tem=10.0**logtems[i_t], wave=int(ref_wave))
-                        ratio_dt[i_d,i_t] = tied_emissivity / ref_emissivity
+                tied_emi_td = tied_atomdata.getEmissivity(den=10.0**logdens, tem=10.0**logtems, wave=int(tied_wave))
+                ref_emi_td  =  ref_atomdata.getEmissivity(den=10.0**logdens, tem=10.0**logtems, wave=int(ref_wave))
+                ratio_dt = (tied_emi_td / ref_emi_td).T
                 func_ratio_dt = RegularGridInterpolator((logdens, logtems), ratio_dt, method='linear', bounds_error=False)
                 self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
             else:                
@@ -274,21 +287,25 @@ class ELineFrame(object):
         
         if self.verbose:
             for i_comp in range(self.num_comps):
-                print(f"Emission line comp{i_comp}:'{self.cframe.info_c[i_comp]['comp_name']}', ", 
-                      f"{self.mask_valid_cn[i_comp].sum()} lines in total, ", 
-                      f"{self.mask_free_cn[i_comp].sum()} free lines: {self.linename_n[self.mask_free_cn[i_comp]]}")
+                print_log(f"Emission line comp{i_comp}:'{self.cframe.info_c[i_comp]['comp_name']}', "+
+                          f"{self.mask_valid_cn[i_comp].sum()} lines in total, "+
+                          f"{self.mask_free_cn[i_comp].sum()} free lines: {self.linename_n[self.mask_free_cn[i_comp]]}", self.log_message)
 
-    def single_gaussian(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, spec_R_inst=1e8):
+    def single_gaussian(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8):
         if fwhm <= 0: raise ValueError((f"Non-positive eline fwhm: {fwhm}"))
         if flux < 0: raise ValueError((f"Negative eline flux: {flux}"))
         lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
         mu =    (1 + voff/299792.458) * lamb_c_obs
         sigma_line = fwhm/299792.458  * lamb_c_obs / np.sqrt(np.log(256))
-        sigma_inst = 1/spec_R_inst * lamb_c_obs / np.sqrt(np.log(256))
+        if np.isscalar(R_inst_rw):
+            local_R_inst = copy(R_inst_rw)
+        else:
+            local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
+        sigma_inst = 1 / local_R_inst * lamb_c_obs / np.sqrt(np.log(256))
         sigma = np.sqrt(sigma_line**2 + sigma_inst**2)
         model = np.exp(-0.5 * ((obs_wave_w-mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi)) 
-        dw = (obs_wave_w[1:]-obs_wave_w[:-1]).min()
-        if (model * dw).sum() < 0.10: flux = 0 # disable not well covered emission line
+        # dw = (obs_wave_w[1:]-obs_wave_w[:-1]).min()
+        # if (model * dw).sum() < 0.10: flux = 0 # disable not well covered emission line
         return model * flux
 
     def models_single_comp(self, obs_wave_w, pars, list_valid, list_free):
@@ -299,16 +316,17 @@ class ELineFrame(object):
         models_scomp = []
         for i_free in list_free:
             model_sline = self.single_gaussian(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
-                                               1, self.v0_redshift, self.spec_R_inst) # flux=1
+                                               1, self.v0_redshift, self.R_inst_rw) # flux=1
             list_linked = np.where(self.linelink_n == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
                 model_sline += self.single_gaussian(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
-                                                    self.lineratio_n[i_linked], self.v0_redshift, self.spec_R_inst)
+                                                    self.lineratio_n[i_linked], self.v0_redshift, self.R_inst_rw)
             models_scomp.append(model_sline)
-        return models_scomp
+        return np.array(models_scomp)
     
-    def models_unitnorm_obsframe(self, obs_wave_w, input_pars, if_pars_flat=True):
+    def models_unitnorm_obsframe(self, obs_wave_w, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
+        # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         if if_pars_flat: 
             pars = self.cframe.flat_to_arr(input_pars)
         else:
@@ -317,12 +335,17 @@ class ELineFrame(object):
         for i_comp in range(self.num_comps):
             list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
             list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
-            models_scomp = self.models_single_comp(obs_wave_w, pars[i_comp], list_valid, list_free)
+            obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, pars[i_comp], list_valid, list_free)
+
             if i_comp == 0: 
-                models_mcomp = models_scomp
+                obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
-                models_mcomp += models_scomp
-        return np.array(models_mcomp)
+                obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+
+        if mask_lite_e is not None:
+            obs_flux_mcomp_ew = obs_flux_mcomp_ew[mask_lite_e,:]
+
+        return obs_flux_mcomp_ew
 
     def mask_el_lite(self, enabled_comps='all'):
         self.enabled_f = np.zeros((self.num_coeffs), dtype='bool')
@@ -336,48 +359,78 @@ class ELineFrame(object):
     ##########################################################################
     ########################## Output functions ##############################
 
-    def output_results(self, ff=None):
-        num_mock_loops = ff.num_mock_loops
-        best_chi_sq_l = ff.best_chi_sq
-        best_x_lp = ff.best_fits_x
-        best_coeff_lm = ff.best_coeffs
-        fx0, fx1, fc0, fc1 = ff.model_index('el', ff.full_model_type)
-
-        num_el_comps = self.cframe.num_comps
-        num_el_pars = self.cframe.num_pars
+    def extract_results(self, ff=None, step=None, print_results=True, return_results=False, show_average=False):
+        if (step is None) | (step == 'best') | (step == 'final'):
+            step = 'joint_fit_3' if ff.have_phot else 'joint_fit_2'
+        if (step == 'spec+SED'):  step = 'joint_fit_3'
+        if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
         
-        output_el_lcp = np.zeros((num_mock_loops, num_el_comps, 1 + num_el_pars + self.num_lines))
-        # use self.num_lines instead of self.num_coeffs to cover non-free lines
-        output_el_lcp[:, :, 0] = best_chi_sq_l[:, None]
+        best_chi_sq_l = ff.output_s[step]['chi_sq_l']
+        best_par_lp   = ff.output_s[step]['par_lp']
+        best_coeff_le = ff.output_s[step]['coeff_le']
 
-        for i_loop in range(num_mock_loops):
-            output_el_lcp[i_loop, :, 1:(1+num_el_pars)] = self.cframe.flat_to_arr( best_x_lp[i_loop, fx0:fx1] )
-            output_el_lcp[i_loop, :, -self.num_lines:][self.mask_free_cn] = best_coeff_lm[i_loop, fc0:fc1]
-        
+        fp0, fp1, fe0, fe1 = ff.search_model_index('el', ff.full_model_type)
+        num_loops = ff.num_loops
+        comp_c = self.cframe.comp_c
+        num_comps = self.cframe.num_comps
+        num_pars_per_comp = self.cframe.num_pars_per_comp
+
+        # extract parameters of emission lines
+        par_lcp = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)
+        # extract coefficients of all free lines to matrix
+        coeff_lcn = np.zeros((num_loops, num_comps, self.num_lines))
+        coeff_lcn[:, self.mask_free_cn] = best_coeff_le[:, fe0:fe1]
         # update lineratio_n to calculate tied lines        
         list_linked = np.where(np.isin(self.linename_n, [*self.linelink_dict]))[0]
         for i_line in list_linked:
-            i_main = 1 + num_el_pars + np.where(self.linename_n == self.linelink_n[i_line])[0]
-            for i_loop in range(num_mock_loops):
-                for i_comp in range(num_el_comps):
-                    self.update_lineratio(output_el_lcp[i_loop, i_comp, 1+2], 
-                                          output_el_lcp[i_loop, i_comp, 1+3], 
-                                          output_el_lcp[i_loop, i_comp, 1+4])
-                    output_el_lcp[i_loop, i_comp, 1 + num_el_pars + i_line] = output_el_lcp[i_loop, i_comp, i_main] * self.lineratio_n[i_line] \
-                                                                            * self.mask_valid_cn[i_comp, i_line]
-        self.output_el_lcp = output_el_lcp # save to model frame
-            
-        # output to screen
-        output_el_vals = {
-            'mean': np.average(output_el_lcp, weights=1/best_chi_sq_l, axis=0), 
-            'rms' : np.std(output_el_lcp, axis=0, ddof=1) }
+            i_main = np.where(self.linename_n == self.linelink_n[i_line])[0]
+            for i_loop in range(num_loops):
+                for i_comp in range(num_comps):
+                    self.update_lineratio(*tuple(par_lcp[i_loop, i_comp, 2:5]))
+                    coeff_lcn[i_loop, i_comp, i_line] = coeff_lcn[i_loop, i_comp, i_main] * self.lineratio_n[i_line] * self.mask_valid_cn[i_comp, i_line]
 
-        self.output_el_vals = output_el_vals # save to model frame
-        self.print_results()
+        # list the properties to be output
+        val_names = ['voff', 'fwhm', 'AV', 'e_den', 'e_temp']
+        # append flux of each line
+        for i_line in range(self.num_lines): val_names.append('{}'.format(self.linename_n[i_line]))
 
-    def print_results(self):
-        print('')
-        print('Best-fit emission line components')
+        # format of results
+        # output_c['comp']['par_lp'][i_l,i_p]: parameters
+        # output_c['comp']['coeff_le'][i_l,i_n]: coefficients of all emission lines (not only free lines)
+        # output_c['comp']['values']['name_l'][i_l]: calculated values
+        output_c = {}
+        for i_comp in range(num_comps): 
+            output_c[comp_c[i_comp]] = {} # init results for each comp
+            output_c[comp_c[i_comp]]['par_lp']   = par_lcp[:, i_comp, :]
+            output_c[comp_c[i_comp]]['coeff_le'] = coeff_lcn[:, i_comp, :]
+            output_c[comp_c[i_comp]]['values'] = {}
+            for val_name in val_names:
+                output_c[comp_c[i_comp]]['values'][val_name] = np.zeros(num_loops, dtype='float')
+        output_c['sum'] = {}
+        output_c['sum']['values'] = {} # only init values for sum of all comp
+        for val_name in val_names:
+            output_c['sum']['values'][val_name] = np.zeros(num_loops, dtype='float')
+
+        for i_comp in range(num_comps): 
+            for i_par in range(num_pars_per_comp):
+                output_c[comp_c[i_comp]]['values'][val_names[i_par]] = output_c[comp_c[i_comp]]['par_lp'][:, i_par]
+            for i_line in range(self.num_lines):
+                output_c[comp_c[i_comp]]['values'][val_names[i_line+num_pars_per_comp]] = output_c[comp_c[i_comp]]['coeff_le'][:, i_line]
+                output_c['sum']['values'][val_names[i_line+num_pars_per_comp]] += output_c[comp_c[i_comp]]['coeff_le'][:, i_line]
+
+        self.output_c = output_c # save to model frame
+        self.num_loops = num_loops # for print_results
+        self.spec_flux_scale = ff.spec_flux_scale # for print_results
+
+        if print_results: self.print_results(log=ff.log_message, show_average=show_average)
+        if return_results: return output_c
+
+    def print_results(self, log=[], show_average=False):
+        mask_l = np.ones(self.num_loops, dtype='bool')
+        if not show_average: mask_l[1:] = False
+        
+        print_log('', log)
+        print_log('Best-fit emission line components', log)
 
         cols = 'Par/Line Name'
         fmt_cols = '| {:^20} |'
@@ -389,19 +442,19 @@ class ELineFrame(object):
         cols_split = cols.split(',')
         tbl_title = fmt_cols.format(*cols_split)
         tbl_border = len(tbl_title)*'='
-        print(tbl_border)
-        print(tbl_title)
-        print(tbl_border)
+        print_log(tbl_border, log)
+        print_log(tbl_title, log)
+        print_log(tbl_border, log)
 
-        names = ['Chi^2', 'Voff (km/s)', 'FWHM (km/s)', 'AV (Balmer decre.)', 'log e-density (cm-3)', 'log e-temperature(K)']
-        for i_line in range(self.num_lines): 
-            names.append('{}'.format(self.linename_n[i_line]))
-        for i_par in range(len(names)): 
+        names = ['Voff (km/s)', 'FWHM (km/s)', 'AV (Balmer decre.)', 'log e-density (cm-3)', 'log e-temperature(K)']
+        for i_line in range(self.num_lines): names.append('{}'.format(self.linename_n[i_line]))
+        for i_value in range(len(names)): 
             tbl_row = []
-            tbl_row.append(names[i_par])
+            tbl_row.append(names[i_value])
             for i_comp in range(self.num_comps):
-                tbl_row.append(self.output_el_vals['mean'][i_comp, i_par])
-                tbl_row.append(self.output_el_vals['rms'][i_comp, i_par])
-            print(fmt_numbers.format(*tbl_row))
-        print(tbl_border)  
-    
+                tmp_values_vl = self.output_c[[*self.output_c][i_comp]]['values']
+                tbl_row.append(tmp_values_vl[[*tmp_values_vl][i_value]][mask_l].mean())
+                tbl_row.append(tmp_values_vl[[*tmp_values_vl][i_value]].std())
+            print_log(fmt_numbers.format(*tbl_row), log)
+        print_log(tbl_border, log)  
+        print_log(f'[Note] Rows starting with a line name show the observed line flux, in unit of {self.spec_flux_scale} erg/s/cm2.', log)

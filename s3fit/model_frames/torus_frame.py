@@ -1,5 +1,6 @@
 # Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
 # Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
+# Repository: https://github.com/xychcz/S3Fit
 # Contact: xiaoyang.chen.cz@gmail.com
 
 import numpy as np
@@ -10,10 +11,12 @@ import astropy.constants as const
 from astropy.cosmology import WMAP9 as cosmo
 from scipy.interpolate import RegularGridInterpolator
 
+from ..auxiliary_func import print_log
+
 class TorusFrame(object): 
     # SKIRTor, https://sites.google.com/site/skirtorus/sed-library
     def __init__(self, filename=None, w_min=None, w_max=None, 
-                 cframe=None, v0_redshift=None, flux_scale=None): # , spec_R_inst=None
+                 cframe=None, v0_redshift=None, lum_norm=None, flux_scale=None, verbose=True, log_message=[]): 
         
         self.filename = filename        
         self.w_min = w_min # currently not used
@@ -21,16 +24,19 @@ class TorusFrame(object):
         self.cframe = cframe 
         self.v0_redshift = v0_redshift
         self.flux_scale = flux_scale
-        # self.spec_R_inst = spec_R_inst
-        
+        self.lum_norm = lum_norm if lum_norm is not None else 1e10 # normlize model by 1e10 Lsun
+        self.verbose = verbose
+        self.log_message = log_message
+                
         self.num_coeffs = 1 # only have one norm-free model in a single fitting component (since disc and torus are tied)
         self.read_skirtor()
         
     def read_skirtor(self): 
         # skirtor_disc = np.loadtxt(self.file_disc) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
         # skirtor_torus = np.loadtxt(self.file_dust) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
-        skirtor_disc = fits.open(self.filename)[0].data[0]
-        skirtor_torus = fits.open(self.filename)[0].data[1]
+        skirtor_lib = fits.open(self.filename)
+        skirtor_disc = skirtor_lib[0].data[0]
+        skirtor_torus = skirtor_lib[0].data[1]
 
         wave = skirtor_disc[6:-1,0] # 1e-3 to 1e3 um; omit the last one with zero-value SED
         n_tau = 5; tau = np.array([ 3, 5, 7, 9, 11 ])
@@ -62,10 +68,10 @@ class TorusFrame(object):
                         disc[i_tau, i_oa, i_rrat, i_incl, :] = skirtor_disc[6:-1,mask][:,0]
                         torus[i_tau, i_oa, i_rrat, i_incl, :] = skirtor_torus[6:-1,mask][:,0]
                         # in the original library the torus sed and mass is normalized to Lum_AGN of 1 Lsun, 
-                        # here renormlized them to Lum_Torus of 1e12 Lsun (i.e., Lum_AGN = 1e12 Lsun / EB_Torus) 
-                        disc[i_tau, i_oa, i_rrat, i_incl, :]  *= 1e12 / eb[i_tau, i_oa, i_rrat]
-                        torus[i_tau, i_oa, i_rrat, i_incl, :] *= 1e12 / eb[i_tau, i_oa, i_rrat]
-                        mass[i_tau, i_oa, i_rrat] *= 1e12 / eb[i_tau, i_oa, i_rrat]
+                        # here renormlized them to Lum_Torus of self.lum_norm Lsun (i.e., Lum_AGN = self.lum_norm Lsun / EB_Torus) 
+                        disc[i_tau, i_oa, i_rrat, i_incl, :]  *= self.lum_norm / eb[i_tau, i_oa, i_rrat]
+                        torus[i_tau, i_oa, i_rrat, i_incl, :] *= self.lum_norm / eb[i_tau, i_oa, i_rrat]
+                        mass[i_tau, i_oa, i_rrat] *= self.lum_norm / eb[i_tau, i_oa, i_rrat]
         
         # convert unit: 1 erg/s/um -> flux_scale * erg/s/AA/cm2
         wave *= 1e4
@@ -101,7 +107,8 @@ class TorusFrame(object):
         gen_eb   = fun_eb(gen_pars)
         return gen_mass, gen_eb
 
-    def models_unitnorm_obsframe(self, wavelength, input_pars, if_pars_flat=True):
+    def models_unitnorm_obsframe(self, wavelength, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
+        # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         # pars: voff (to adjust redshift), tau, oa, rratio, incl
         # comps: 'disc', 'torus', 'disc+torus'
         if if_pars_flat: 
@@ -152,66 +159,112 @@ class TorusFrame(object):
                 ret_torus = 10.0**ret_logtorus
                 ret_torus[ret_logtorus <= -100] = 0
                 
-            models_scomp_obsframe = np.zeros_like(ret_logwave)
-            if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']): models_scomp_obsframe += ret_disc
-            if np.isin('dust', self.cframe.info_c[i_comp]['mod_used']): models_scomp_obsframe += ret_torus
+            obs_flux_scomp_ew = np.zeros_like(ret_logwave)
+            if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']): obs_flux_scomp_ew += ret_disc
+            if np.isin('dust', self.cframe.info_c[i_comp]['mod_used']): obs_flux_scomp_ew += ret_torus
                 
-            models_scomp_obsframe = np.vstack((models_scomp_obsframe))
-            models_scomp_obsframe = models_scomp_obsframe.T # add .T for a uniform format with other models with n_coeffs > 1
+            obs_flux_scomp_ew = np.vstack((obs_flux_scomp_ew))
+            obs_flux_scomp_ew = obs_flux_scomp_ew.T # add .T for a uniform format with other models with n_coeffs > 1
             
             if i_comp == 0: 
-                models_mcomp_obsframe = models_scomp_obsframe
+                obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
-                models_mcomp_obsframe += models_scomp_obsframe # not tested
-        return np.array(models_mcomp_obsframe) 
+                obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+
+        if mask_lite_e is not None:
+            obs_flux_mcomp_ew = obs_flux_mcomp_ew[mask_lite_e,:]
+
+        return obs_flux_mcomp_ew
 
     ##########################################################################
     ########################### Output functions #############################
 
-    def output_results(self, ff=None):
-        num_mock_loops = ff.num_mock_loops
-        best_chi_sq_l = ff.best_chi_sq
-        best_x_lp = ff.best_fits_x
-        best_coeff_lm = ff.best_coeffs
-        fx0, fx1, fc0, fc1 = ff.model_index('torus', ff.full_model_type)
-
-        num_torus_comps = self.cframe.num_comps
-        num_torus_pars = self.cframe.num_pars
-        num_torus_coeffs = self.num_coeffs
-
-        output_torus_lcp = np.zeros((num_mock_loops, num_torus_comps, 1 + num_torus_pars + num_torus_coeffs ))
-        # p: chi_sq, output_values, ssp_coeffs
-        output_torus_lcp[:, :, 0]                  = best_chi_sq_l[:, None]
-        output_torus_lcp[:, :, 1:(1+num_torus_pars)] = best_x_lp[:, fx0:fx1].reshape(num_mock_loops, num_torus_comps, num_torus_pars)
-        output_torus_lcp[:, :, -num_torus_coeffs:]   = best_coeff_lm[:, fc0:fc1].reshape(num_mock_loops, num_torus_comps, num_torus_coeffs)
-        self.output_torus_lcp = output_torus_lcp # save to model frame
+    def extract_results(self, ff=None, step=None, print_results=True, return_results=False, show_average=False):
+        if (step is None) | (step == 'best') | (step == 'final'):
+            step = 'joint_fit_3' if ff.have_phot else 'joint_fit_2'
+        if (step == 'spec+SED'):  step = 'joint_fit_3'
+        if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
         
-        # output to screen
-        output_torus_vals = {
-            'mean': np.average(output_torus_lcp, weights=1/best_chi_sq_l, axis=0), 
-            'rms' : np.std(output_torus_lcp, axis=0, ddof=1) }
-        self.output_torus_vals = output_torus_vals # to print results
-        self.print_results()
-        
-    def print_results(self):
-        num_torus_comps = self.cframe.num_comps
+        best_chi_sq_l = ff.output_s[step]['chi_sq_l']
+        best_par_lp   = ff.output_s[step]['par_lp']
+        best_coeff_le = ff.output_s[step]['coeff_le']
 
-        print('')
-        for i_comp in range(num_torus_comps):
-            print(f'Best-fit properties of torus component: <{self.cframe.comp_c[i_comp]}>')
-            # msg  = f'| Voff (km/s)           = {self.output_torus_vals["mean"][1]:10.4f}'
-            # msg += f' +/- {self.output_torus_vals["rms"][1]:0.4f}\n'
-            msg  = f'| Optical depth at 9.7 um = {self.output_torus_vals["mean"][i_comp,2]:10.4f}'
-            msg += f' +/- {self.output_torus_vals["rms"][i_comp,2]:0.4f}\n'
-            msg += f'| Out/in radii ratio      = {self.output_torus_vals["mean"][i_comp,4]:10.4f}'
-            msg += f' +/- {self.output_torus_vals["rms"][i_comp,4]:0.4f}\n'
-            msg += f'| Half OpenAng (degree)   = {self.output_torus_vals["mean"][i_comp,3]:10.4f}'
-            msg += f' +/- {self.output_torus_vals["rms"][i_comp,3]:0.4f}\n'
-            msg += f'| Inclination (degree)    = {self.output_torus_vals["mean"][i_comp,5]:10.4f}'
-            msg += f' +/- {self.output_torus_vals["rms"][i_comp,5]:0.4f}\n'
-            msg += f'| Torus Lum (1e12 Lsun)   = {self.output_torus_vals["mean"][i_comp,6]:10.4f}'
-            msg += f' +/- {self.output_torus_vals["rms"][i_comp,6]:0.4f}'
-            bar = '='*50
-            print(bar)
-            print(msg)
-            print(bar)
+        fp0, fp1, fe0, fe1 = ff.search_model_index('torus', ff.full_model_type)
+        num_loops = ff.num_loops
+        comp_c = self.cframe.comp_c
+        num_comps = self.cframe.num_comps
+        num_pars_per_comp = self.cframe.num_pars_per_comp
+        num_coeffs_per_comp = int(self.num_coeffs / num_comps)
+
+        # list the properties to be output
+        val_names  = ['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] # basic fitting parameters
+        val_names += ['loglum']
+
+        # format of results
+        # output_c['comp']['par_lp'][i_l,i_p]: parameters
+        # output_c['comp']['coeff_le'][i_l,i_e]: coefficients
+        # output_c['comp']['values']['name_l'][i_l]: calculated values
+        output_c = {}
+        for i_comp in range(num_comps): 
+            output_c[comp_c[i_comp]] = {} # init results for each comp
+            output_c[comp_c[i_comp]]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
+            output_c[comp_c[i_comp]]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
+            output_c[comp_c[i_comp]]['values'] = {}
+            for val_name in val_names:
+                output_c[comp_c[i_comp]]['values'][val_name] = np.zeros(num_loops, dtype='float')
+        output_c['sum'] = {}
+        output_c['sum']['values'] = {} # only init values for sum of all comp
+        for val_name in val_names:
+            output_c['sum']['values'][val_name] = np.zeros(num_loops, dtype='float')
+
+        for i_comp in range(num_comps): 
+            for i_par in range(num_pars_per_comp):
+                output_c[comp_c[i_comp]]['values'][val_names[i_par]] = output_c[comp_c[i_comp]]['par_lp'][:, i_par]
+            for i_loop in range(num_loops):
+                # par_p   = output_c[comp_c[i_comp]]['par_lp'][i_loop]
+                coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]
+                output_c[comp_c[i_comp]]['values']['loglum'][i_loop] = np.log10(coeff_e[0]*self.lum_norm)
+                output_c['sum']['values']['loglum'][i_loop] = coeff_e[0]*self.lum_norm
+        output_c['sum']['values']['loglum'] = np.log10(output_c['sum']['values']['loglum'])
+
+        self.output_c = output_c # save to model frame
+        self.num_loops = num_loops # for print_results
+        self.spec_flux_scale = ff.spec_flux_scale # to calculate luminosity in printing
+
+        if print_results: self.print_results(log=ff.log_message, show_average=show_average)
+        if return_results: return output_c
+
+    def print_results(self, log=[], show_average=False):
+        mask_l = np.ones(self.num_loops, dtype='bool')
+        if not show_average: mask_l[1:] = False
+
+        if self.cframe.num_comps > 1:
+            num_comps = len([*self.output_c])
+        else:
+            num_comps = 1
+
+        print_log('', log)
+        msg = ''
+        for i_comp in range(num_comps):
+            tmp_values_vl = self.output_c[[*self.output_c][i_comp]]['values']
+            if i_comp < self.cframe.num_comps:
+                print_log(f'Best-fit properties of torus component: <{self.cframe.comp_c[i_comp]}>', log)
+                print_log(f'[Note] velocity shift (i.e., redshift) is tied following the input model_config.', log)
+                # msg  = f'| Voff (km/s)           = {tmp_values_vl["voff"][mask_l].mean():10.4f}'
+                # msg += f' +/- {tmp_values_vl["voff"].std():<8.4f}|\n'
+                msg += f'| Optical depth at 9.7 um = {tmp_values_vl["opt_depth_9.7"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["opt_depth_9.7"].std():<8.4f}|\n'
+                msg += f'| Out/in radii ratio      = {tmp_values_vl["radii_ratio"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["radii_ratio"].std():<8.4f}|\n'
+                msg += f'| Half OpenAng (degree)   = {tmp_values_vl["opening_angle"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["opening_angle"].std():<8.4f}|\n'
+                msg += f'| Inclination (degree)    = {tmp_values_vl["inclination"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["inclination"].std():<8.4f}|\n'
+            else:
+                print_log(f'Best-fit stellar properties of the sum of all components.', log)
+            msg += f'| log Lum of torus (Lsun) = {tmp_values_vl["loglum"][mask_l].mean():10.4f}'
+            msg += f' +/- {tmp_values_vl["loglum"].std():<8.4f}|'
+            bar = '=' * len(msg.split('|\n')[-1])
+            print_log(bar, log)
+            print_log(msg, log)
+            print_log(bar, log)
