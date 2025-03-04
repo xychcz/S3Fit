@@ -61,7 +61,9 @@
 - `v0_redshift` (float, <ins>**required**</ins>) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 - `model_config` (nested dictionary, <ins>**required**</ins>) \
-   Dictionary of model configurations, see [model setup](#configure-models) section for details. 
+   Dictionary of model configurations.
+   Please refer to the [model configuration](../manuals/basic_usage.md#2-model-configuration) section
+   in the manual of [basic usage](../manuals/basic_usage.md) for details. 
 - `norm_wave` and `norm_width` (float, optional) \
    Wavelength and width (in angstrom) used to normalize continuum models.
    Default values are `5500` and `25` angstrom, respectively. 
