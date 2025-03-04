@@ -15,11 +15,11 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
               print_step=True, plot_step=False, canvas=None)
 ```
 #### 1.1 Input spectroscopic data
-- `spec_wave_w` (list or numpy array of floats) \
+- `spec_wave_w` (list or numpy array of floats, <ins>**required**</ins>) \
    Wavelength of the input spectrum, in unit of angstrom.
-- `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats) \
+- `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats, <ins>**required**</ins>) \
    Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.
-- `spec_R_inst_w` (list or numpy array of floats, or 2-element list) \
+- `spec_R_inst_w` (list or numpy array of floats, or 2-element list, <ins>**required**</ins>) \
    Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum,
    this is used to convolve the model spectra and estimate the intrinsic velocity width. 
   `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
@@ -37,6 +37,9 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Fluxes and measurement errors in each band.
 - `phot_trans_dir` (string) \
    Directory of files of the transmission curves.
+> [!TIP]
+> The above four parameters are only necessary if a simultaneous fitting of spectrum and photometric-SED is required.
+> S<sup>3</sup>Fit will run in a pure-spectral fitting mode if these parameters are set to `None` (default). 
 - `phot_fluxunit` (string, optional) \
    Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
    If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
@@ -47,12 +50,10 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w`
    with `phot_flux_b` in the two bands, e.g., to correct for aperture loss of the input spectrum. 
    Set `phot_calib_b=None` (default) if the calibration is not required. 
-> [!TIP]
-> If a pure-spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` from the input parameters of `FitFrame`. 
 #### 1.3 Model setup 
-- `v0_redshift` (float) \
+- `v0_redshift` (float, <ins>**required**</ins>) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
-- `model_config` (nested dictionary) \
+- `model_config` (nested dictionary, <ins>**required**</ins>) \
    Dictionary of model configurations, see [model configuration](#2-model-configuration) section for details. 
 #### 1.4 Control of fitting
 - `num_mocks` (int, optional) \
