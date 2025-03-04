@@ -7,11 +7,11 @@
 > The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 ### Input spectroscopic data
-- `spec_wave_w` (list or numpy array of floats) \
+- `spec_wave_w` (list or numpy array of floats, <ins>**required**</ins>) \
    Wavelength of the input spectrum, in unit of angstrom.
-- `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats) \
+- `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats, <ins>**required**</ins>) \
    Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.
-- `spec_R_inst_w` (list or numpy array of floats, or 2-element list) \
+- `spec_R_inst_w` (list or numpy array of floats, or 2-element list, <ins>**required**</ins>) \
    Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum,
    this is used to convolve the model spectra and estimate the intrinsic velocity width. 
   `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
@@ -32,6 +32,9 @@
    Fluxes and measurement errors in each band.
 - `phot_trans_dir` (string) \
    Directory of files of the transmission curves.
+> [!TIP]
+> The above four parameters are only necessary if a simultaneous fitting of spectrum and photometric-SED is required.
+> S<sup>3</sup>Fit will run in a pure-spectral fitting mode if these parameters are set to `None` (default). 
 - `phot_fluxunit` (string, optional) \
    Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
    If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
@@ -53,13 +56,11 @@
 - `phot_trans_rsmp` (int, optional) \
    Minimum number of data points to resample the transmission curves within their FWHM.
    Default is 10, i.e., at least 10 data points will be used to resample all of the transmission curves in the ranges with half of their maximum transmission values. 
-> [!TIP]
-> If a pure-spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
 
 ### Model setup 
-- `v0_redshift` (float) \
+- `v0_redshift` (float, <ins>**required**</ins>) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
-- `model_config` (nested dictionary) \
+- `model_config` (nested dictionary, <ins>**required**</ins>) \
    Dictionary of model configurations, see [model setup](#configure-models) section for details. 
 - `norm_wave` and `norm_width` (float, optional) \
    Wavelength and width (in angstrom) used to normalize continuum models.
