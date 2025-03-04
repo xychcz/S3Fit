@@ -236,7 +236,7 @@ The 1st parameter is velocity width if the spectral feature can be used to deter
 The 2nd parameter is typically set to the extinction value. 
 The 3rd and later parameters are used to control the model shapes, e.g., the spectral index of AGN powerlaw. 
 Please read the [model configuration](../manuals/basic_usage.md#2-model-configuration)
-section in [basic usage](../manuals/basic_usage.md)
+section in the manual of [basic usage](../manuals/basic_usage.md)
 for examples of different configurations. 
 
 Please also remember to update the total `model_config` with:
