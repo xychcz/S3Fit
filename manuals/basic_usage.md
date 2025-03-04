@@ -54,7 +54,8 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 - `v0_redshift` (float, <ins>**required**</ins>) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 - `model_config` (nested dictionary, <ins>**required**</ins>) \
-   Dictionary of model configurations, see [model configuration](#2-model-configuration) section for details. 
+   Dictionary of model configurations.
+   Please refer to the [model configuration](#2-model-configuration) section for details. 
 #### 1.4 Control of fitting
 - `num_mocks` (int, optional) \
    Number of the mock spectra for the Monte Carlo method.  
