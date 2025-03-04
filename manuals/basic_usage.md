@@ -24,51 +24,53 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    this is used to convolve the model spectra and estimate the intrinsic velocity width. 
   `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
    or given as a constant value as `spec_R_inst_w=[wave,R]` to specify the resolution `R` at the wavelength `wave` (in angstrom). 
-- `spec_valid_range` (nested list of floats) \
+- `spec_valid_range` (nested list of floats, optional) \
    Valid wavelength range.
    For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.
+   Default is `None`, in this case the entire input spectrum (except for the wavelengths with non-positive `spec_ferr_w`)
+   will be used in the fitting. 
 #### 1.2 Input photometric data
 - `phot_name_b` (list or numpy array of strings) \
    List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
    The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
 - `phot_flux_b` and `phot_ferr_b` (list or numpy array of floats) \
    Fluxes and measurement errors in each band.
-- `phot_calib_b` (list or numpy array of strings) \
+- `phot_calib_b` (list or numpy array of strings, optional) \
    List of band names of photometric data that is used for calibration of spectrum.
    For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum,
    set `phot_calib_b=['SDSS_rp','SDSS_ip']`
    and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w`
    with `phot_flux_b` in the two bands, e.g., to correct for aperture loss of the input spectrum. 
    Set `phot_calib_b=None` (default) if the calibration is not required. 
-- `phot_fluxunit` (string) \
+- `phot_fluxunit` (string, optional) \
    Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
    If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
 - `phot_trans_dir` (string) \
    Directory of files of the transmission curves.
 > [!TIP]
-> If a pure-spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` and `sed_` from the input parameters of `FitFrame`. 
+> If a pure-spectral fitting is required, please set `phot_name_b=None` or just remove all input parameters starting with `phot_` from the input parameters of `FitFrame`. 
 #### 1.3 Model setup 
 - `v0_redshift` (float) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 - `model_config` (nested dictionary) \
    Dictionary of model configurations, see [model configuration](#2-model-configuration) section for details. 
 #### 1.4 Control of fitting
-- `num_mocks` (int) \
+- `num_mocks` (int, optional) \
    Number of the mock spectra for the Monte Carlo method.  
    The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
-- `fit_grid` (string) \
+- `fit_grid` (string, optional) \
    Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
    Set `fit_grid='log'` to run the fitting in logarithmic flux grid.
    Note that if emisison line is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`.
    (please refer to [fitting strategy](./fitting_strategy.md) for details). 
 #### 1.5 Auxiliary
-- `print_step` (bool) \
+- `print_step` (bool, optional) \
    Whether or not to print the information each intermediate step (e.g., the examination of each model component).
    Default is `True`.
-- `plot_step` (bool) \
+- `plot_step` (bool, optional) \
    Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step.
    Default is `False`. 
-- `canvas` (tuple) \
+- `canvas` (tuple, optional) \
    Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
    Please read the [Jupyter Notebook](../example/example.ipynb) for an example case. 
 > [!NOTE]
