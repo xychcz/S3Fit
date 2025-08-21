@@ -72,8 +72,23 @@ pyneb = 1.1.23 (optional)
 - Test support for absorption lines. 
 
 ## Citation
-If you would like to use S<sup>3</sup>Fit, please cite the paper [Chen et al. (2025)][1], in which a pure-spectral-fit mode of this code is firstly utilized. 
+If you would like to use S<sup>3</sup>Fit, please cite with the following BibTeX code:
+```
+@software{2025ascl.soft03024C,
+       author = {{Chen}, Xiaoyang},
+        title = "{S3Fit: Simultaneous Spectrum and photometric-SED Fitting code for galaxy observations}",
+ howpublished = {Astrophysics Source Code Library, record ascl:2503.024},
+         year = 2025,
+        month = mar,
+          eid = {ascl:2503.024},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2025ascl.soft03024C},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
+ <!--
+please cite the paper [Chen et al. (2025)][1], in which a pure-spectral-fit mode of this code is firstly utilized. 
 Please find details of the configuration of star formation history and kinematic parameters of emission lines in the paper. 
+-->
 
 ## Reference
 S<sup>3</sup>Fit uses the Single Stellar Population (SSP) library [HR-pyPopStar][2] ([paper][3]). 
