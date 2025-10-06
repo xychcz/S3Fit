@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from .config_frame import ConfigFrame
 from .phot_frame import PhotFrame
 # from .model_frames import *
-from .auxiliary_func import print_log, center_string
+from .auxiliary_func import print_log, center_string, convolve_fix_width_fft, convolve_var_width_fft
 
 class FitFrame(object):
     def __init__(self, 
@@ -25,11 +25,14 @@ class FitFrame(object):
                  phot_trans_dir=None, phot_trans_rsmp=10, 
                  sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, 
                  v0_redshift=None, model_config=None, norm_wave=5500, norm_width=25, 
-                 num_mocks=0, inst_calib_ratio=0.1, 
+                 num_mocks=0, 
+                 inst_calib_ratio=0.1, inst_calib_ratio_rev=True, inst_calib_smooth=1e4, 
                  examine_result=True, accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
                  fit_grid='linear', conv_nbin_max=5, 
-                 print_step=True, plot_step=False, canvas=None, save_test=False, verbose=False): 
+                 print_step=True, plot_step=False, canvas=None, 
+                 save_per_loop=False, output_filename=None, 
+                 save_test=False, verbose=False): 
 
         input_args = {k: v for k, v in locals().items() if k != "self"}
         if not np.array([isinstance(input_args[k], np.ndarray) for i, k in enumerate(input_args)]).any():
@@ -73,8 +76,12 @@ class FitFrame(object):
         # number of mock data
         self.num_mocks = num_mocks
         print_log(f"Perform fitting for the original data and {self.num_mocks} mock data.", self.log_message)
+
         # initial ratio to estimate calibration error
         self.inst_calib_ratio = inst_calib_ratio
+        self.inst_calib_ratio_rev = inst_calib_ratio_rev
+        # smoothing width when creating modified error
+        self.inst_calib_smooth = inst_calib_smooth
 
         # control on fitting quality: fitting steps
         self.examine_result = examine_result 
@@ -102,6 +109,8 @@ class FitFrame(object):
         self.print_step = print_step # if display in stdout
         self.plot_step = plot_step # if display in matplotlib window
         self.canvas = canvas # canvas=(fig,ax), to display plots dynamically
+        self.save_per_loop = save_per_loop
+        self.output_filename = output_filename
         self.save_test = save_test # if save the iteration tracing for test
         self.verbose = verbose 
 
@@ -135,23 +144,27 @@ class FitFrame(object):
         self.spec_wmin = self.spec_wave_w.min() / (1+self.v0_redshift) / (1+1000/299792.458) - 100
         self.spec_wmax = self.spec_wave_w.max() / (1+self.v0_redshift) / (1-1000/299792.458) + 100
         self.spec_wmin = np.maximum(self.spec_wmin, 91) # set lower limit of wavelength to 91A
-        # print_log(f'Spec models wavelength range (rest frame, AA): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}', self.log_message)
         print_log(f'Spectrum wavelength range (rest frame, AA): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}', self.log_message, verbose)
         print_log(f'[Note] The wavelength range is extended for a tolerance of redshift of +- {1000/299792.458:.3f}.', self.log_message, verbose)
 
         # set valid wavelength range
-        mask_valid_w = np.zeros_like(self.spec_wave_w, dtype='bool')
-        if self.spec_valid_range is not None:
+        if self.spec_valid_range is None:
+            mask_valid_w = np.ones_like(self.spec_wave_w, dtype='bool')
+        else:
+            mask_valid_w = np.zeros_like(self.spec_wave_w, dtype='bool')
             for i_waveslot in range(len(self.spec_valid_range)):
                 waveslot = self.spec_valid_range[i_waveslot]
                 mask_valid_w |= (self.spec_wave_w >= waveslot[0]) & (self.spec_wave_w <= waveslot[1])
         num_invalid = np.sum(mask_valid_w & (self.spec_ferr_w <= 0))
-        if num_invalid > 0: print_log(f"Mask out additional {num_invalid} wavelengths with non-positive errors.", self.log_message)
+        if num_invalid > 0: print_log(f"Mask out additional {num_invalid} wavelengths with non-positive errors.", self.log_message, verbose)
         self.spec['mask_valid_w'] = mask_valid_w & (self.spec_ferr_w > 0)
+        print_log(f"{self.spec['mask_valid_w'].sum()/len(self.spec['mask_valid_w'])*100}% of the input spectrum is valid and will be used in the fitting.", 
+                  self.log_message, verbose)
 
         # check spectral resoltuion
         if len(self.spec_R_inst_w) == 2:
-            print_log(f'[Note] A single value of spectral resolution {self.spec_R_inst_w[1]:.3f} is given at {self.spec_R_inst_w[0]:.3f}AA.', self.log_message, verbose)
+            print_log(f'[Note] A single value of spectral resolution {self.spec_R_inst_w[1]:.3f} is given at {self.spec_R_inst_w[0]:.3f}AA.', 
+                      self.log_message, verbose)
             print_log(f'[Note] Assume a linear wavelength-dependency of spectral resolution in the fitting.', self.log_message, verbose)
             lin_R_inst_w = self.spec_wave_w / self.spec_R_inst_w[0] * self.spec_R_inst_w[1]
             self.spec['R_inst_rw'] = np.vstack((self.spec_wave_w, lin_R_inst_w))
@@ -207,7 +220,7 @@ class FitFrame(object):
                 print_log(f'[Note] The input spectrum is calibrated with photometric fluxes in the bands: {self.phot_calib_b}.', self.log_message, verbose)
                 print_log(f'[Note] The calibration ratio for spectrum is {self.spec_calib_ratio}.', self.log_message, verbose)
 
-        self.input_initialized = True
+        self.input_initialized = True # used to mark if input data is modified in following steps
 
     def load_models(self):
         # models init setup
@@ -439,72 +452,101 @@ class FitFrame(object):
     def create_mock_data(self, i_loop=None, ret_phot=False, chi_sq=None):
         spec_wave_w, spec_flux_w, spec_ferr_w = self.spec['wave_w'], self.spec['flux_w'], self.spec['ferr_w']
         mask_valid_w = self.spec['mask_valid_w']
-        if self.have_phot:
+        if ret_phot:
             phot_wave_b, phot_flux_b, phot_ferr_b = self.phot['wave_b'], self.phot['flux_b'], self.phot['ferr_b']
             mask_valid_b = self.phot['mask_valid_b']
-            specphot_wave_w = np.hstack((spec_wave_w, phot_wave_b))
+            # specphot_wave_w = np.hstack((spec_wave_w, phot_wave_b))
             specphot_flux_w = np.hstack((spec_flux_w, phot_flux_b))
             specphot_ferr_w = np.hstack((spec_ferr_w, phot_ferr_b))
             specphot_mask_w = np.hstack((mask_valid_w, mask_valid_b))
 
-            if (i_loop == 0) & (chi_sq is not None):
-                # update calibration ratio in the 0th fitting loop for raw data
-                # chi_sq is the reduced chi-squared
-                # consider the case when calibration dominates the error, i.e., could be overestimated
-                # chi_sq_0 = sum((residuals/error_0)**2)/N, a good-fit has chi_sq ~ 1, 
-                # i.e., revise error_1 = error_0 * sqrt(chi_sq_0) to get sum((residuals/error_1)**2)/N ~ 1 in the next fitting
+        ####################
+        # create modified errors if both spec and phot data are fit
+        if ret_phot:        
+            # revise calibration ratio in the 0th fitting loop for raw data
+            # chi_sq is the reduced chi-squared
+            # consider the case when calibration dominates the error, i.e., could be overestimated
+            # chi_sq_0 = sum((residuals/error_0)**2)/N, a good-fit has chi_sq ~ 1, 
+            # i.e., revise error_1 = error_0 * sqrt(chi_sq_0) to get sum((residuals/error_1)**2)/N ~ 1 in the next fitting
+            if (self.inst_calib_ratio_rev == True) & (i_loop == 0) & (chi_sq is not None):
                 k0_sq = self.inst_calib_ratio**2
                 k1_sq = k0_sq * chi_sq - np.median((1 - chi_sq) * specphot_ferr_w[specphot_mask_w]**2 / specphot_flux_w[specphot_mask_w]**2)
                 if k1_sq < 0: k1_sq = 0
                 self.inst_calib_ratio = min(np.sqrt(k1_sq), 0.2) # set an upperlimit of 0.2
                 print_log(f"The ratio of calibration error over flux is updated from {np.sqrt(k0_sq):.3f} to {np.sqrt(k1_sq):.3f}.", 
                           self.log_message, self.print_step)
-            specphot_reverr_w = np.sqrt(specphot_ferr_w**2 + specphot_flux_w**2 * self.inst_calib_ratio**2)
 
-        if i_loop == 0: # i.e., return raw data
+            # create modified error
+            if self.inst_calib_smooth < 1e-4: # use 1e-4 instead of 0 to avoid possible equal==0 error
+                # use the original flux 
+                specphot_reverr_w = np.sqrt(specphot_ferr_w**2 + specphot_flux_w**2 * self.inst_calib_ratio**2)
+            else:
+                # create smoothed spectrum
+                if ~np.isin('joint_fit_1', [*self.output_s]):
+                    # if not fit yet
+                    spec_flux_smoothed_w = convolve_var_width_fft(spec_wave_w[mask_valid_w], spec_flux_w[mask_valid_w], fwhm_vel=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
+                    spec_flux_smoothed_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_flux_smoothed_w)
+                else:
+                    # use joint_fit_1 fitting result to avoid cutting of continuum at
+                    spec_flux_smoothed_w = spec_flux_w * 0
+                    if np.isin('cont_fit_1', [*self.output_s]):
+                        spec_fmod_cont_w = self.output_s['cont_fit_1']['ret_dict_l'][i_loop]['fmod_w']
+                        spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, spec_fmod_cont_w, fwhm_vel=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=True)
+                    if np.isin('el_fit_1', [*self.output_s]):
+                        spec_fmod_el_w = self.output_s['el_fit_1']['ret_dict_l'][i_loop]['fmod_w']
+                        spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, spec_fmod_el_w, fwhm_vel=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
+                specphot_flux_smoothed_w = np.hstack((spec_flux_smoothed_w, phot_flux_b))
+                specphot_reverr_w = np.sqrt(specphot_ferr_w**2 + specphot_flux_smoothed_w**2 * self.inst_calib_ratio**2)
+        ####################
+
+        ####################
+        # if i_loop = 0, return raw data and skip the following steps
+        if i_loop == 0:
             if not ret_phot:
                 return spec_flux_w
             else:
                 return specphot_flux_w, specphot_reverr_w
-
-        # if i_loop > 0, create mock data and rescale error (if ret_phot)
-        # extract the best-fit model and residuals from the last loop
-        step = 'joint_fit_3' if ret_phot else 'joint_fit_2'
-        fmod_w = self.output_s[step]['ret_dict_l'][i_loop-1]['fmod_w']
-        fres_w = self.output_s[step]['ret_dict_l'][i_loop-1]['fres_w']
-        spec_fmod_w = fmod_w[:self.num_spec_wave]
-        spec_fres_w = fres_w[:self.num_spec_wave]
-        if ret_phot: 
-            phot_fmod_b = fmod_w[-self.num_phot_band:]
-            phot_fres_b = fres_w[-self.num_phot_band:]
-
-        # perfrom low-pass filter to residuals 
-        window_length = int(50*(1+self.v0_redshift)/np.median(spec_wave_w[1:]-spec_wave_w[:-1])) # smooth high-frequency noise within rest 50AA
-        spec_fres_lowpass_w = savgol_filter(spec_fres_w[mask_valid_w], window_length=min(window_length, len(spec_fres_w[mask_valid_w])), polyorder=2)
-        spec_fres_lowpass_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_fres_lowpass_w)
-        spec_flux_intrinsic_w = spec_fmod_w + spec_fres_lowpass_w
-        if ret_phot: 
-            # if len(phot_fres_b[mask_valid_b]) > 1: 
-            #     phot_fres_lowpass_b = savgol_filter(phot_fres_b[mask_valid_b], window_length=min(2, len(phot_fres_b[mask_valid_b])), polyorder=1)
-            #     phot_fres_lowpass_b = np.interp(phot_wave_b, phot_wave_b[mask_valid_b], phot_fres_lowpass_b)
-            # else:
-            #     phot_fres_lowpass_b = phot_fres_b
-            # phot_flux_intrinsic_b = phot_fmod_b + phot_fres_lowpass_b
-            # do not smooth photometric data since low-frequency trend is hard to obtain
-            # also, when phot-data is considered, the appending errors are always enlarged by including calibration errors, 
-            # i.e., no requirement to subtract intrinsic high-frequency noise from original data
-            phot_flux_intrinsic_b = phot_flux_b
-            specphot_flux_intrinsic_w = np.hstack((spec_flux_intrinsic_w, phot_flux_intrinsic_b))
-
-        # create mock data
-        if not ret_phot:
-            # spec_fmock_w = fmod_w + spec_fres_lowpass_w + np.random.randn(len(spec_ferr_w)) * spec_ferr_w
-            spec_fmock_w = spec_flux_intrinsic_w + np.random.normal(scale=spec_ferr_w) 
-            return spec_fmock_w
         else:
-            # specphot_fmock_w = fmod_w + specphot_fres_lowpass_w + np.random.randn(len(specphot_reverr_w)) * specphot_reverr_w
-            specphot_fmock_w = specphot_flux_intrinsic_w + np.random.normal(scale=specphot_reverr_w)
-            return specphot_fmock_w, specphot_reverr_w
+            # if i_loop > 0, create mock data and rescale error (if ret_phot)
+            # extract the best-fit model and residuals from the first loop (i.e., raw data in default); 
+            # modified from the last step (i_loop-1) to avoid developing offset from the raw data
+            step = 'joint_fit_3' if ret_phot else 'joint_fit_2'
+            fmod_w = self.output_s[step]['ret_dict_l'][0]['fmod_w']
+            fres_w = self.output_s[step]['ret_dict_l'][0]['fres_w']
+            spec_fmod_w = fmod_w[:self.num_spec_wave]
+            spec_fres_w = fres_w[:self.num_spec_wave]
+            if ret_phot: 
+                phot_fmod_b = fmod_w[-self.num_phot_band:]
+                phot_fres_b = fres_w[-self.num_phot_band:]
+
+            # perfrom low-pass filter to residuals 
+            window_length = int(50*(1+self.v0_redshift)/np.median(spec_wave_w[1:]-spec_wave_w[:-1])) # smooth high-frequency noise within rest 50AA
+            spec_fres_lowpass_w = savgol_filter(spec_fres_w[mask_valid_w], window_length=min(window_length, len(spec_fres_w[mask_valid_w])), polyorder=2)
+            spec_fres_lowpass_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_fres_lowpass_w)
+            spec_flux_intrinsic_w = spec_fmod_w + spec_fres_lowpass_w
+            if ret_phot: 
+                # if len(phot_fres_b[mask_valid_b]) > 1: 
+                #     phot_fres_lowpass_b = savgol_filter(phot_fres_b[mask_valid_b], window_length=min(2, len(phot_fres_b[mask_valid_b])), polyorder=1)
+                #     phot_fres_lowpass_b = np.interp(phot_wave_b, phot_wave_b[mask_valid_b], phot_fres_lowpass_b)
+                # else:
+                #     phot_fres_lowpass_b = phot_fres_b
+                # phot_flux_intrinsic_b = phot_fmod_b + phot_fres_lowpass_b
+                # do not smooth photometric data since low-frequency trend is hard to obtain
+                # also, when phot-data is considered, the appending errors are always enlarged by including calibration errors, 
+                # i.e., no requirement to subtract intrinsic high-frequency noise from original data
+                phot_flux_intrinsic_b = phot_flux_b
+                specphot_flux_intrinsic_w = np.hstack((spec_flux_intrinsic_w, phot_flux_intrinsic_b))
+
+            # create mock data
+            if not ret_phot:
+                # spec_fmock_w = fmod_w + spec_fres_lowpass_w + np.random.randn(len(spec_ferr_w)) * spec_ferr_w
+                spec_fmock_w = spec_flux_intrinsic_w + np.random.normal(scale=spec_ferr_w) 
+                return spec_fmock_w
+            else:
+                # specphot_fmock_w = fmod_w + specphot_fres_lowpass_w + np.random.randn(len(specphot_reverr_w)) * specphot_reverr_w
+                specphot_fmock_w = specphot_flux_intrinsic_w + np.random.normal(scale=specphot_reverr_w)
+                return specphot_fmock_w, specphot_reverr_w
+        ####################
 
     ###############################################################################
     ############################## Fitting Functions ##############################
@@ -1210,6 +1252,8 @@ class FitFrame(object):
                 for step_id in [*self.output_s]: self.output_s[step_id]['par_lp'][~mask_goodfit_l, :] = 0
                 for step_id in [*self.output_s]: self.output_s[step_id]['coeff_le'][~mask_goodfit_l, :] = 0
 
+            if self.save_per_loop:
+                self.save_to_file(self.output_filename) 
         print_log(center_string(f'{success_count} successful loops in total {total_count} loops, '+
                                 f'{time.time()-self.time_init:.1f}s', 80), self.log_message)
 
@@ -1242,7 +1286,7 @@ class FitFrame(object):
         spec_wave_w = self.spec['wave_w']
         if self.have_phot: 
             if num_sed_wave is not None:
-                self.input_initialized = False
+                self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
                 self.sed['wave_running_w'] = copy(self.sed['wave_w'])
                 self.sed['wave_w'] = np.logspace(np.log10(self.sed['wave_w'].min()), 
                                                  np.log10(self.sed['wave_w'].max()), num=num_sed_wave)
@@ -1280,6 +1324,18 @@ class FitFrame(object):
 
         # init the dictionary of the results
         output_mc = {} 
+        output_mc['tot'] = {} 
+        # write the flux and ferr in each mock loop
+        output_mc['tot']['flux'] = {}
+        output_mc['tot']['flux']['spec_lw'] = np.array([best_ret_dict_l[i_loop]['flux_w'][:self.num_spec_wave] for i_loop in range(self.num_loops)])
+        output_mc['tot']['ferr'] = {}
+        output_mc['tot']['ferr']['spec_lw'] = np.array([best_ret_dict_l[i_loop]['ferr_w'][:self.num_spec_wave] for i_loop in range(self.num_loops)])
+        if self.have_phot:
+            # always use 'joint_fit_3' step since mock phot only created in this step
+            output_mc['tot']['flux']['phot_lb'] = np.array([self.output_s['joint_fit_3']['ret_dict_l'][i_loop]['flux_w'][-self.num_phot_band:] for i_loop in range(self.num_loops)])
+            output_mc['tot']['ferr']['phot_lb'] = np.array([self.output_s['joint_fit_3']['ret_dict_l'][i_loop]['ferr_w'][-self.num_phot_band:] for i_loop in range(self.num_loops)])
+
+        # init zero formats for models        
         for mod in rev_model_type.split('+'): 
             output_mc[mod] = {} # init results for mod
             comp_c = self.model_dict[mod]['cframe'].comp_c
@@ -1289,17 +1345,16 @@ class FitFrame(object):
                 output_mc[mod][comp_c[i_comp]]['spec_lw'] = np.zeros((num_loops, len(spec_wave_w)))
                 if self.have_phot:
                     output_mc[mod][comp_c[i_comp]]['sed_lw'] = np.zeros((num_loops, len(sed_wave_w)))
-            output_mc[mod]['sum'] = {} # init results for the sum of mod
+            output_mc[mod]['sum'] = {} # init results for the comp's sum for each mod
             output_mc[mod]['sum']['spec_lw'] = np.zeros((num_loops, len(spec_wave_w)))
             if self.have_phot:
                 output_mc[mod]['sum']['sed_lw'] = np.zeros((num_loops, len(sed_wave_w)))
-        output_mc['tot'] = {} # init results for the total model
-        output_mc['tot']['fmod'] = {}
+        output_mc['tot']['fmod'] = {} # init results for the total model
         output_mc['tot']['fmod']['spec_lw'] = np.zeros((num_loops, len(spec_wave_w)))
         if self.have_phot:
             output_mc['tot']['fmod']['sed_lw'] = np.zeros((num_loops, len(sed_wave_w)))
 
-        # extract the best-fit model spectra
+        # extract the best-fit models in spec and spec+SED fitting
         for mod in rev_model_type.split('+'): 
             comp_c = self.model_dict[mod]['cframe'].comp_c
             num_comps = self.model_dict[mod]['cframe'].num_comps
@@ -1325,19 +1380,15 @@ class FitFrame(object):
                         sed_fmod_w  = np.dot(best_coeff_le[i_loop, fe0:fe1][i_e0:i_e1], sed_fmod_ew[i_e0:i_e1])
                         output_mc[mod][comp_c[i_comp]]['sed_lw'][i_loop, :] = sed_fmod_w
                         output_mc[mod]['sum']['sed_lw'][i_loop, :] += sed_fmod_w
-                        output_mc['tot']['fmod']['sed_lw'][i_loop, :] += sed_fmod_w 
+                        output_mc['tot']['fmod']['sed_lw'][i_loop, :] += sed_fmod_w
+        # convert best-fit model SED to phot
+        if self.have_phot:
+            output_mc['tot']['fmod']['phot_lb'] = self.pframe.spec2phot(sed_wave_w, output_mc['tot']['fmod']['sed_lw'], phot_trans_bw)
 
         # save fitting residuals
-        output_mc['tot']['flux'] = {}
-        output_mc['tot']['flux']['spec_lw'] = np.array([best_ret_dict_l[i_loop]['flux_w'][:self.num_spec_wave] for i_loop in range(self.num_loops)])
-        output_mc['tot']['ferr'] = {}
-        output_mc['tot']['ferr']['spec_lw'] = np.array([best_ret_dict_l[i_loop]['ferr_w'][:self.num_spec_wave] for i_loop in range(self.num_loops)])
         output_mc['tot']['fres'] = {}
         output_mc['tot']['fres']['spec_lw'] = output_mc['tot']['flux']['spec_lw'] - output_mc['tot']['fmod']['spec_lw']
         if self.have_phot:
-            output_mc['tot']['fmod']['phot_lb'] = self.pframe.spec2phot(sed_wave_w, output_mc['tot']['fmod']['sed_lw'], phot_trans_bw)
-            output_mc['tot']['flux']['phot_lb'] = np.array([best_ret_dict_l[i_loop]['flux_w'][-self.num_phot_band:] for i_loop in range(self.num_loops)])
-            output_mc['tot']['ferr']['phot_lb'] = np.array([best_ret_dict_l[i_loop]['ferr_w'][-self.num_phot_band:] for i_loop in range(self.num_loops)])
             output_mc['tot']['fres']['phot_lb'] = output_mc['tot']['flux']['phot_lb'] - output_mc['tot']['fmod']['phot_lb']
 
         # convert to flux in mJy if required
@@ -1345,16 +1396,17 @@ class FitFrame(object):
             for mod in [*output_mc]:
                 for comp in [*output_mc[mod]]:
                     if np.isin('spec_lw', [*output_mc[mod][comp]]): 
-                        output_mc[mod][comp]['spec_lw'] *= self.spec_flux_scale * self.pframe.rFnuFlam_func(spec_wave_w)
+                        output_mc[mod][comp]['spec_lw'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w) # None is for 'self' in PhotFrame definition
                     if np.isin('sed_lw', [*output_mc[mod][comp]]): 
-                        output_mc[mod][comp]['sed_lw']  *= self.spec_flux_scale * self.pframe.rFnuFlam_func(sed_wave_w)
+                        output_mc[mod][comp]['sed_lw']  *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,sed_wave_w)
                     if np.isin('phot_lb', [*output_mc[mod][comp]]): 
                         output_mc[mod][comp]['phot_lb'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
-            self.input_initialized = False
-            self.spec['flux_w'] *= self.spec_flux_scale * self.pframe.rFnuFlam_func(spec_wave_w)
-            self.spec['ferr_w'] *= self.spec_flux_scale * self.pframe.rFnuFlam_func(spec_wave_w)
-            self.phot['flux_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
-            self.phot['ferr_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
+            self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
+            self.spec['flux_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
+            self.spec['ferr_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
+            if self.have_phot:
+                self.phot['flux_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
+                self.phot['ferr_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
 
         # calculate average spectra
         for mod in rev_model_type.split('+'): 
