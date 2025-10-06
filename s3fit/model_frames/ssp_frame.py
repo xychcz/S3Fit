@@ -129,6 +129,7 @@ class SSPFrame(object):
         # resample model to accelarate calculation
         if self.resample_width is not None: 
             bin_pix = int(self.resample_width / np.diff(orig_wave_w[:100]).mean()) # sampling width
+            if bin_pix == 0: bin_pix = 1 # in case with high-resolution observed spectrum
         else:
             bin_pix = 1
         orig_wave_w = orig_wave_w[::bin_pix]
