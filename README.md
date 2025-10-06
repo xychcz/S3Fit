@@ -28,7 +28,7 @@ with a detailed description of the [fitting strategy](https://github.com/xychcz/
 [manuals](https://github.com/xychcz/S3Fit/blob/main/manuals/). 
 <p align="center"> <img src="https://github.com/user-attachments/assets/e84119ec-931c-49c8-8639-69217ff8bb38" width="1200">
 
-An example of the fitting result of S<sup>3</sup>Fit is shown in the following plots. 
+An example of the fitting result of S<sup>3</sup>Fit is shown in the following plots (and details in [this paper](https://arxiv.org/abs/2510.02801)). 
 <p align="center"> <img src="https://github.com/user-attachments/assets/683f5837-d364-4a53-8113-a05d56f9ef5b" width="600">
 
 ## Usage
