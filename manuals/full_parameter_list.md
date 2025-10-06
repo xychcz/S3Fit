@@ -75,8 +75,15 @@
 - `inst_calib_ratio` (float, optional) \
    Initial ratio to estimate the calibration uncertainties across multiple instruments. 
    Default is `0.1`, i.e., the calibration erros are estimated as 10% of the corresponding fluxes.
-   Note that 'inst_calib_ratio' is the initial value of the scaling ratio, which will be iteratively refreshed in the fitting process. 
-   (please refer to [fitting strategy](./fitting_strategy.md) for details). 
+-  `inst_calib_ratio_rev` (bool, optional) \
+   'inst_calib_ratio' is the initial value of the scaling ratio,
+   if `inst_calib_ratio_rev` is set to `True` (Default), the ratio will be iteratively refreshed in the fitting process
+   (please refer to [fitting strategy](./fitting_strategy.md) for details).
+- `inst_calib_smooth` (float, optional) \
+   The convovling width (in velocity, km/s) to smooth the original observed spectrum
+   in calculation of revised errors (i.e., to reflect calibration errors).
+   The convolution is adopted to avoid involving artifacts into Monte Carlo mock spectra surrounding bright lines.
+   Default is `10000` (km/s). Set it to `0` if you want to disable the convolution. 
 - `examine_result` (bool, optional) \
    If set `examine_result=False`, the examination of S/N of models and the updating of fitting
    (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)) will be skipped.
@@ -128,4 +135,8 @@
    Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
    Please read the [Jupyter Notebook](../example/example.ipynb) for an example case. 
 - `verbose` (bool, optional) \
-   Whether or not to print the running information of the Linear and Non-linear Least-square solvers. Default is `False`. 
+   Whether or not to print the running information of the Linear and Non-linear Least-square solvers. Default is `False`.
+- `save_per_loop` (bool, optional) and `output_filename` (string, optional)\
+   If `save_per_loop` is set to `True`, the fitting results will be saved per Monte Carlo mock fitting loop
+   to the file with path specified in `output_filename`. 
+   
