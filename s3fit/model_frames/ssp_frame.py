@@ -246,8 +246,6 @@ class SSPFrame(object):
         # The corresponding lum(rest5500) is 1 * sfh_factor_e, in unit of Lsun/AA,
         # the corresponding mass is mtol_e * sfh_factor_e = SFR(csp_age-ssp_age_e) * (duration_e*1e9), in unit of Msun.
         csp_age = 10.0**sfh_pars[0]
-        if csp_age > cosmo.age(self.v0_redshift).value:
-            raise ValueError((f"CSP_Age of the {i_comp}-th componnet exceeds the universe age {cosmo.age(self.v0_redshift).value} Gyr."))
         ssp_age_e = self.age_e
         evo_time_e = csp_age - ssp_age_e
 
