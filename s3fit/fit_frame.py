@@ -43,8 +43,9 @@ class FitFrame(object):
         # use a list to save message in stdout
         self.log_message = []
         print_log(center_string('S3Fit starts', 80), self.log_message)
-        print_log(center_string('Initialize FitFrame', 80), self.log_message)
+        print_log(f"You are now using S3Fit v2.2.4.", self.log_message)
 
+        print_log(center_string('Initialize FitFrame', 80), self.log_message)
         # save spectral data and related properties
         self.spec_wave_w = np.array(spec_wave_w) if spec_wave_w is not None else None
         self.spec_flux_w = np.array(spec_flux_w) if spec_flux_w is not None else None
@@ -131,6 +132,37 @@ class FitFrame(object):
 
     def init_input_data(self, verbose=True):
         print_log(center_string('Read spectral data', 80), self.log_message, verbose)
+
+        # mask out invalid data
+        mask_valid_w  = np.isfinite(self.spec_wave_w)
+        mask_valid_w &= np.isfinite(self.spec_flux_w)
+        mask_valid_w &= np.isfinite(self.spec_ferr_w)
+        if len(self.spec_R_inst_w) == len(self.spec_wave_w): mask_valid_w &= np.isfinite(self.spec_R_inst_w)
+        if (~mask_valid_w).sum() > 0:
+            print_log(f"Mask out {(~mask_valid_w).sum()} from {len(mask_valid_w)} data points with NaN or Inf values in the input spec_wave_w, spec_flux_w, spec_ferr_w, or spec_R_inst_w.", 
+                    self.log_message, verbose)
+            # only keep valid points to shrink stored array length
+            self.spec_wave_w = self.spec_wave_w[mask_valid_w]
+            self.spec_flux_w = self.spec_flux_w[mask_valid_w]
+            self.spec_ferr_w = self.spec_ferr_w[mask_valid_w]
+            if len(self.spec_R_inst_w) == len(self.spec_wave_w): self.spec_R_inst_w = self.spec_R_inst_w[mask_valid_w]
+            mask_valid_w = mask_valid_w[mask_valid_w]
+
+        # set valid wavelength range
+        if self.spec_valid_range is not None:
+            mask_specified_w = np.zeros_like(self.spec_wave_w, dtype='bool')
+            for i_waveslot in range(len(self.spec_valid_range)):
+                waveslot = self.spec_valid_range[i_waveslot]
+                mask_specified_w |= (self.spec_wave_w >= waveslot[0]) & (self.spec_wave_w <= waveslot[1])
+            print_log(f"Mask out {(~mask_specified_w).sum()} data points with the input spec_valid_range.", self.log_message, verbose)
+            mask_valid_w &= mask_specified_w
+
+        num_invalid_ferr = np.sum(mask_valid_w & (self.spec_ferr_w <= 0))
+        if num_invalid_ferr > 0: 
+            print_log(f"Mask out additional {num_invalid_ferr} wavelengths with non-positive spec_ferr_w.", self.log_message, verbose)
+            mask_valid_w &= (self.spec_ferr_w > 0)
+
+
         if self.spec_flux_scale is None: 
             self.spec_flux_scale = 10.0**np.round(np.log10(np.median(self.spec_flux_w)))
         # create a dictionary for spectral data
@@ -138,42 +170,30 @@ class FitFrame(object):
         self.spec['wave_w'] = self.spec_wave_w
         self.spec['flux_w'] = self.spec_flux_w / self.spec_flux_scale
         self.spec['ferr_w'] = self.spec_ferr_w / self.spec_flux_scale
+        self.spec['mask_valid_w'] = mask_valid_w
         self.num_spec_wave = len(self.spec_wave_w)
 
-        # set fitting wavelength range (rest frame) with tolerance of [-1000,1000] km/s
-        self.spec_wmin = self.spec_wave_w.min() / (1+self.v0_redshift) / (1+1000/299792.458) - 100
-        self.spec_wmax = self.spec_wave_w.max() / (1+self.v0_redshift) / (1-1000/299792.458) + 100
-        self.spec_wmin = np.maximum(self.spec_wmin, 91) # set lower limit of wavelength to 91A
-        print_log(f'Spectrum wavelength range (rest frame, AA): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}', self.log_message, verbose)
-        print_log(f'[Note] The wavelength range is extended for a tolerance of redshift of +- {1000/299792.458:.3f}.', self.log_message, verbose)
-
-        # set valid wavelength range
-        if self.spec_valid_range is None:
-            mask_valid_w = np.ones_like(self.spec_wave_w, dtype='bool')
-        else:
-            mask_valid_w = np.zeros_like(self.spec_wave_w, dtype='bool')
-            for i_waveslot in range(len(self.spec_valid_range)):
-                waveslot = self.spec_valid_range[i_waveslot]
-                mask_valid_w |= (self.spec_wave_w >= waveslot[0]) & (self.spec_wave_w <= waveslot[1])
-        num_invalid = np.sum(mask_valid_w & (self.spec_ferr_w <= 0))
-        if num_invalid > 0: print_log(f"Mask out additional {num_invalid} wavelengths with non-positive errors.", self.log_message, verbose)
-        self.spec['mask_valid_w'] = mask_valid_w & (self.spec_ferr_w > 0)
-        print_log(f"{self.spec['mask_valid_w'].sum()/len(self.spec['mask_valid_w'])*100}% of the input spectrum is valid and will be used in the fitting.", 
-                  self.log_message, verbose)
-
         # check spectral resoltuion
-        if len(self.spec_R_inst_w) == 2:
+        if len(self.spec_R_inst_w) == len(self.spec_wave_w):
+            self.spec['R_inst_rw'] = np.vstack((self.spec_wave_w, self.spec_R_inst_w))
+        else:
             print_log(f'[Note] A single value of spectral resolution {self.spec_R_inst_w[1]:.3f} is given at {self.spec_R_inst_w[0]:.3f}AA.', 
                       self.log_message, verbose)
             print_log(f'[Note] Assume a linear wavelength-dependency of spectral resolution in the fitting.', self.log_message, verbose)
             lin_R_inst_w = self.spec_wave_w / self.spec_R_inst_w[0] * self.spec_R_inst_w[1]
             self.spec['R_inst_rw'] = np.vstack((self.spec_wave_w, lin_R_inst_w))
-        else:
-            self.spec['R_inst_rw'] = np.vstack((self.spec_wave_w, self.spec_R_inst_w))
 
         # account for effective spectral sampling in fitting (all bands are considered as independent)
         self.spec['significance_w'] = np.gradient(self.spec_wave_w) / (self.spec_wave_w/self.spec['R_inst_rw'][1,:]) # i.e., dw_data / dw_resolution
         self.spec['significance_w'][self.spec['significance_w'] > 1] = 1
+
+        # set fitting wavelength range (rest frame) with tolerance of [-1000,1000] km/s
+        vel_tol = 1000
+        self.spec_wmin = self.spec_wave_w.min() / (1+self.v0_redshift) / (1+vel_tol/299792.458) - 100
+        self.spec_wmax = self.spec_wave_w.max() / (1+self.v0_redshift) / (1-vel_tol/299792.458) + 100
+        self.spec_wmin = np.maximum(self.spec_wmin, 91) # set lower limit of wavelength to 91A
+        print_log(f'Spectral fitting will be performed in wavelength range (rest frame, AA): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}', self.log_message, verbose)
+        print_log(f'[Note] The wavelength range is extended for a tolerance of redshift of {self.v0_redshift}+-{vel_tol/299792.458:.4f} (+-{vel_tol} km/s).', self.log_message, verbose)
 
         # create a dictionary for photometric-SED data
         self.have_phot = True if self.phot_name_b is not None else False
@@ -203,7 +223,7 @@ class FitFrame(object):
             # set fitting wavelength range (rest frame)
             self.sed_wmin = self.pframe.wave_w.min() / (1+self.v0_redshift)
             self.sed_wmax = self.pframe.wave_w.max() / (1+self.v0_redshift)
-            print_log(f'SED wavelength range (rest frame, AA): from {self.sed_wmin:.3f} to {self.sed_wmax:.3f}', self.log_message, verbose) 
+            print_log(f'SED fitting is performed in wavelength range (rest frame, AA): from {self.sed_wmin:.3f} to {self.sed_wmax:.3f}', self.log_message, verbose) 
 
             if self.phot_calib_b is not None:
                 # corrent spectrum based on selected photometeic points
@@ -1477,7 +1497,9 @@ class FitFrame(object):
 
         ax1.legend(ncol=2); ax2.legend(ncol=3, loc="lower right")
         ax1.set_ylim(flux_w[mask_w].min()-0.05*(flux_w[mask_w].max()-flux_w[mask_w].min()), flux_w[mask_w].max()*1.05)
-        ax2.set_ylim(-np.percentile(ferr_w[mask_w], 95)*1.1, np.percentile(ferr_w[mask_w], 95)*1.1)
+        # ax2.set_ylim(-np.percentile(ferr_w[mask_w], 95)*1.1, np.percentile(ferr_w[mask_w], 95)*1.1)
+        tmp_ylim = np.percentile(np.abs(flux_w-model_w)[mask_w], 90) * 1.5
+        ax2.set_ylim(-tmp_ylim, tmp_ylim)
         ax1.set_xticks([]); ax2.set_xlabel('Wavelength ($\AA$)')
         ax1.set_ylabel('Flux ('+str(self.spec_flux_scale)+' $erg/s/cm2/\AA$)'); ax2.set_ylabel('Res.')
         title = fit_message + f' ($\chi^2$ = {chi_sq:.3f}, '

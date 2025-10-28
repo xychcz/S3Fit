@@ -33,30 +33,30 @@ class ELineFrame(object):
         # [v3] update with https://physics.nist.gov/PhysRefData/ASD/lines_form.html (H ref: T8637)
         # ratio of doublets calculated with pyneb under ne=100, Te=1e4
         self.linerest_n, self.lineratio_n, self.linename_n = [],[],[]
-        self.linerest_n.append(6564.632); self.lineratio_n.append(-1)     ; self.linename_n.append('Ha')
+        self.linerest_n.append(6564.632); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ha')
         self.linerest_n.append(4862.691); self.lineratio_n.append(0.349)  ; self.linename_n.append('Hb')
         self.linerest_n.append(4341.691); self.lineratio_n.append(0.164)  ; self.linename_n.append('Hg')
         self.linerest_n.append(4102.899); self.lineratio_n.append(0.0904) ; self.linename_n.append('Hd')
         self.linerest_n.append(3971.202); self.lineratio_n.append(0.0555) ; self.linename_n.append('H7')
         self.linerest_n.append(3890.158); self.lineratio_n.append(0.0367) ; self.linename_n.append('H8')
-        self.linerest_n.append(6732.674); self.lineratio_n.append(-1)     ; self.linename_n.append('[S II]:6733')
+        self.linerest_n.append(6732.674); self.lineratio_n.append(1.0)     ; self.linename_n.append('[S II]:6733')
         self.linerest_n.append(6718.295); self.lineratio_n.append(1.340)  ; self.linename_n.append('[S II]:6718')
-        self.linerest_n.append(6585.270); self.lineratio_n.append(-1)     ; self.linename_n.append('[N II]:6585')
+        self.linerest_n.append(6585.270); self.lineratio_n.append(1.0)     ; self.linename_n.append('[N II]:6585')
         self.linerest_n.append(6549.860); self.lineratio_n.append(0.340)  ; self.linename_n.append('[N II]:6550')
         self.linerest_n.append(6365.536); self.lineratio_n.append(0.319)  ; self.linename_n.append('[O I]:6366')
-        self.linerest_n.append(6302.046); self.lineratio_n.append(-1)     ; self.linename_n.append('[O I]:6302')
-        self.linerest_n.append(5201.705); self.lineratio_n.append(-1)     ; self.linename_n.append('[N I]:5202')
+        self.linerest_n.append(6302.046); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O I]:6302')
+        self.linerest_n.append(5201.705); self.lineratio_n.append(1.0)     ; self.linename_n.append('[N I]:5202')
         self.linerest_n.append(5199.349); self.lineratio_n.append(0.783)  ; self.linename_n.append('[N I]:5199')
-        self.linerest_n.append(5099.230); self.lineratio_n.append(-1)     ; self.linename_n.append('[Fe VI]:5099')
-        self.linerest_n.append(5008.240); self.lineratio_n.append(-1)     ; self.linename_n.append('[O III]:5008')
+        self.linerest_n.append(5099.230); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Fe VI]:5099')
+        self.linerest_n.append(5008.240); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O III]:5008')
         self.linerest_n.append(4960.295); self.lineratio_n.append(0.335)  ; self.linename_n.append('[O III]:4960')
         self.linerest_n.append(3968.590); self.lineratio_n.append(0.301)  ; self.linename_n.append('[Ne III]:3969')
-        self.linerest_n.append(3869.860); self.lineratio_n.append(-1)     ; self.linename_n.append('[Ne III]:3870')
-        self.linerest_n.append(3729.875); self.lineratio_n.append(-1)     ; self.linename_n.append('[O II]:3730')
+        self.linerest_n.append(3869.860); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Ne III]:3870')
+        self.linerest_n.append(3729.875); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O II]:3730')
         self.linerest_n.append(3727.092); self.lineratio_n.append(0.741)  ; self.linename_n.append('[O II]:3727')
-        self.linerest_n.append(3426.864); self.lineratio_n.append(-1)     ; self.linename_n.append('[Ne V]:3427')
+        self.linerest_n.append(3426.864); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Ne V]:3427')
         self.linerest_n.append(3346.783); self.lineratio_n.append(0.366)  ; self.linename_n.append('[Ne V]:3347')
-        self.linerest_n.append(5877.249); self.lineratio_n.append(-1)     ; self.linename_n.append('He I:5877')
+        self.linerest_n.append(5877.249); self.lineratio_n.append(1.0)     ; self.linename_n.append('He I:5877')
         self.update_linelist()
         
     def initialize_linelist_pyneb(self):
@@ -78,10 +78,10 @@ class ELineFrame(object):
             linename, linerest = self.search_pyneb(linename)
             self.linename_n.append(linename)
             self.linerest_n.append(linerest)
-            self.lineratio_n.append(-1.0)  
+            self.lineratio_n.append(1.0)  
             
         # not provided: NV_1239, O I:1302, Si IV:1394, Al III:1855, MgII_2796, HeI 5877.249, 
-        self.linerest_n.append(5877.249); self.lineratio_n.append(-1)     ; self.linename_n.append('He I:5877')       
+        self.linerest_n.append(5877.249); self.lineratio_n.append(1.0)     ; self.linename_n.append('He I:5877')       
         self.update_linelist()
         
     def add_line(self, linenames=None, linerests=None, lineratios=None, force=False, use_pyneb=False):
@@ -92,7 +92,7 @@ class ELineFrame(object):
                 lineratio = -1.0
             else:
                 linerest = linerests[i_line]
-                lineratio = lineratios[i_line] if lineratios is not None else -1
+                lineratio = lineratios[i_line] if lineratios is not None else 1.0
             if np.isin(linename, self.linename_n): raise ValueError((f"{linename} is already in the line list: {self.linename_n}."))
             i_close = np.absolute(self.linerest_n - linerest).argmin()
             if (np.abs(self.linerest_n[i_close] - linerest) > 1) | force: 
@@ -116,11 +116,33 @@ class ELineFrame(object):
         self.update_linelist()
 
     def update_linelist(self):
+        # sort lines with increasing wavelength
         index_line = np.argsort(self.linerest_n)
         self.linerest_n = np.array(self.linerest_n)[index_line]
         self.lineratio_n = np.array(self.lineratio_n)[index_line]
         self.linename_n = np.array(self.linename_n)[index_line]  
+        # check lines with valid wavelength coverage
+        self.initialize_mask_valid()
+        # check the relations between lines
         self.initialize_linelink()
+
+    def initialize_mask_valid(self):
+        self.num_comps = len(self.cframe.info_c)
+        self.num_lines = len(self.linerest_n)
+        self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
+        for i_comp in range(self.num_comps):
+            mask_valid_n  = self.linerest_n > (self.rest_wave_w.min()-50)
+            mask_valid_n &= self.linerest_n < (self.rest_wave_w.max()+50)
+            if self.mask_valid_w is not None:
+                for i_line in range(self.num_lines):
+                    voff_w = (self.rest_wave_w/self.linerest_n[i_line] -1) * 299792.458
+                    mask_line_w  = voff_w > self.cframe.min_cp[i_comp,0]
+                    mask_line_w &= voff_w < self.cframe.max_cp[i_comp,0]
+                    if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() < 0.1: mask_valid_n[i_line] = False
+            if self.cframe.info_c[i_comp]['line_used'][0] != 'all': 
+                mask_select_n = np.isin(self.linename_n, self.cframe.info_c[i_comp]['line_used'])
+                mask_valid_n &= mask_select_n
+            self.mask_valid_cn[i_comp, mask_valid_n] = True
             
     def search_pyneb(self, name, ret_atomdata=False):
         # due to the current coverage of elements and atoms of pyneb, 
@@ -184,40 +206,60 @@ class ELineFrame(object):
         else:
             return line_id, wave_vac
                 
-    def tie_pair(self, tied_names, ref_name=None, ratio=None, use_pyneb=None):
+    def tie_pair(self, tied_names, ref_names=None, ratio=None, use_pyneb=None):
+        # prebuild the tying ratio libraries between tied lines and the reference line (1st valid one if multi given)
         if use_pyneb is None: use_pyneb = self.use_pyneb
-        if not np.isin(ref_name, self.linename_n):
-            raise ValueError((f"The reference line '{ref_name}' is not included in the line list."))
+
+        if not isinstance(ref_names, list): ref_names = [ref_names]
+        ref_valid = False
+        for ref_name in ref_names:
+            if not np.isin(ref_name, self.linename_n):
+                raise ValueError((f"The reference line '{ref_name}' is not included in the available line list."))
+            i_ref = np.where(self.linename_n == ref_name)[0][0]
+            ref_valid = self.mask_valid_cn[:, i_ref].sum() > 0 # if ref_name exists in any one comp
+            if ref_valid: break # pick up the 1st valid ref_name
+
         if not isinstance(tied_names, list): tied_names = [tied_names]
         for tied_name in tied_names:
             if not np.isin(tied_name, self.linename_n):
-                raise ValueError((f"The tied line '{tied_name}' is not included in the line list."))
+                raise ValueError((f"The tied line '{tied_name}' is not included in the available line list."))
             i_tied = np.where(self.linename_n == tied_name)[0][0]
-            self.linelink_n[i_tied] = ref_name
-            if use_pyneb:
-                tied_wave, tied_atomdata = self.search_pyneb(tied_name, ret_atomdata=True)[1:]
-                ref_wave,  ref_atomdata  = self.search_pyneb( ref_name, ret_atomdata=True)[1:]
-                logdens = np.linspace(0, 12, 25)
-                logtems = np.linspace(np.log10(5e2), np.log10(3e4), 11)
-                tied_emi_td = tied_atomdata.getEmissivity(den=10.0**logdens, tem=10.0**logtems, wave=int(tied_wave))
-                ref_emi_td  =  ref_atomdata.getEmissivity(den=10.0**logdens, tem=10.0**logtems, wave=int(ref_wave))
-                ratio_dt = (tied_emi_td / ref_emi_td).T
-                func_ratio_dt = RegularGridInterpolator((logdens, logtems), ratio_dt, method='linear', bounds_error=False)
-                self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
-            else:                
-                if tied_name == '[S II]:6718':
-                    # https://ui.adsabs.harvard.edu/abs/2014A&A...561A..10P 
-                    pok14_Rs = np.linspace(1.41, 0.45, 30)
-                    pok14_logdens = 0.0543*np.tan(-3.0553*pok14_Rs+2.8506)+6.98-10.6905*pok14_Rs+9.9186*pok14_Rs**2-3.5442*pok14_Rs**3
-                    def func_ratio_dt(pars): return [np.interp(pars[0], pok14_logdens, pok14_Rs)]
-                else:
-                    if ratio is None:
-                        tmp = self.lineratio_n[i_tied] * 1.0 # to avoid overwrite in following updating
+            tied_valid = self.mask_valid_cn[:, i_tied].sum() > 0 # if tied_name exists in any one comp
+
+            if ref_valid & tied_valid & (tied_name != ref_name): 
+                self.linelink_n[i_tied] = ref_name
+                if use_pyneb:
+                    tied_wave, tied_atomdata = self.search_pyneb(tied_name, ret_atomdata=True)[1:]
+                    ref_wave,   ref_atomdata = self.search_pyneb( ref_name, ret_atomdata=True)[1:]
+                    logdens = np.linspace(0, 12, 25)
+                    logtems = np.linspace(np.log10(5e2), np.log10(3e4), 11)
+                    tied_emi_td = tied_atomdata.getEmissivity(den=10.0**logdens, tem=10.0**logtems, wave=int(tied_wave))
+                    ref_emi_td  =  ref_atomdata.getEmissivity(den=10.0**logdens, tem=10.0**logtems, wave=int( ref_wave))
+                    ratio_dt = (tied_emi_td / ref_emi_td).T
+                    func_ratio_dt = RegularGridInterpolator((logdens, logtems), ratio_dt, method='linear', bounds_error=False)
+                    self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
+                    if self.verbose:
+                        print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio from pyneb under the best-fit (or fixed) electron density and temperature.", self.log_message)
+                else:                
+                    if tied_name == '[S II]:6718':
+                        # https://ui.adsabs.harvard.edu/abs/2014A&A...561A..10P 
+                        pok14_Rs = np.linspace(1.41, 0.45, 30)
+                        pok14_logdens = 0.0543*np.tan(-3.0553*pok14_Rs+2.8506)+6.98-10.6905*pok14_Rs+9.9186*pok14_Rs**2-3.5442*pok14_Rs**3
+                        def func_ratio_dt(pars): return [np.interp(pars[0], pok14_logdens, pok14_Rs)]
+                        if self.verbose:
+                            print_log(f"Line tying: [S II]:6718 is tied to [S II]:6733 with flux ratio from Proxauf et al.(2014) under the best-fit electron density.", self.log_message)
                     else:
-                        if isinstance(ratio, list): raise ValueError((f"Please use a single input ratio."))
-                        tmp = ratio * 1.0 # force to input value
-                    def func_ratio_dt(pars, ret=tmp): return [ret]
-                self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
+                        if ratio is None:
+                            tmp = self.lineratio_n[i_tied] / self.lineratio_n[i_ref] * 1.0 # to avoid overwrite in following updating
+                            if self.verbose:
+                                print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100 cm-3 and temperature of 1e4 K.", self.log_message)
+                        else:
+                            if isinstance(ratio, list): raise ValueError((f"Please input a single ratio for {tied_name}, not a list."))
+                            tmp = ratio * 1.0 # force to input value
+                            if self.verbose:
+                                print_log(f"Line tying: {tied_name} is tied to {ref_name} with the input flux ratio, {tmp}.", self.log_message)
+                        def func_ratio_dt(pars, ret=tmp): return [ret]
+                    self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
                 
     def release_pair(self, tied_names):
         if not isinstance(tied_names, list): tied_names = [tied_names]
@@ -227,12 +269,16 @@ class ELineFrame(object):
             i_tied = np.where(self.linename_n == tied_name)[0][0]
             self.linelink_n[i_tied] = 'free'
             self.linelink_dict.pop(tied_name)
-                    
+            if self.verbose:
+                print_log(f"{tied_name} becomes untied.", self.log_message)
+  
     def initialize_linelink(self):
+        # initialize the list of refered line names
         self.linelink_n = np.zeros_like(self.linename_n); self.linelink_n[:] = 'free'
+        # initialize the ratio library dict of tied lines
         self.linelink_dict = {}
-        # tie line pairs
-        self.tie_pair(['Hb','Hg','Hd','H7','H8'], 'Ha')   
+
+        self.tie_pair(['Hb','Hg','Hd','H7','H8'], ['Ha','Hb','Hg','Hd']) # use set alternative line is Ha is not covered
         self.tie_pair('[S II]:6718', '[S II]:6733')
         self.tie_pair('[N II]:6550', '[N II]:6585')
         self.tie_pair('[O I]:6366', '[O I]:6302')
@@ -241,43 +287,35 @@ class ELineFrame(object):
         self.tie_pair('[Ne III]:3969', '[Ne III]:3870')
         self.tie_pair('[O II]:3727', '[O II]:3730')
         self.tie_pair('[Ne V]:3347', '[Ne V]:3427')
-        self.update_freemask()
+
+        # update mask of free lines and count num_coeffs
+        self.update_mask_free()
+        # update line ratios with default AV, logden, and logtem
         self.update_lineratio()
         
     def update_lineratio(self, AV=0, logden=2, logtem=4):
         for tied_name in self.linelink_dict:
-            ref_name = self.linelink_dict[tied_name]['ref_name']
-            func_ratio_dt = self.linelink_dict[tied_name]['func_ratio_dt']
             i_tied = np.where(self.linename_n == tied_name)
+            # read flux ratio for given logden and logtem
+            func_ratio_dt = self.linelink_dict[tied_name]['func_ratio_dt']
             self.lineratio_n[i_tied] = func_ratio_dt(np.array([logden, logtem]))[0]
-            if (ref_name == 'Ha') | (ref_name == 'H I:6565'):
-                tmp = ExtLaw(self.linerest_n[i_tied]) - ExtLaw(np.array([6564.63215]))
-                self.lineratio_n[i_tied] *= 10.0**(-0.4 * AV * tmp)
+            # reflect extinction
+            ref_name = self.linelink_dict[tied_name]['ref_name']
+            i_ref = np.where(self.linename_n == ref_name)
+            tmp = ExtLaw(self.linerest_n[i_tied]) - ExtLaw(self.linerest_n[i_ref])
+            self.lineratio_n[i_tied] *= 10.0**(-0.4 * AV * tmp)
 
-    def update_freemask(self):
-        self.num_comps = len(self.cframe.info_c)
-        self.num_lines = len(self.linerest_n)
-        self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
+    def update_mask_free(self):
         self.mask_free_cn  = np.zeros((self.num_comps, self.num_lines), dtype='bool')
         for i_comp in range(self.num_comps):
-            mask_valid_n  = self.linerest_n > (self.rest_wave_w.min()-50)
-            mask_valid_n &= self.linerest_n < (self.rest_wave_w.max()+50)
-            if self.mask_valid_w is not None:
-                for i_line in range(self.num_lines):
-                    voff_w = (self.rest_wave_w/self.linerest_n[i_line] -1) * 299792.458
-                    mask_line_w  = voff_w > self.cframe.min_cp[i_comp,0]
-                    mask_line_w &= voff_w < self.cframe.max_cp[i_comp,0]
-                    if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() < 0.1: mask_valid_n[i_line] = False
-            mask_free_n = mask_valid_n & ~np.isin(self.linename_n, [*self.linelink_dict])
+            mask_free_n = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict])
             if self.cframe.info_c[i_comp]['line_used'][0] != 'all': 
                 mask_select_n = np.isin(self.linename_n, self.cframe.info_c[i_comp]['line_used'])
-                mask_valid_n &= mask_select_n
                 mask_free_n  &= mask_select_n
-            self.mask_valid_cn[i_comp, mask_valid_n] = True
             self.mask_free_cn[i_comp,  mask_free_n ] = True
         self.num_coeffs = self.mask_free_cn.sum()
         
-        # set component name and enable mask for each free line; _f for free or coeffs
+        # set component name and enable mask for each free line; _f denotes free or coeffs
         self.component_f = [] # np.zeros((self.num_coeffs), dtype='<U16')
         for i_comp in range(self.num_comps):
             for i_line in range(self.num_lines):
@@ -286,10 +324,12 @@ class ELineFrame(object):
         self.component_f = np.array(self.component_f)
         
         if self.verbose:
+            print_log(f"Free lines in each components: ", self.log_message)
             for i_comp in range(self.num_comps):
-                print_log(f"Emission line comp{i_comp}:'{self.cframe.info_c[i_comp]['comp_name']}', "+
-                          f"{self.mask_valid_cn[i_comp].sum()} lines in total, "+
-                          f"{self.mask_free_cn[i_comp].sum()} free lines: {self.linename_n[self.mask_free_cn[i_comp]]}", self.log_message)
+                print_log(f"  '{self.cframe.info_c[i_comp]['comp_name']}' component has "+
+                          f"{self.mask_free_cn[i_comp].sum()} free (out of total {self.mask_valid_cn[i_comp].sum()}) lines: {self.linename_n[self.mask_free_cn[i_comp]]}", self.log_message)
+
+    ##################
 
     def single_gaussian(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8):
         if fwhm <= 0: raise ValueError((f"Non-positive eline fwhm: {fwhm}"))

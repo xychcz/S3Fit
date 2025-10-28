@@ -57,9 +57,7 @@ class SSPFrame(object):
             if 10.0**self.cframe.max_cp[i_comp][3] > cosmo.age(self.v0_redshift).value:
                 self.cframe.max_cp[i_comp][3] = np.log10(cosmo.age(self.v0_redshift).value)
                 print_log(f"[WARNING]: Upper bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
-                    +f" is reset to the universe age {cosmo.age(self.v0_redshift).value} Gyr at z = {self.v0_redshift}.", self.log_message)
-                # raise ValueError((f"Upper bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}', "
-                #     +f" exceeds the universe age {cosmo.age(self.v0_redshift).value} Gyr."))
+                    +f" is reset to the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}.", self.log_message)
             if 10.0**self.cframe.min_cp[i_comp][3] < self.age_e[self.mask_ssp_allowed()].min():
                 self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min())
                 print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "

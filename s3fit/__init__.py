@@ -33,5 +33,6 @@ __all__ = ["FitFrame", "ConfigFrame", "PhotFrame",
 # print('v2.0, 250204: (1) Split into multiple files; (2) Support pip installation')
 # print('You are now using S3Fit v2.1') 
 # updates: (1) revise log-space fitting (2) upgrade process flow and output formats
-print('You are now using S3Fit v2.2') 
+# print('You are now using S3Fit v2.2') 
 # updates: (1) revise calibration error estimation (2) add convolution with variable width (3) revise annealing process
+
