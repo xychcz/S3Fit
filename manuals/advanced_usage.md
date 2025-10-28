@@ -98,7 +98,7 @@ el_mod.tie_pair('[O III]:4960', '[O III]:5008', ratio=0.335, use_pyneb=False)
 In this case, [OIII]4960 is tied to [OIII]5008 with a flux ratio of [OIII]4960/5008. 
 If PyNeb is installed and `use_pyneb=True`, only the names of new lines are required.
 The line ratio used in the fit will be calculated based on the density and temperature of electrons.
-If `use_pyneb=True`, the line ratio needs to be given as input and 
+If `use_pyneb=False`, the line ratio needs to be given as input and 
 S<sup>3</sup>Fit use the fixed ratio in the fitting
 (except for [SII]6718/6733, which ratio is calculated from electron density using 
 the [Proxauf et al. (2014) equation](https://ui.adsabs.harvard.edu/abs/2014A%26A...561A..10P)
