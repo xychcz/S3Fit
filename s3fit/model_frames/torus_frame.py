@@ -109,15 +109,15 @@ class TorusFrame(object):
 
     def models_unitnorm_obsframe(self, wavelength, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
-        # pars: voff (to adjust redshift), tau, oa, rratio, incl
-        # comps: 'disc', 'torus', 'disc+torus'
+        # par: voff (to adjust redshift), tau, oa, rratio, incl
+        # comps: 'disc', 'torus'
         if if_pars_flat: 
-            pars = self.cframe.flat_to_arr(input_pars)
+            par_cp = self.cframe.flat_to_arr(input_pars)
         else:
-            pars = copy(input_pars)
+            par_cp = copy(input_pars)
 
-        for i_comp in range(pars.shape[0]):
-            tau, oa, rratio, incl = pars[i_comp,:][1:5]
+        for i_comp in range(par_cp.shape[0]):
+            tau, oa, rratio, incl = par_cp[i_comp,:][1:5]
             
             # interpolate model for given pars in initial wavelength (rest)
             ini_logwave = self.skirtor['logwave'].copy()
@@ -131,7 +131,7 @@ class TorusFrame(object):
 
             # redshifted to obs-frame
             ret_logwave = np.log10(wavelength) # in AA
-            z_ratio = (1 + self.v0_redshift) * (1 + pars[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)            
+            z_ratio = (1 + self.v0_redshift) * (1 + par_cp[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)            
             ini_logwave += np.log10(z_ratio)
             if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']):
                 gen_logdisc -= np.log10(z_ratio)

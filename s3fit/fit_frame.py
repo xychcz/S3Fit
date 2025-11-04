@@ -43,7 +43,7 @@ class FitFrame(object):
         # use a list to save message in stdout
         self.log_message = []
         print_log(center_string('S3Fit starts', 80), self.log_message)
-        print_log(f"You are now using S3Fit v2.2.4.", self.log_message)
+        print_log(f"You are now using S3Fit v2.2.5.", self.log_message)
 
         print_log(center_string('Initialize FitFrame', 80), self.log_message)
         # save spectral data and related properties
@@ -195,6 +195,13 @@ class FitFrame(object):
         print_log(f'Spectral fitting will be performed in wavelength range (rest frame, AA): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}', self.log_message, verbose)
         print_log(f'[Note] The wavelength range is extended for a tolerance of redshift of {self.v0_redshift}+-{vel_tol/299792.458:.4f} (+-{vel_tol} km/s).', self.log_message, verbose)
 
+        # check if norm_wave is coverd in input wavelength range
+        if (self.norm_wave < self.spec_wmin) | (self.norm_wave > self.spec_wmax):
+            med_wave = np.median(self.spec_wave_w[mask_valid_w]) / (1+self.v0_redshift)
+            print_log(f'[WARNING] The input normalization wavelength (rest frame, AA) {self.norm_wave} is out of the valid range, which is forced to the median valid wavelength {med_wave:.3f}.', 
+                      self.log_message, verbose)
+            self.norm_wave = med_wave
+
         # create a dictionary for photometric-SED data
         self.have_phot = True if self.phot_name_b is not None else False
         if self.have_phot:
@@ -295,14 +302,18 @@ class FitFrame(object):
                 self.full_model_type += mod + '+'
                 self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.agn_frame import AGNFrame
-                self.model_dict[mod]['spec_mod'] = AGNFrame(w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                            cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, 
-                                                            R_inst_rw=self.spec['R_inst_rw'], log_message=self.log_message) 
+                self.model_dict[mod]['spec_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
+                                                            w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                            cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
+                                                            resample_width=np.diff(self.spec['wave_w']).mean()/(1+self.v0_redshift)/5, 
+                                                            log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 91) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = AGNFrame(w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                               cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, 
-                                                               R_inst_rw=None, verbose=False) 
+                    self.model_dict[mod]['sed_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
+                                                               w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                               cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
+                                                               init_smooth_width=4000/100, # assume R=100 at rest 4000AA
+                                                               verbose=False) 
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 91) & (self.sed_wmin < 1e5)
         ###############################
         mod = 'torus'
@@ -378,13 +389,13 @@ class FitFrame(object):
                     for single_tie in self.tie_p[i_p].split(';'):
                         ref_mod, ref_comp, ref_i_par = single_tie.split(':')
                         if np.isin(ref_mod, self.full_model_type.split('+')):
-                            ref_num_comps = self.model_dict[ref_mod]['cframe'].num_comps
-                            ref_i_comp = np.where(np.array([self.model_dict[ref_mod]['cframe'].comp_c]) == ref_comp)[0]
+                            ref_num_pars_per_comp = self.model_dict[ref_mod]['cframe'].num_pars_per_comp
+                            ref_i_comp = np.where(np.array(self.model_dict[ref_mod]['cframe'].comp_c) == ref_comp)[0]
                             if len(ref_i_comp) == 1:
                                 ref_i_comp = ref_i_comp[0]
                             else:
                                 raise ValueError((f"The reference component: {ref_comp} is not available in {self.model_dict[ref_mod]['cframe'].comp_c}"))
-                            ref_i_x = ref_num_comps*ref_i_comp + int(ref_i_par)
+                            ref_i_x = ref_num_pars_per_comp*ref_i_comp + int(ref_i_par)
                             fp0, fp1 = self.search_model_index(ref_mod, self.full_model_type)[0:2]
                             if np.isnan(self.bound_min_p[i_p]):
                                 self.bound_min_p[i_p] = self.bound_min_p[fp0:fp1][ref_i_x] 
@@ -504,17 +515,17 @@ class FitFrame(object):
                 # create smoothed spectrum
                 if ~np.isin('joint_fit_1', [*self.output_s]):
                     # if not fit yet
-                    spec_flux_smoothed_w = convolve_var_width_fft(spec_wave_w[mask_valid_w], spec_flux_w[mask_valid_w], fwhm_vel=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
+                    spec_flux_smoothed_w = convolve_var_width_fft(spec_wave_w[mask_valid_w], spec_flux_w[mask_valid_w], fwhm_vel_kin=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
                     spec_flux_smoothed_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_flux_smoothed_w)
                 else:
                     # use joint_fit_1 fitting result to avoid cutting of continuum at
                     spec_flux_smoothed_w = spec_flux_w * 0
                     if np.isin('cont_fit_1', [*self.output_s]):
                         spec_fmod_cont_w = self.output_s['cont_fit_1']['ret_dict_l'][i_loop]['fmod_w']
-                        spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, spec_fmod_cont_w, fwhm_vel=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=True)
+                        spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, spec_fmod_cont_w, fwhm_vel_kin=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=True)
                     if np.isin('el_fit_1', [*self.output_s]):
                         spec_fmod_el_w = self.output_s['el_fit_1']['ret_dict_l'][i_loop]['fmod_w']
-                        spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, spec_fmod_el_w, fwhm_vel=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
+                        spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, spec_fmod_el_w, fwhm_vel_kin=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
                 specphot_flux_smoothed_w = np.hstack((spec_flux_smoothed_w, phot_flux_b))
                 specphot_reverr_w = np.sqrt(specphot_ferr_w**2 + specphot_flux_smoothed_w**2 * self.inst_calib_ratio**2)
         ####################
@@ -655,13 +666,13 @@ class FitFrame(object):
                     for single_tie in tie_p[i_p].split(';'):
                         ref_mod, ref_comp, ref_i_par = single_tie.split(':')
                         if np.isin(ref_mod, rev_model_type.split('+')):
-                            ref_num_comps = self.model_dict[ref_mod]['cframe'].num_comps
+                            ref_num_pars_per_comp = self.model_dict[ref_mod]['cframe'].num_pars_per_comp
                             ref_i_comp = np.where(np.array([self.model_dict[ref_mod]['cframe'].comp_c]) == ref_comp)[0]
                             if len(ref_i_comp) == 1:
                                 ref_i_comp = ref_i_comp[0]
                             else:
                                 raise ValueError((f"The reference component: {ref_comp} is not available in {self.model_dict[ref_mod]['cframe'].comp_c}"))
-                            ref_i_x = ref_num_comps*ref_i_comp + int(ref_i_par)
+                            ref_i_x = ref_num_pars_per_comp*ref_i_comp + int(ref_i_par)
                             mp0, mp1 = self.search_model_index(ref_mod, rev_model_type)[0:2]
                             x[i_p] = x[mp0:mp1][ref_i_x]                   
                             break # only select the 1st effective tie relation
@@ -681,12 +692,15 @@ class FitFrame(object):
                 spec_fmod_ew = np.hstack((spec_fmod_ew, sed_fmod_eb))
             ####
             if np.isnan(spec_fmod_ew).any() or np.isinf(spec_fmod_ew).any(): 
+                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"NaN or Inf detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
                                  +f", position (m,w) = {np.where(np.isnan(spec_fmod_ew)|np.isinf(spec_fmod_ew))}."))
             if (spec_fmod_ew < 0).any(): 
+                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"Negative value detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
                                  +f", position (m,w) = {np.where(spec_fmod_ew < 0)}."))
             if (spec_fmod_ew.sum(axis=1) <= 0).any(): 
+                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"Zero or negative integrated flux detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
                                  +f", position (m) = {np.where(spec_fmod_ew.sum(axis=1) <= 0)}."))
             ####
@@ -1410,6 +1424,9 @@ class FitFrame(object):
         output_mc['tot']['fres']['spec_lw'] = output_mc['tot']['flux']['spec_lw'] - output_mc['tot']['fmod']['spec_lw']
         if self.have_phot:
             output_mc['tot']['fres']['phot_lb'] = output_mc['tot']['flux']['phot_lb'] - output_mc['tot']['fmod']['phot_lb']
+
+        # save model spectra in flambda to calculate observed flux in later .extract_results()
+        self.output_mc = output_mc
 
         # convert to flux in mJy if required
         if flux_type == 'Fnu':

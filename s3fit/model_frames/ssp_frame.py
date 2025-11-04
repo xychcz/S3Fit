@@ -12,14 +12,14 @@ from astropy.cosmology import WMAP9 as cosmo
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_width_fft, convolve_var_width_csr
-# convert_linw_to_logw, convolve_spec_logw
+from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_width_fft
 from ..extinct_law import ExtLaw
 
 class SSPFrame(object):
     def __init__(self, filename=None, w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
                  cframe=None, v0_redshift=None, R_inst_rw=None, resample_width=None, init_smooth_width=None, 
                  verbose=True, log_message=[]):
+
         self.filename = filename
         self.w_min = w_min
         self.w_max = w_max
@@ -48,7 +48,7 @@ class SSPFrame(object):
             else:
                 self.num_coeffs = self.num_mets
         else:
-            if np.sum(self.sfh_names == 'nonparametric')  == 0:
+            if np.sum(self.sfh_names == 'nonparametric') == 0:
                 self.num_coeffs = self.num_mets * self.num_comps
             else:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
@@ -75,6 +75,7 @@ class SSPFrame(object):
         ##############################################################
         ###### Modify this section to use a different SSP model ######
         ssp_lib = fits.open(self.filename)
+        self.R_ref = 50000 # template resolution from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
         # print(0)
 
         self.header = ssp_lib[0].header
@@ -233,7 +234,7 @@ class SSPFrame(object):
     #         self.logw_flux_ew = ext_flux_ew
     #         self.logw_wave_w = ext_wave_w
 
-    def sfh_factor(self, i_comp, sfh_name, sfh_pars):
+    def sfh_factor(self, i_comp, sfh_pars):
         # For a given SFH, i.e., SFR(t) = SFR(csp_age-ssp_age_e), in unit of Msun/yr, 
         # the model of a given ssp (_e) is ssp_spec_ew = SFR(csp_age-ssp_age_e) * (self.orig_flux_ew/sfrtol_e), 
         # Name sfh_factor_e = SFR(csp_age-ssp_age_e) / sfrtol_e = SFR(csp_age-ssp_age_e) * ltosfr_e, 
@@ -247,15 +248,15 @@ class SSPFrame(object):
         ssp_age_e = self.age_e
         evo_time_e = csp_age - ssp_age_e
 
-        if sfh_name == 'exponential': 
+        if self.sfh_names[i_comp] == 'exponential': 
             tau = 10.0**sfh_pars[1]
             sfh_func_e = np.exp(-(evo_time_e) / tau)
-        if sfh_name == 'delayed': 
+        if self.sfh_names[i_comp] == 'delayed': 
             tau = 10.0**sfh_pars[1]
             sfh_func_e = np.exp(-(evo_time_e) / tau) * evo_time_e
-        if sfh_name == 'constant': 
+        if self.sfh_names[i_comp] == 'constant': 
             sfh_func_e = np.ones_like(evo_time_e)
-        if sfh_name == 'user': 
+        if self.sfh_names[i_comp] == 'user': 
             sfh_func_e = self.cframe.info_c[i_comp]['sfh_func'](evo_time_e, sfh_pars)
         ############################
         # Add new SFH function here. 
@@ -291,17 +292,17 @@ class SSPFrame(object):
         # i.e., the real mtol is (1/3.826e33*Area) * (1/L5500) = (1/3.826e33*Area) * self.mtol
         # The values will be used to calculate the stellar mass from the best-fit results. 
         if if_pars_flat: 
-            pars = self.cframe.flat_to_arr(input_pars)
+            par_cp = self.cframe.flat_to_arr(input_pars)
         else:
-            pars = copy(input_pars)
+            par_cp = copy(input_pars)
         if mask_lite_e is not None:
             mask_lite_ce = self.cframe.flat_to_arr(mask_lite_e)
 
-        for i_comp in range(pars.shape[0]):
+        for i_comp in range(par_cp.shape[0]):
             if self.sfh_names[i_comp] == 'nonparametric':
                 orig_flux_int_ew = copy(self.orig_flux_ew) # copy intrinsic models
             else:
-                sfh_factor_e = self.sfh_factor(i_comp, self.sfh_names[i_comp], pars[i_comp,3:])
+                sfh_factor_e = self.sfh_factor(i_comp, par_cp[i_comp,3:])
                 tmp_ew = self.orig_flux_ew * sfh_factor_e[:,None] # scaled with sfh_factor_e
                 orig_flux_int_ew = tmp_ew.reshape(self.num_mets, self.num_ages, len(self.orig_wave_w)).sum(axis=1)
                 # sum in ages to create csp 
@@ -309,16 +310,16 @@ class SSPFrame(object):
                 orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp,:],:] # limit element number for accelarate calculation
 
             # dust extinction
-            orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * pars[i_comp,2] * ExtLaw(self.orig_wave_w))
+            orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * par_cp[i_comp,2] * ExtLaw(self.orig_wave_w))
             # redshift models
-            z_ratio = (1 + self.v0_redshift) * (1 + pars[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)
+            z_ratio = (1 + self.v0_redshift) * (1 + par_cp[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             orig_wave_z_w = self.orig_wave_w * z_ratio
             orig_flux_dz_ew = orig_flux_d_ew / z_ratio
             # convolve with intrinsic and instrumental dispersion if self.R_inst_rw is not None
             if (self.R_inst_rw is not None) & (conv_nbin is not None):
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
                 orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, 
-                                                          R_inst_w=R_inst_w, fwhm_vel=pars[i_comp,1], num_bins=conv_nbin)
+                                                          fwhm_vel_kin=par_cp[i_comp,1], R_inst_w=R_inst_w, R_ref=self.R_ref, num_bins=conv_nbin)
                 # convolution in redshifted- or rest-wavelength does not change result
             else:
                 orig_flux_dzc_ew = orig_flux_dz_ew 
@@ -459,10 +460,9 @@ class SSPFrame(object):
                 rev_redshift = (1+par_p[0]/299792.458)*(1+self.v0_redshift)-1
                 output_c[comp_c[i_comp]]['values']['redshift'][i_loop] = copy(rev_redshift)
 
-                tmp_spec_ew = self.models_unitnorm_obsframe(spec_wave_w, par_p[None,:], if_pars_flat=False, conv_nbin=1)
-                # tmp_spec_cew = tmp_spec_ew.reshape(num_comps, num_coeffs_per_comp, len(mask_norm_w))
-                # tmp_spec_w = np.dot(coeff_e, tmp_spec_cew[i_comp])
-                tmp_spec_w = np.dot(coeff_e, tmp_spec_ew)
+                # tmp_spec_ew = self.models_unitnorm_obsframe(spec_wave_w, par_p[None,:], if_pars_flat=False, conv_nbin=1)
+                # tmp_spec_w = np.dot(coeff_e, tmp_spec_ew)
+                tmp_spec_w = ff.output_mc['ssp'][comp_c[i_comp]]['spec_lw'][i_loop, :]
                 mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at wavenorm=5500AA(rest)
                 output_c[comp_c[i_comp]]['values']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                 output_c['sum']['values']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
@@ -470,7 +470,7 @@ class SSPFrame(object):
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
                 unitconv = 4*np.pi*dist_lum**2 / const.L_sun.to('erg/s').value * spec_flux_scale # convert intrinsic flux5500(rest) to L5500 
                 if self.sfh_names[i_comp] != 'nonparametric':
-                    sfh_factor_e = self.sfh_factor(i_comp, self.sfh_names[i_comp], par_p[3:]) 
+                    sfh_factor_e = self.sfh_factor(i_comp, par_p[3:]) 
                     # sfh_factor_e means lum(5500) of each ssp model element per unit SFR (of the peak SFH epoch in this case)
                     # if use csp with a sfh, coeff_e*unitconv means the value of SFH of this csp element in Mun/yr at the peak SFH epoch
                     # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element
@@ -532,7 +532,7 @@ class SSPFrame(object):
                 if self.sfh_names[i_comp] == 'nonparametric':
                     print_log('', log)
                     print_log('Best-fit single stellar populations (SSP) of nonparametric SFH', log)
-                    cols = 'ID,Age (Gyr),Metallicity,Coeff.mean,Coeff.rms,log(M/L5500)'
+                    cols = 'ID,Age (Gyr),Metallicity,Coeff.mean,Coeff.rms,log(M/Lnorm)'
                     fmt_cols = '| {0:^4} | {1:^10} | {2:^6} | {3:^6} | {4:^9} | {5:^8} |'
                     fmt_numbers = '| {:=04d} |   {:=6.4f}   |    {:=6.4f}   |   {:=6.4f}   |   {:=6.4f}  |    {:=6.4f}    |'
                     cols_split = cols.split(',')
@@ -611,7 +611,7 @@ class SSPFrame(object):
         if output_c is None: output_c = self.output_c
         comp_c = self.cframe.comp_c
         num_comps = self.cframe.num_comps
-        num_pars_per_comp = self.cframe.num_pars_per_comp
+        # num_pars_per_comp = self.cframe.num_pars_per_comp
         num_coeffs_per_comp = int(self.num_coeffs / num_comps)
 
         # par_p   = output_c[comp_c[i_comp]]['par_lp'][i_loop]
@@ -625,7 +625,7 @@ class SSPFrame(object):
                 par_p   = output_c[comp_c[i_comp]]['par_lp'][i_loop]
                 coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]
                 if self.sfh_names[i_comp] != 'nonparametric':
-                    sfh_factor_e = self.sfh_factor(i_comp, self.sfh_names[i_comp], par_p[3:]) 
+                    sfh_factor_e = self.sfh_factor(i_comp, par_p[3:]) 
                     # sfh_factor_e means lum(5500) of each ssp model element per unit SFR (of the peak SFH epoch in this case)
                     # if use csp with a sfh, coeff_e*unitconv means the value of SFH of this csp element in Mun/yr at the peak SFH epoch
                     # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element

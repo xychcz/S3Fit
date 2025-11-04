@@ -71,18 +71,23 @@ def convolve_spec_logw(logw_wave, logw_flux, conv_sigma, axis=0):
     logw_fcon = fftconvolve(logw_flux, kernel, mode='same', axes=axis)
     return logw_fcon
 
-def convolve_fix_width_fft(wave_w, flux_mw, fwhm_wave=10, reset_edge=True):
+def convolve_fix_width_fft(wave_w, flux_mw, fwhm_wave=None, reset_edge=True):
     if fwhm_wave <= 0: fwhm_wave = 1e-6
 
     sigma_wave = fwhm_wave / np.sqrt(np.log(256))
     sigma_pix = sigma_wave / np.gradient(wave_w).mean()
-
+    
     kernel = Gaussian1DKernel(stddev=sigma_pix).array
     kernel /= kernel.sum()
     if len(flux_mw.shape) == 1: 
         conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
     if len(flux_mw.shape) == 2: 
         conv_flux_mw = fftconvolve(flux_mw, kernel[None, :], mode='same', axes=1)
+        
+    # correct the artifact negative values
+    if ~(flux_mw < 0).any() & (conv_flux_mw < 0).any():
+        # conv_flux_mw[conv_flux_mw < 0] = 0
+        conv_flux_mw[conv_flux_mw <= 0] = flux_mw[flux_mw > 0].min()
 
     if reset_edge:
         pad_total = len(kernel) - 1
@@ -99,19 +104,30 @@ def convolve_fix_width_fft(wave_w, flux_mw, fwhm_wave=10, reset_edge=True):
 
     return conv_flux_mw 
 
-def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=1e6, fwhm_vel=1e-6, fwhm_wave_func=None, num_bins=10, reset_edge=True):
+def convolve_var_width_fft(wave_w, flux_mw, fwhm_vel_kin=None, R_inst_w=1e8, 
+                           fwhm_vel_ref=None, R_ref=None, 
+                           fwhm_wave_func=None, num_bins=10, reset_edge=True):
     if np.isscalar(R_inst_w):
-        if R_inst_w <= 0: R_inst_w = 1e-6
+        if R_inst_w <= 0: R_inst_w = 1e-8
     else: 
-        R_inst_w[R_inst_w <= 0] = 1e-6
-    if fwhm_vel <= 0: fwhm_vel = 1e-6
+        R_inst_w[R_inst_w <= 0] = 1e-8
+    if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
 
     if fwhm_wave_func is not None: 
-        if callable(fwhm_wave_func): fwhm_wave_w = fwhm_wave_func(wave_w)
+        if callable(fwhm_wave_func): 
+            fwhm_wave_w = fwhm_wave_func(wave_w)
     else:
-        fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel)
+        fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
         fwhm_wave_inst_w = wave_w / R_inst_w
-        fwhm_wave_w = np.sqrt(fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2)
+        fwhm2_wave_w = fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2
+
+        fwhm_wave_ref_w = None
+        if fwhm_vel_ref is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
+        if R_ref is not None: fwhm_wave_ref_w = wave_w / R_ref
+        if fwhm_wave_ref_w is not None:
+            fwhm2_wave_w -= fwhm_wave_ref_w**2 # reduce the dispersion of refered template
+            fwhm2_wave_w[fwhm2_wave_w <= 0] = 1e-8
+        fwhm_wave_w = np.sqrt(fwhm2_wave_w)
 
     if num_bins == 1:
         return convolve_fix_width_fft(wave_w, flux_mw, np.median(fwhm_wave_w), reset_edge)
@@ -129,6 +145,11 @@ def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=1e6, fwhm_vel=1e-6, fwhm_wa
                 conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
             if len(flux_mw.shape) == 2: 
                 conv_flux_mw = fftconvolve(flux_mw, kernel[None, :], mode='same', axes=1)
+
+            # correct the artifact negative values
+            if ~(flux_mw < 0).any() & (conv_flux_mw < 0).any():
+                # conv_flux_mw[conv_flux_mw < 0] = 0
+                conv_flux_mw[conv_flux_mw <= 0] = flux_mw[flux_mw > 0].min()
 
             factor_w = 1 - np.abs(wave_w-wave_0) / (select_wave_w[1]-select_wave_w[0])
             mask_w = factor_w >= 0
@@ -152,19 +173,31 @@ def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=1e6, fwhm_vel=1e-6, fwhm_wa
 
         return ret_flux_mw
 
-def convolve_var_width_csr(wave_w, flux_mw, R_inst_w=1e6, fwhm_vel=1e-6, fwhm_wave_func=None, sigma_cutoff=3, num_step=1000):
+def convolve_var_width_csr(wave_w, flux_mw, fwhm_vel_kin=None, R_inst_w=1e8, 
+                           fwhm_vel_ref=None, R_ref=None, 
+                           fwhm_wave_func=None, sigma_cutoff=3, num_step=1000):
     if np.isscalar(R_inst_w):
-        if R_inst_w <= 0: R_inst_w = 1e-6
+        if R_inst_w <= 0: R_inst_w = 1e-8
     else: 
-        R_inst_w[R_inst_w <= 0] = 1e-6
-    if fwhm_vel <= 0: fwhm_vel = 1e-6
+        R_inst_w[R_inst_w <= 0] = 1e-8
+    if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
 
     if fwhm_wave_func is not None: 
-        if callable(fwhm_wave_func): fwhm_wave_w = fwhm_wave_func(wave_w)
+        if callable(fwhm_wave_func): 
+            fwhm_wave_w = fwhm_wave_func(wave_w)
     else:
-        fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel)
+        fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
         fwhm_wave_inst_w = wave_w / R_inst_w
-        fwhm_wave_w = np.sqrt(fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2)
+        fwhm2_wave_w = fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2
+
+        fwhm_wave_ref_w = None
+        if fwhm_vel_ref is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
+        if R_ref is not None: fwhm_wave_ref_w = wave_w / R_ref
+        if fwhm_wave_ref_w is not None:
+            fwhm2_wave_w -= fwhm_wave_ref_w**2 # reduce the dispersion of refered template
+            fwhm2_wave_w[fwhm2_wave_w <= 0] = 1e-8
+        fwhm_wave_w = np.sqrt(fwhm2_wave_w)
+
     sigma_wave_w = fwhm_wave_w / np.sqrt(np.log(256))
     sigma_pix_w = sigma_wave_w / np.gradient(wave_w)
 

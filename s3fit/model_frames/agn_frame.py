@@ -9,26 +9,34 @@ from astropy.io import fits
 import astropy.units as u
 import astropy.constants as const
 from astropy.cosmology import WMAP9 as cosmo
+from astropy.modeling.models import BlackBody
 from scipy.interpolate import interp1d
 
-from ..auxiliary_func import print_log, convert_linw_to_logw, convolve_spec_logw
+from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_width_fft
 from ..extinct_law import ExtLaw
 
 class AGNFrame(object):
     def __init__(self, filename=None, w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
-                 cframe=None, v0_redshift=None, R_inst_rw=None, verbose=True, log_message=[]):
-        # add file_bac, file_iron later
+                 cframe=None, v0_redshift=None, R_inst_rw=None, resample_width=None, init_smooth_width=None, 
+                 verbose=True, log_message=[]):
         
+        self.filename = filename
         self.w_min = w_min
         self.w_max = w_max
         self.w_norm = w_norm
         self.dw_norm = dw_norm
-        self.cframe = cframe 
+        self.cframe = cframe
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
+        self.resample_width = resample_width # resample width
+        self.init_smooth_width = init_smooth_width # initial convolving width, e.g., 30AA
         self.verbose = verbose
         self.log_message = log_message
 
+        self.num_comps = self.cframe.num_comps
+        self.num_coeffs = self.cframe.num_comps # one independent element per component
+
+        # set original wavelength grid
         # self.orig_wave_w = np.linspace(w_min, w_max, num=100)
         orig_wave_logbin = 0.05
         orig_wave_num = int(np.round(np.log10(w_max/w_min) / orig_wave_logbin))
@@ -38,13 +46,16 @@ class AGNFrame(object):
         # linw_wave = np.linspace(w_min, w_max, num=10)
         # resolution = R_inst_rw * 5 # select a high resampling density
         # self.logw_wave = convert_linw_to_logw(linw_wave, linw_wave, resolution=resolution)[0]
-        
-        self.num_coeffs = 1
-        
-    # def read_bac(self)
-    # def read_iron(self)
 
-    def powerlaw_unitnorm(self, wavelength, alpha_lambda, wave_norm=5500):
+        if np.isin('iron', [self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]):
+            self.read_iron()
+
+        if self.verbose:
+            print_log(f"AGN UV/optical continuum components: {[self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]}", self.log_message)
+
+    ##############################
+
+    def powerlaw_func(self, wavelength, alpha_lambda, wave_norm=5500):
         # normalized to unit flux density (e.g.,the same unit of obs) at rest 5500AA before extinct
         # pl = (wavelength/5500)**alpha_lambda
         pl = (wavelength/wave_norm)**alpha_lambda
@@ -66,42 +77,108 @@ class AGNFrame(object):
 
         return pl
 
-    def models_unitnorm_obsframe(self, obs_wave_w, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
-        # pars: voff, fwhm, AV; alpha_lambda (pl); add other models later 
-        # comps: 'powerlaw', 'all'
-        if if_pars_flat: 
-            pars = self.cframe.flat_to_arr(input_pars)
+    def read_iron(self):
+        iron_lib = fits.open(self.filename)
+        iron_wave_w = iron_lib[0].data[0] # AA
+        iron_flux_w = iron_lib[0].data[1] # erg/s/cm2/AA
+
+        # normalize models at given wavelength
+        mask_norm_w = (iron_wave_w > 2200) & (iron_wave_w < 4000)
+        flux_norm_uv = np.trapz(iron_flux_w[mask_norm_w], x=iron_wave_w[mask_norm_w])
+        mask_norm_w = (iron_wave_w > 4000) & (iron_wave_w < 5800)
+        flux_norm_opt = np.trapz(iron_flux_w[mask_norm_w], x=iron_wave_w[mask_norm_w])
+        iron_flux_w /= flux_norm_uv
+        # for any observed spectrum, fuv_obs = fnorm_obs, fopt_obs = fnorm_obs * fopt_mod/fuv_mod
+
+        # determine the resample_width and init_smooth_width, both in wavelength (AA)
+        if (self.resample_width is None) & (self.init_smooth_width is not None):
+            self.resample_width = self.init_smooth_width / 2 # maximum resample_width to capture smoothed profile
+        if (self.init_smooth_width is None) & (self.resample_width is not None):
+            self.init_smooth_width = self.resample_width * 2 # minimum init_smooth_width for a well resampling
+        if (self.init_smooth_width is not None) & self.verbose: 
+            print_log(f'Resample AGN iron pesudo-continuum with bin width of {self.resample_width:.3f} AA in a resolution of {self.init_smooth_width:.3f} AA', 
+                      self.log_message)
+
+        # smooth spectra unless both resample_width and init_smooth_width is not input
+        if self.init_smooth_width is not None: 
+            iron_flux_w = convolve_fix_width_fft(iron_wave_w, iron_flux_w, self.init_smooth_width) 
+
+        # resample model to accelarate calculation
+        if self.resample_width is not None: 
+            bin_pix = int(self.resample_width / np.diff(iron_wave_w).mean()) # sampling width
+            if bin_pix == 0: bin_pix = 1 # in case with high-resolution observed spectrum
         else:
-            pars = copy(input_pars)
+            bin_pix = 1
+        iron_wave_w = iron_wave_w[::bin_pix]
+        iron_flux_w = iron_flux_w[::bin_pix]
+
+        self.orig_wave_w = np.hstack((self.orig_wave_w, iron_wave_w))
+        self.orig_wave_w = np.sort(self.orig_wave_w)
+        self.iron_flux_w = np.interp(self.orig_wave_w, iron_wave_w, iron_flux_w, left=0, right=0)
+
+    def iron_func(self):
+        return self.iron_flux_w # no special parameter needed
+
+    def bac_func(self, wavelength, logtem=4.0, logtau=1.0, wave_norm=3000):
+        # parameters: electron temperature (K), optical depth at balmer edge (3646)
+        # normalize at rest 3000 AA
+
+        # Planck function for the given electron temperature
+        planck_func = BlackBody(temperature=10.0**logtem * u.K, scale=1*u.erg/(u.s*u.cm**2*u.AA*u.sr))
+        planck_flux_w = planck_func(wavelength * u.AA).value 
+        
+        # calculate the optical depth at each wavelength
+        # τ_λ = τ_BE * (λ_BE / λ)^3  (as in Grandi 1982)
+        # the exponent can vary depending on the specific model
+        balmer_edge = 3646.0
+        optical_depth = 10.0**logtau * (balmer_edge / wavelength)**3
+
+        # calculate the Balmer continuum flux
+        bac_flux_w = planck_flux_w * (1 - np.exp(-optical_depth))
+        bac_flux_w /= np.interp(wave_norm, wavelength, bac_flux_w)
+        bac_flux_w[wavelength >= balmer_edge] = 0
+
+        return bac_flux_w
+
+    ##############################
+
+    def models_unitnorm_obsframe(self, obs_wave_w, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
+        # comp can be: 'powerlaw', 'iron', 'bac'
+        # par: voff, fwhm, AV (general); alpha_lambda (pl); logtem, logtau (bac)
+        if if_pars_flat: 
+            par_cp = self.cframe.flat_to_arr(input_pars)
+        else:
+            par_cp = copy(input_pars)
         if mask_lite_e is not None:
             mask_lite_ce = self.cframe.flat_to_arr(mask_lite_e)
 
-        for i_comp in range(pars.shape[0]):
+        for i_comp in range(par_cp.shape[0]):
             # read and append intrinsic templates in rest frame
-            # powerlaw
-            alpha_lambda = pars[i_comp,3]
-            pl = self.powerlaw_unitnorm(self.orig_wave_w, alpha_lambda, wave_norm=self.w_norm)
-            # Balmer continuum and high-order Balmer lines
-            # iorn pseudo continuum
-            # combine intrinsic agn templates
-            orig_flux_int_ew = np.vstack((pl))
-            orig_flux_int_ew = orig_flux_int_ew.T # if only pl
+            if np.isin('powerlaw', self.cframe.info_c[i_comp]['mod_used']):
+                pl = self.powerlaw_func(self.orig_wave_w, alpha_lambda=par_cp[i_comp,3], wave_norm=self.w_norm)
+                orig_flux_int_ew = np.vstack((pl)).T # convert to (1,w) format
+            if np.isin('iron', self.cframe.info_c[i_comp]['mod_used']):
+                iron = self.iron_func()
+                orig_flux_int_ew = np.vstack((iron)).T # convert to (1,w) format; support multi-element for wavelength bins later
+            if np.isin('bac', self.cframe.info_c[i_comp]['mod_used']):
+                bac = self.bac_func(self.orig_wave_w, logtem=par_cp[i_comp,3], logtau=par_cp[i_comp,4])
+                orig_flux_int_ew = np.vstack((bac)).T # convert to (1,w) format
 
             if mask_lite_e is not None:
                 orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp,:],:] # limit element number for accelarate calculation
 
             # dust extinction
-            orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * pars[i_comp,2] * ExtLaw(self.orig_wave_w))
+            orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * par_cp[i_comp,2] * ExtLaw(self.orig_wave_w))
             # redshift models
-            z_ratio = (1 + self.v0_redshift) * (1 + pars[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)
+            z_ratio = (1 + self.v0_redshift) * (1 + par_cp[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             orig_wave_z_w = self.orig_wave_w * z_ratio
             orig_flux_dz_ew = orig_flux_d_ew / z_ratio
             # convolve with intrinsic and instrumental dispersion if R_inst_rw is not None 
-            # and iron template is used (supported later)
-            if (self.R_inst_rw is not None) & (conv_nbin is not None) & np.isin('iron', self.cframe.info_c[i_comp]['mod_used']):
+            # skip for powerlaw
+            if (self.R_inst_rw is not None) & (conv_nbin is not None) & ~np.isin('powerlaw', self.cframe.info_c[i_comp]['mod_used']):
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
                 orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, 
-                                                          R_inst_w=R_inst_w, fwhm_vel=pars[i_comp,1], num_bins=conv_nbin)
+                                                          fwhm_vel_kin=par_cp[i_comp,1], R_inst_w=R_inst_w, num_bins=conv_nbin)
                 # convolution in redshifted- or rest-wavelength does not change result
             else:
                 orig_flux_dzc_ew = orig_flux_dz_ew 
@@ -167,8 +244,9 @@ class AGNFrame(object):
                 coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]
 
                 rev_redshift = (1+par_p[0]/299792.458)*(1+self.v0_redshift)-1
-                tmp_spec_ew = self.models_unitnorm_obsframe(spec_wave_w, par_p[None,:], if_pars_flat=False)
-                tmp_spec_w = np.dot(coeff_e, tmp_spec_ew)
+                # tmp_spec_ew = self.models_unitnorm_obsframe(spec_wave_w, par_p[None,:], if_pars_flat=False)
+                # tmp_spec_w = np.dot(coeff_e, tmp_spec_ew)
+                tmp_spec_w = ff.output_mc['agn'][comp_c[i_comp]]['spec_lw'][i_loop, :]
                 mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # observed flux at wavenorm=5500AA(rest)
                 output_c[comp_c[i_comp]]['values']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                 output_c['sum']['values']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()

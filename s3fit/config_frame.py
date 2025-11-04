@@ -10,19 +10,23 @@ class ConfigFrame(object):
         self.config = config
         self.comp_c = [*config.keys()]
         self.num_comps = len([*config])
-        self.num_pars_per_comp = len(config[[*config][0]]['pars'])
+        self.num_pars_per_comp = max([len(config[[*config][i_comp]]['pars']) for i_comp in range(self.num_comps)])
         self.num_pars = self.num_pars_per_comp * self.num_comps # total number of pars of all comps
 
-        self.min_cp = np.zeros((self.num_comps, self.num_pars_per_comp), dtype='float')
-        self.max_cp = np.zeros((self.num_comps, self.num_pars_per_comp), dtype='float')
-        self.tie_cp = np.zeros((self.num_comps, self.num_pars_per_comp), dtype='<U64')
+        self.min_cp = np.full((self.num_comps, self.num_pars_per_comp), -9999, dtype='float')
+        self.max_cp = np.full((self.num_comps, self.num_pars_per_comp), -9999, dtype='float')
+        self.tie_cp = np.full((self.num_comps, self.num_pars_per_comp), 'fix', dtype='<U64')
         self.info_c = [] # do not initialize string array for unknown string length, e.g., dtype='<U256'
         for i_comp in range(self.num_comps):
-            for i_par in range(self.num_pars_per_comp):
+            for i_par in range(len(config[[*config][i_comp]]['pars'])):
                 self.min_cp[i_comp,i_par] = config[[*config][i_comp]]['pars'][i_par][0]
                 self.max_cp[i_comp,i_par] = config[[*config][i_comp]]['pars'][i_par][1]
                 self.tie_cp[i_comp,i_par] = config[[*config][i_comp]]['pars'][i_par][2]
             self.info_c.append(config[[*config][i_comp]]['info'])
+            for item in ['mod_used', 'line_used']:
+                if np.isin(item, [*self.info_c[i_comp]]): 
+                    if not isinstance(self.info_c[i_comp][item], list): 
+                        self.info_c[i_comp][item] = [self.info_c[i_comp][item]]
             self.info_c[i_comp]['comp_name'] = [*config.keys()][i_comp]
         # self.info_c = np.array(self.info_c)
 

@@ -30,33 +30,90 @@ class ELineFrame(object):
 
     def initialize_linelist_manually(self):
         # _n denote line; _l already used for loop id
-        # [v3] update with https://physics.nist.gov/PhysRefData/ASD/lines_form.html (H ref: T8637)
+        # https://physics.nist.gov/PhysRefData/ASD/lines_form.html (H ref: T8637)
+        # https://linelist.pa.uky.edu/atomic/
+        # https://astronomy.nmsu.edu/drewski/tableofemissionlines.html
         # ratio of doublets calculated with pyneb under ne=100, Te=1e4
         self.linerest_n, self.lineratio_n, self.linename_n = [],[],[]
+        # UV
+        self.linerest_n.append(1215.670); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lya')
+        self.linerest_n.append(1025.722); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lyb')
+        self.linerest_n.append( 972.537); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lyg')
+        self.linerest_n.append( 949.743); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lyd')
+        self.linerest_n.append( 937.803); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly6')
+        # self.linerest_n.append( 930.748); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly7')
+        # self.linerest_n.append( 926.226); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly8')
+        # self.linerest_n.append( 923.150); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly9')
+        # self.linerest_n.append( 920.963); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly10')
+        self.linerest_n.append( 770.409); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ne VIII:770')
+        self.linerest_n.append( 780.324); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ne VIII:780')
+        self.linerest_n.append( 977.030); self.lineratio_n.append(1.0)     ; self.linename_n.append('C III:977')
+        self.linerest_n.append( 989.790); self.lineratio_n.append(1.0)     ; self.linename_n.append('N III:990')
+        self.linerest_n.append( 991.514); self.lineratio_n.append(1.0)     ; self.linename_n.append('N III:991.5')
+        self.linerest_n.append( 991.579); self.lineratio_n.append(1.0)     ; self.linename_n.append('N III:991.6')
+        self.linerest_n.append(1031.912); self.lineratio_n.append(1.0)     ; self.linename_n.append('O VI:1032')
+        self.linerest_n.append(1037.613); self.lineratio_n.append(1.0)     ; self.linename_n.append('O VI:1038')
+        self.linerest_n.append(1238.821); self.lineratio_n.append(1.0)     ; self.linename_n.append('N V:1239')
+        self.linerest_n.append(1242.804); self.lineratio_n.append(1.0)     ; self.linename_n.append('N V:1243')
+        self.linerest_n.append(1260.422); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si II:1260')
+        self.linerest_n.append(1264.730); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si II:1265')
+        self.linerest_n.append(1302.168); self.lineratio_n.append(1.0)     ; self.linename_n.append('O I:1302')
+        self.linerest_n.append(1334.532); self.lineratio_n.append(1.0)     ; self.linename_n.append('C II:1335')
+        self.linerest_n.append(1335.708); self.lineratio_n.append(1.0)     ; self.linename_n.append('C II:1336')
+        self.linerest_n.append(1393.755); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si IV:1394')
+        self.linerest_n.append(1397.232); self.lineratio_n.append(1.0)     ; self.linename_n.append('O IV]:1397')
+        self.linerest_n.append(1399.780); self.lineratio_n.append(1.0)     ; self.linename_n.append('O IV]:1400')
+        self.linerest_n.append(1402.770); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si IV:1403')
+        self.linerest_n.append(1486.496); self.lineratio_n.append(1.0)     ; self.linename_n.append('N IV]:1486')
+        self.linerest_n.append(1548.187); self.lineratio_n.append(1.0)     ; self.linename_n.append('C IV:1548')
+        self.linerest_n.append(1550.772); self.lineratio_n.append(1.0)     ; self.linename_n.append('C IV:1551')
+        self.linerest_n.append(1640.420); self.lineratio_n.append(1.0)     ; self.linename_n.append('He II:1640')
+        self.linerest_n.append(1660.809); self.lineratio_n.append(1.0)     ; self.linename_n.append('O III]:1661')
+        self.linerest_n.append(1666.150); self.lineratio_n.append(1.0)     ; self.linename_n.append('O III]:1666')
+        self.linerest_n.append(1746.823); self.lineratio_n.append(1.0)     ; self.linename_n.append('N III]:1747')
+        self.linerest_n.append(1748.656); self.lineratio_n.append(1.0)     ; self.linename_n.append('N III]:1749')
+        self.linerest_n.append(1854.716); self.lineratio_n.append(1.0)     ; self.linename_n.append('Al III:1855')
+        self.linerest_n.append(1862.790); self.lineratio_n.append(1.0)     ; self.linename_n.append('Al III:1863')
+        self.linerest_n.append(1892.030); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si III]:1892')
+        self.linerest_n.append(1908.734); self.lineratio_n.append(1.0)     ; self.linename_n.append('C III]:1909')
+        self.linerest_n.append(2143.450); self.lineratio_n.append(1.0)     ; self.linename_n.append('N II]:2143')
+        self.linerest_n.append(2324.210); self.lineratio_n.append(1.0)     ; self.linename_n.append('C II]:2324')
+        self.linerest_n.append(2325.400); self.lineratio_n.append(1.0)     ; self.linename_n.append('C II]:2325')
+        self.linerest_n.append(2796.352); self.lineratio_n.append(1.0)     ; self.linename_n.append('Mg II]:2796')
+        self.linerest_n.append(2803.531); self.lineratio_n.append(1.0)     ; self.linename_n.append('Mg II]:2804')
+        # optical
         self.linerest_n.append(6564.632); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ha')
-        self.linerest_n.append(4862.691); self.lineratio_n.append(0.349)  ; self.linename_n.append('Hb')
-        self.linerest_n.append(4341.691); self.lineratio_n.append(0.164)  ; self.linename_n.append('Hg')
-        self.linerest_n.append(4102.899); self.lineratio_n.append(0.0904) ; self.linename_n.append('Hd')
-        self.linerest_n.append(3971.202); self.lineratio_n.append(0.0555) ; self.linename_n.append('H7')
-        self.linerest_n.append(3890.158); self.lineratio_n.append(0.0367) ; self.linename_n.append('H8')
-        self.linerest_n.append(6732.674); self.lineratio_n.append(1.0)     ; self.linename_n.append('[S II]:6733')
-        self.linerest_n.append(6718.295); self.lineratio_n.append(1.340)  ; self.linename_n.append('[S II]:6718')
-        self.linerest_n.append(6585.270); self.lineratio_n.append(1.0)     ; self.linename_n.append('[N II]:6585')
-        self.linerest_n.append(6549.860); self.lineratio_n.append(0.340)  ; self.linename_n.append('[N II]:6550')
-        self.linerest_n.append(6365.536); self.lineratio_n.append(0.319)  ; self.linename_n.append('[O I]:6366')
-        self.linerest_n.append(6302.046); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O I]:6302')
-        self.linerest_n.append(5201.705); self.lineratio_n.append(1.0)     ; self.linename_n.append('[N I]:5202')
-        self.linerest_n.append(5199.349); self.lineratio_n.append(0.783)  ; self.linename_n.append('[N I]:5199')
-        self.linerest_n.append(5099.230); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Fe VI]:5099')
-        self.linerest_n.append(5008.240); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O III]:5008')
-        self.linerest_n.append(4960.295); self.lineratio_n.append(0.335)  ; self.linename_n.append('[O III]:4960')
-        self.linerest_n.append(3968.590); self.lineratio_n.append(0.301)  ; self.linename_n.append('[Ne III]:3969')
-        self.linerest_n.append(3869.860); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Ne III]:3870')
-        self.linerest_n.append(3729.875); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O II]:3730')
-        self.linerest_n.append(3727.092); self.lineratio_n.append(0.741)  ; self.linename_n.append('[O II]:3727')
-        self.linerest_n.append(3426.864); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Ne V]:3427')
-        self.linerest_n.append(3346.783); self.lineratio_n.append(0.366)  ; self.linename_n.append('[Ne V]:3347')
+        self.linerest_n.append(4862.691); self.lineratio_n.append(0.349)   ; self.linename_n.append('Hb')
+        self.linerest_n.append(4341.691); self.lineratio_n.append(0.164)   ; self.linename_n.append('Hg')
+        self.linerest_n.append(4102.899); self.lineratio_n.append(0.0904)  ; self.linename_n.append('Hd')
+        self.linerest_n.append(3971.202); self.lineratio_n.append(0.0555)  ; self.linename_n.append('H7')
+        self.linerest_n.append(3890.158); self.lineratio_n.append(0.0367)  ; self.linename_n.append('H8')
+        # self.linerest_n.append(3836.479); self.lineratio_n.append(0.0367) ; self.linename_n.append('H9')
+        # self.linerest_n.append(3798.983); self.lineratio_n.append(0.0367) ; self.linename_n.append('H10')
+        # self.linerest_n.append(3771.708); self.lineratio_n.append(0.0367) ; self.linename_n.append('H11')
+        # self.linerest_n.append(3751.224); self.lineratio_n.append(0.0367) ; self.linename_n.append('H12')
+        # self.linerest_n.append(3735.437); self.lineratio_n.append(0.0367) ; self.linename_n.append('H13')
+        # self.linerest_n.append(3723.004); self.lineratio_n.append(0.0367) ; self.linename_n.append('H14')
+        # self.linerest_n.append(3713.033); self.lineratio_n.append(0.0367) ; self.linename_n.append('H15')
         self.linerest_n.append(5877.249); self.lineratio_n.append(1.0)     ; self.linename_n.append('He I:5877')
+        self.linerest_n.append(3346.783); self.lineratio_n.append(0.366)   ; self.linename_n.append('[Ne V]:3347')
+        self.linerest_n.append(3426.864); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Ne V]:3427')
+        self.linerest_n.append(3727.092); self.lineratio_n.append(0.741)   ; self.linename_n.append('[O II]:3727')
+        self.linerest_n.append(3729.875); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O II]:3730')
+        self.linerest_n.append(3869.860); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Ne III]:3870')
+        self.linerest_n.append(3968.590); self.lineratio_n.append(0.301)   ; self.linename_n.append('[Ne III]:3969')
+        self.linerest_n.append(4960.295); self.lineratio_n.append(0.335)   ; self.linename_n.append('[O III]:4960')
+        self.linerest_n.append(5008.240); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O III]:5008')
+        self.linerest_n.append(5099.230); self.lineratio_n.append(1.0)     ; self.linename_n.append('[Fe VI]:5099')
+        self.linerest_n.append(5199.349); self.lineratio_n.append(0.783)   ; self.linename_n.append('[N I]:5199')
+        self.linerest_n.append(5201.705); self.lineratio_n.append(1.0)     ; self.linename_n.append('[N I]:5202')
+        self.linerest_n.append(6302.046); self.lineratio_n.append(1.0)     ; self.linename_n.append('[O I]:6302')
+        self.linerest_n.append(6365.536); self.lineratio_n.append(0.319)   ; self.linename_n.append('[O I]:6366')
+        self.linerest_n.append(6549.860); self.lineratio_n.append(0.340)   ; self.linename_n.append('[N II]:6550')
+        self.linerest_n.append(6585.270); self.lineratio_n.append(1.0)     ; self.linename_n.append('[N II]:6585')
+        self.linerest_n.append(6718.295); self.lineratio_n.append(1.340)   ; self.linename_n.append('[S II]:6718')
+        self.linerest_n.append(6732.674); self.lineratio_n.append(1.0)     ; self.linename_n.append('[S II]:6733')
+
         self.update_linelist()
         
     def initialize_linelist_pyneb(self):
@@ -68,20 +125,39 @@ class ELineFrame(object):
                          'Atom':{'list': pyneb.atomicData.getAllAtoms(coll=True, rec=False)}} 
         # save to avoid duplicate reading
 
-        full_linelist = ['Ha', 'Hb', 'Hg', 'Hd', 'H7', 'H8', '[S II]:6733', '[S II]:6718',
-               '[N II]:6585', '[N II]:6550', '[O I]:6366', '[O I]:6302',
-               '[N I]:5202', '[N I]:5199', '[Fe VI]:5099', '[O III]:5008',
-               '[O III]:4960', '[Ne III]:3969', '[Ne III]:3870', '[O II]:3730',
-               '[O II]:3727', '[Ne V]:3427', '[Ne V]:3347']
+        # add lines from pyneb
+        full_linelist = ['Lya', 'Lyb', 'Lyg', 'Lyd', 'Ly6', 
+                         'C III:977', 'N III:990', 'N III:991.5', 'N III:991.6', 'C II:1335', 'C II:1336', 'O IV]:1397', 'O IV]:1400', 'N IV]:1486', 'C IV:1548', 'C IV:1551', 
+                         'He II:1640', 'O III]:1661', 'O III]:1666', 'N III]:1747', 'N III]:1749', 'Si III]:1892', 'C III]:1909', 'N II]:2143', 'C II]:2324', 'C II]:2325',
+                         'Ha', 'Hb', 'Hg', 'Hd', 'H7', 'H8', 
+                         '[Ne V]:3347', '[Ne V]:3427', '[O II]:3727', '[O II]:3730', '[Ne III]:3870', '[Ne III]:3969', '[O III]:4960', '[O III]:5008', 
+                         '[Fe VI]:5099', '[N I]:5199', '[N I]:5202', '[O I]:6302','[O I]:6366', '[N II]:6550', '[N II]:6585', '[S II]:6718', '[S II]:6733']
+
         self.linerest_n, self.lineratio_n, self.linename_n = [],[],[]
         for linename in full_linelist:
             linename, linerest = self.search_pyneb(linename)
             self.linename_n.append(linename)
             self.linerest_n.append(linerest)
             self.lineratio_n.append(1.0)  
-            
-        # not provided: NV_1239, O I:1302, Si IV:1394, Al III:1855, MgII_2796, HeI 5877.249, 
-        self.linerest_n.append(5877.249); self.lineratio_n.append(1.0)     ; self.linename_n.append('He I:5877')       
+
+        # add lines not provided by pyneb
+        self.linerest_n.append( 770.409); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ne VIII:770')
+        self.linerest_n.append( 780.324); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ne VIII:780')
+        self.linerest_n.append(1031.912); self.lineratio_n.append(1.0)     ; self.linename_n.append('O VI:1032')
+        self.linerest_n.append(1037.613); self.lineratio_n.append(1.0)     ; self.linename_n.append('O VI:1038')
+        self.linerest_n.append(1238.821); self.lineratio_n.append(1.0)     ; self.linename_n.append('N V:1239')
+        self.linerest_n.append(1242.804); self.lineratio_n.append(1.0)     ; self.linename_n.append('N V:1243')
+        self.linerest_n.append(1260.422); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si II:1260')
+        self.linerest_n.append(1264.730); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si II:1265')
+        self.linerest_n.append(1302.168); self.lineratio_n.append(1.0)     ; self.linename_n.append('O I:1302')
+        self.linerest_n.append(1393.755); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si IV:1394')
+        self.linerest_n.append(1402.770); self.lineratio_n.append(1.0)     ; self.linename_n.append('Si IV:1403')
+        self.linerest_n.append(1854.716); self.lineratio_n.append(1.0)     ; self.linename_n.append('Al III:1855')
+        self.linerest_n.append(1862.790); self.lineratio_n.append(1.0)     ; self.linename_n.append('Al III:1863')
+        self.linerest_n.append(2796.352); self.lineratio_n.append(1.0)     ; self.linename_n.append('Mg II]:2796')
+        self.linerest_n.append(2803.531); self.lineratio_n.append(1.0)     ; self.linename_n.append('Mg II]:2804')
+        self.linerest_n.append(5877.249); self.lineratio_n.append(1.0)     ; self.linename_n.append('He I:5877')
+
         self.update_linelist()
         
     def add_line(self, linenames=None, linerests=None, lineratios=None, force=False, use_pyneb=False):
@@ -127,22 +203,32 @@ class ELineFrame(object):
         self.initialize_linelink()
 
     def initialize_mask_valid(self):
+        # only keep covered lines
+        mask_valid_n  = self.linerest_n > (self.rest_wave_w.min()-50)
+        mask_valid_n &= self.linerest_n < (self.rest_wave_w.max()+50)
+        self.linerest_n = self.linerest_n[mask_valid_n]
+        self.lineratio_n = self.lineratio_n[mask_valid_n]
+        self.linename_n = self.linename_n[mask_valid_n]
+
         self.num_comps = len(self.cframe.info_c)
         self.num_lines = len(self.linerest_n)
         self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
-        for i_comp in range(self.num_comps):
-            mask_valid_n  = self.linerest_n > (self.rest_wave_w.min()-50)
-            mask_valid_n &= self.linerest_n < (self.rest_wave_w.max()+50)
-            if self.mask_valid_w is not None:
+
+        # check minimum coverage
+        if self.mask_valid_w is not None:
+            for i_comp in range(self.num_comps):
                 for i_line in range(self.num_lines):
                     voff_w = (self.rest_wave_w/self.linerest_n[i_line] -1) * 299792.458
                     mask_line_w  = voff_w > self.cframe.min_cp[i_comp,0]
                     mask_line_w &= voff_w < self.cframe.max_cp[i_comp,0]
-                    if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() < 0.1: mask_valid_n[i_line] = False
-            if self.cframe.info_c[i_comp]['line_used'][0] != 'all': 
-                mask_select_n = np.isin(self.linename_n, self.cframe.info_c[i_comp]['line_used'])
-                mask_valid_n &= mask_select_n
-            self.mask_valid_cn[i_comp, mask_valid_n] = True
+                    if mask_line_w.sum() > 0: 
+                        if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() > 0.2: # minimum valid coverage fraction
+                            self.mask_valid_cn[i_comp, i_line] = True
+
+        # only keep lines if they are specified 
+        for i_comp in range(self.num_comps):
+            if ~np.isin(self.cframe.info_c[i_comp]['line_used'][0], ['all', 'default']): 
+                self.mask_valid_cn[i_comp] &= np.isin(self.linename_n, self.cframe.info_c[i_comp]['line_used'])
             
     def search_pyneb(self, name, ret_atomdata=False):
         # due to the current coverage of elements and atoms of pyneb, 
@@ -183,7 +269,10 @@ class ELineFrame(object):
             if ion[0] == '[': 
                 element, notation = ion[1:-1].split(' ')
             else:
-                element, notation = ion.split(' ')    
+                if ion[-1] == ']': 
+                    element, notation = ion[:-1].split(' ')
+                else:
+                    element, notation = ion.split(' ')
             notation = roman_to_int(notation)
             if np.isin(element+str(notation), ['H1', 'He2']):
                 if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
@@ -214,7 +303,8 @@ class ELineFrame(object):
         ref_valid = False
         for ref_name in ref_names:
             if not np.isin(ref_name, self.linename_n):
-                raise ValueError((f"The reference line '{ref_name}' is not included in the available line list."))
+                # raise ValueError((f"The reference line '{ref_name}' is not included in the available line list."))
+                continue
             i_ref = np.where(self.linename_n == ref_name)[0][0]
             ref_valid = self.mask_valid_cn[:, i_ref].sum() > 0 # if ref_name exists in any one comp
             if ref_valid: break # pick up the 1st valid ref_name
@@ -222,7 +312,8 @@ class ELineFrame(object):
         if not isinstance(tied_names, list): tied_names = [tied_names]
         for tied_name in tied_names:
             if not np.isin(tied_name, self.linename_n):
-                raise ValueError((f"The tied line '{tied_name}' is not included in the available line list."))
+                # raise ValueError((f"The tied line '{tied_name}' is not included in the available line list."))
+                continue
             i_tied = np.where(self.linename_n == tied_name)[0][0]
             tied_valid = self.mask_valid_cn[:, i_tied].sum() > 0 # if tied_name exists in any one comp
 
@@ -308,11 +399,10 @@ class ELineFrame(object):
     def update_mask_free(self):
         self.mask_free_cn  = np.zeros((self.num_comps, self.num_lines), dtype='bool')
         for i_comp in range(self.num_comps):
-            mask_free_n = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict])
-            if self.cframe.info_c[i_comp]['line_used'][0] != 'all': 
-                mask_select_n = np.isin(self.linename_n, self.cframe.info_c[i_comp]['line_used'])
-                mask_free_n  &= mask_select_n
-            self.mask_free_cn[i_comp,  mask_free_n ] = True
+            self.mask_free_cn[i_comp] = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict])
+            if ~np.isin(self.cframe.info_c[i_comp]['line_used'][0], ['all', 'default']): 
+                self.mask_free_cn[i_comp] &= np.isin(self.linename_n, self.cframe.info_c[i_comp]['line_used'])
+
         self.num_coeffs = self.mask_free_cn.sum()
         
         # set component name and enable mask for each free line; _f denotes free or coeffs
@@ -334,18 +424,22 @@ class ELineFrame(object):
     def single_gaussian(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8):
         if fwhm <= 0: raise ValueError((f"Non-positive eline fwhm: {fwhm}"))
         if flux < 0: raise ValueError((f"Negative eline flux: {flux}"))
+
         lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
         mu =    (1 + voff/299792.458) * lamb_c_obs
         sigma_line = fwhm/299792.458  * lamb_c_obs / np.sqrt(np.log(256))
+
         if np.isscalar(R_inst_rw):
             local_R_inst = copy(R_inst_rw)
         else:
             local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
+
         sigma_inst = 1 / local_R_inst * lamb_c_obs / np.sqrt(np.log(256))
         sigma = np.sqrt(sigma_line**2 + sigma_inst**2)
         model = np.exp(-0.5 * ((obs_wave_w-mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi)) 
-        # dw = (obs_wave_w[1:]-obs_wave_w[:-1]).min()
-        # if (model * dw).sum() < 0.10: flux = 0 # disable not well covered emission line
+
+        if model.sum() <= 0: model[0] = 1e-10 # avoid error from full zero output in case line is not covered
+
         return model * flux
 
     def models_single_comp(self, obs_wave_w, pars, list_valid, list_free):
@@ -368,14 +462,14 @@ class ELineFrame(object):
     def models_unitnorm_obsframe(self, obs_wave_w, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         if if_pars_flat: 
-            pars = self.cframe.flat_to_arr(input_pars)
+            par_cp = self.cframe.flat_to_arr(input_pars)
         else:
-            pars = copy(input_pars)
+            par_cp = copy(input_pars)
 
         for i_comp in range(self.num_comps):
             list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
             list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
-            obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, pars[i_comp], list_valid, list_free)
+            obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp[i_comp], list_valid, list_free)
 
             if i_comp == 0: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
