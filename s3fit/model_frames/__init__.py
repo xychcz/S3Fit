@@ -4,8 +4,8 @@
 # Contact: xiaoyang.chen.cz@gmail.com
 
 from .ssp_frame import SSPFrame
-from .eline_frame import ELineFrame
+from .line_frame import LineFrame
 from .agn_frame import AGNFrame
 from .torus_frame import TorusFrame
 
-__all__ = ["SSPFrame", "ELineFrame", "AGNFrame", "TorusFrame"]
+__all__ = ["SSPFrame", "LineFrame", "AGNFrame", "TorusFrame"]

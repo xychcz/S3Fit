@@ -10,7 +10,7 @@ from scipy.interpolate import RegularGridInterpolator
 from ..auxiliary_func import print_log
 from ..extinct_law import ExtLaw
 
-class ELineFrame(object):
+class LineFrame(object):
     def __init__(self, rest_wave_w=None, mask_valid_w=None, 
                  cframe=None, v0_redshift=0, R_inst_rw=None, use_pyneb=False, verbose=True, log_message=[]):
 
@@ -280,7 +280,7 @@ class ELineFrame(object):
                 atomdata = self.pyneblib['RecAtom'][element+str(notation)]
             else:
                 if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
-                    raise ValueError((f"{name} not provided in pyneb, please add it into ELineFrame.initialize_linelist() manually."))
+                    raise ValueError((f"{name} not provided in pyneb, please add it into LineFrame.initialize_linelist() manually."))
                 if ~np.isin(element+str(notation), [*self.pyneblib['Atom']]):
                     self.pyneblib['Atom'][element+str(notation)] = self.pyneb.Atom(element, notation) # , noExtrapol=True
                 atomdata = self.pyneblib['Atom'][element+str(notation)]

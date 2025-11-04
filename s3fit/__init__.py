@@ -13,7 +13,7 @@ from .auxiliary_func import print_time, lamb_air_to_vac, convert_linw_to_logw, c
 from .extinct_law import ExtLaw
 
 __all__ = ["FitFrame", "ConfigFrame", "PhotFrame", 
-           "SSPFrame", "ELineFrame", "AGNFrame", "TorusFrame", 
+           "SSPFrame", "LineFrame", "AGNFrame", "TorusFrame", 
            "print_time", "lamb_air_to_vac", "convert_linw_to_logw", "convolve_spec_logw", 
            "ExtLaw"
            ]

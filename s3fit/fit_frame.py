@@ -282,14 +282,14 @@ class FitFrame(object):
                 print_log(center_string('Initialize emission line models', 80), self.log_message)
                 self.full_model_type += mod + '+'
                 self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
-                from .model_frames.eline_frame import ELineFrame
-                self.model_dict[mod]['spec_mod'] = ELineFrame(rest_wave_w=self.spec['wave_w']/(1+self.v0_redshift), mask_valid_w=self.spec['mask_valid_w'],
+                from .model_frames.line_frame import LineFrame
+                self.model_dict[mod]['spec_mod'] = LineFrame(rest_wave_w=self.spec['wave_w']/(1+self.v0_redshift), mask_valid_w=self.spec['mask_valid_w'],
                                                               cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, 
                                                               R_inst_rw=self.spec['R_inst_rw'], use_pyneb=self.model_config[mod]['use_pyneb'], 
                                                               log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 91) & (self.spec_wmin < 1e7)
                 if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = ELineFrame(rest_wave_w=self.sed['wave_w']/(1+self.v0_redshift), mask_valid_w=None, 
+                    self.model_dict[mod]['sed_mod'] = LineFrame(rest_wave_w=self.sed['wave_w']/(1+self.v0_redshift), mask_valid_w=None, 
                                                                  cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, 
                                                                  R_inst_rw=self.spec['R_inst_rw'], use_pyneb=self.model_config[mod]['use_pyneb'], 
                                                                  verbose=False)
