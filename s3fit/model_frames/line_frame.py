@@ -214,16 +214,17 @@ class LineFrame(object):
         self.num_lines = len(self.linerest_n)
         self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
 
-        # check minimum coverage
-        if self.mask_valid_w is not None:
-            for i_comp in range(self.num_comps):
-                for i_line in range(self.num_lines):
-                    voff_w = (self.rest_wave_w/self.linerest_n[i_line] -1) * 299792.458
-                    mask_line_w  = voff_w > self.cframe.min_cp[i_comp,0]
-                    mask_line_w &= voff_w < self.cframe.max_cp[i_comp,0]
-                    if mask_line_w.sum() > 0: 
-                        if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() > 0.2: # minimum valid coverage fraction
-                            self.mask_valid_cn[i_comp, i_line] = True
+        # check minimum coverage        
+        for i_comp in range(self.num_comps):
+            for i_line in range(self.num_lines):
+                voff_w = (self.rest_wave_w/self.linerest_n[i_line] -1) * 299792.458
+                mask_line_w  = voff_w > self.cframe.min_cp[i_comp,0]
+                mask_line_w &= voff_w < self.cframe.max_cp[i_comp,0]
+                if mask_line_w.sum() > 0: 
+                    self.mask_valid_cn[i_comp, i_line] = True
+                    if self.mask_valid_w is not None:
+                        if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() < 0.1: # minimum valid coverage fraction
+                            self.mask_valid_cn[i_comp, i_line] = False
 
         # only keep lines if they are specified 
         for i_comp in range(self.num_comps):
@@ -422,8 +423,8 @@ class LineFrame(object):
     ##################
 
     def single_gaussian(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8):
-        if fwhm <= 0: raise ValueError((f"Non-positive eline fwhm: {fwhm}"))
-        if flux < 0: raise ValueError((f"Negative eline flux: {flux}"))
+        if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
+        if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
 
         lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
         mu =    (1 + voff/299792.458) * lamb_c_obs
@@ -481,7 +482,7 @@ class LineFrame(object):
 
         return obs_flux_mcomp_ew
 
-    def mask_el_lite(self, enabled_comps='all'):
+    def mask_line_lite(self, enabled_comps='all'):
         self.enabled_f = np.zeros((self.num_coeffs), dtype='bool')
         if enabled_comps == 'all':
             self.enabled_f[:] = True
@@ -503,7 +504,7 @@ class LineFrame(object):
         best_par_lp   = ff.output_s[step]['par_lp']
         best_coeff_le = ff.output_s[step]['coeff_le']
 
-        fp0, fp1, fe0, fe1 = ff.search_model_index('el', ff.full_model_type)
+        fp0, fp1, fe0, fe1 = ff.search_model_index('line', ff.full_model_type)
         num_loops = ff.num_loops
         comp_c = self.cframe.comp_c
         num_comps = self.cframe.num_comps

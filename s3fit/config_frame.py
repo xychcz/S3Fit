@@ -22,11 +22,22 @@ class ConfigFrame(object):
                 self.min_cp[i_comp,i_par] = config[[*config][i_comp]]['pars'][i_par][0]
                 self.max_cp[i_comp,i_par] = config[[*config][i_comp]]['pars'][i_par][1]
                 self.tie_cp[i_comp,i_par] = config[[*config][i_comp]]['pars'][i_par][2]
+
             self.info_c.append(config[[*config][i_comp]]['info'])
+            # group used model elements in a list
             for item in ['mod_used', 'line_used']:
                 if np.isin(item, [*self.info_c[i_comp]]): 
                     if not isinstance(self.info_c[i_comp][item], list): 
                         self.info_c[i_comp][item] = [self.info_c[i_comp][item]]
+            # rename sign for absorption/emission
+            if np.isin('sign', [*self.info_c[i_comp]]):
+                if np.isin(self.info_c[i_comp]['sign'], ['absorption', 'negative', '-']):
+                    self.info_c[i_comp]['sign'] = 'absorption'
+                if np.isin(self.info_c[i_comp]['sign'], ['emission', 'positive', '+']):
+                    self.info_c[i_comp]['sign'] = 'emission'
+            else:
+                self.info_c[i_comp]['sign'] = 'emission' # default
+
             self.info_c[i_comp]['comp_name'] = [*config.keys()][i_comp]
         # self.info_c = np.array(self.info_c)
 
