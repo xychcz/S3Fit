@@ -36,6 +36,9 @@ class AGNFrame(object):
         self.num_comps = self.cframe.num_comps
         self.num_coeffs = self.cframe.num_comps # one independent element per component
 
+        # currently do not consider negative spectra 
+        self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
+        
         # set original wavelength grid
         # self.orig_wave_w = np.linspace(w_min, w_max, num=100)
         orig_wave_logbin = 0.05

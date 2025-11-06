@@ -618,15 +618,21 @@ class FitFrame(object):
         coeff_e = solution.x
         ret_model_w = np.dot(coeff_e, model_ew) # Returns best model in the full wavelength (not limited by mask_valid_w)
         chi_w = np.zeros_like(ret_model_w)
-        if fit_grid == 'linear': chi_w[mask_valid_w] = (ret_model_w - flux_w)[mask_valid_w] * weight_w[mask_valid_w] # already reduced with weight_w
-        if fit_grid == 'log':    chi_w[mask_valid_w] = np.log(ret_model_w[mask_valid_w] / flux_w[mask_valid_w]) * (flux_w * weight_w)[mask_valid_w]
         # linear: (model/flux-1)*(flux*weight), log: ln(model/flux)*(flux*weight)
+        if fit_grid == 'linear': 
+            chi_w[mask_valid_w] = (ret_model_w - flux_w)[mask_valid_w] * weight_w[mask_valid_w] # reduced with weight_w
+        if fit_grid == 'log':
+            ret_model_w[ret_model_w <= 0] = ret_model_w[ret_model_w > 0].min() # force positive model values
+            chi_w[mask_valid_w] = np.log(ret_model_w[mask_valid_w] / flux_w[mask_valid_w]) * (flux_w * weight_w)[mask_valid_w]
 
         if (coeff_e < 0).any(): 
+            self.error = {'flux_w':flux_w, 'ret_model_w':ret_model_w, 'coeff_e':coeff_e, 'model_ew':model_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w}
             raise ValueError((f"Negative model coeff: {np.where(coeff_e <0)}-th in {coeff_e}."))
         if np.isnan(coeff_e).any() or np.isinf(coeff_e).any(): 
+            self.error = {'flux_w':flux_w, 'ret_model_w':ret_model_w, 'coeff_e':coeff_e, 'model_ew':model_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w}
             raise ValueError((f"NaN detected in model coeff: {np.where(np.isnan(coeff_e) | np.isinf(coeff_e))}-th in {coeff_e}."))
         if np.isnan(chi_w).any() or np.isinf(chi_w).any(): 
+            self.error = {'flux_w':flux_w, 'ret_model_w':ret_model_w, 'coeff_e':coeff_e, 'model_ew':model_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w}
             print('flux_w at chi_w=nan:', flux_w[np.isnan(chi_w) | np.isinf(chi_w)])
             print('model_w at chi_w=nan:', ret_model_w[np.isnan(chi_w) | np.isinf(chi_w)])
             raise ValueError((f"NaN detected in residuals at chi_w."))
@@ -634,7 +640,7 @@ class FitFrame(object):
         return coeff_e, ret_model_w, chi_w
 
     def linear_process(self, x, flux_w, ferr_w, mask_w, model_type, mask_lite_dict, 
-                      fit_phot=False, fit_grid='linear', conv_nbin=None, ret_coeffs=False):
+                       fit_phot=False, fit_grid='linear', conv_nbin=None, ret_coeffs=False):
         # for a give set of parameters, return models and residuals
         # the residuals are used to solve non-linear least-square fit
 
@@ -693,14 +699,16 @@ class FitFrame(object):
                 self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"NaN or Inf detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
                                  +f", position (m,w) = {np.where(np.isnan(spec_fmod_ew)|np.isinf(spec_fmod_ew))}."))
-            if (spec_fmod_ew < 0).any(): 
+            spec_fmod_positive_ew = spec_fmod_ew * 1.0 # copy
+            spec_fmod_positive_ew[self.model_dict[mod]['spec_mod'].mask_absorption_e[mask_lite_dict[mod]],:] *= -1 # convert nagative values for the following positive check
+            if (spec_fmod_positive_ew < 0).any(): 
                 self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"Negative value detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
-                                 +f", position (m,w) = {np.where(spec_fmod_ew < 0)}."))
-            if (spec_fmod_ew.sum(axis=1) <= 0).any(): 
+                                 +f", position (m,w) = {np.where(spec_fmod_positive_ew < 0)}."))
+            if (spec_fmod_positive_ew.sum(axis=1) <= 0).any(): 
                 self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"Zero or negative integrated flux detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
-                                 +f", position (m) = {np.where(spec_fmod_ew.sum(axis=1) <= 0)}."))
+                                 +f", position (m) = {np.where(spec_fmod_positive_ew.sum(axis=1) <= 0)}."))
             ####
             fit_model_ew = spec_fmod_ew if (fit_model_ew is None) else np.vstack((fit_model_ew, spec_fmod_ew))
         n_models = fit_model_ew.shape[0]

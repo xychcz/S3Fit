@@ -28,8 +28,13 @@ class TorusFrame(object):
         self.verbose = verbose
         self.log_message = log_message
                 
-        self.num_coeffs = 1 # only have one norm-free model in a single fitting component (since disc and torus are tied)
         self.read_skirtor()
+
+        self.num_comps = self.cframe.num_comps
+        self.num_coeffs = self.cframe.num_comps # one independent element per component since disc and torus are tied
+
+        # currently do not consider negative SED 
+        self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
         
     def read_skirtor(self): 
         # skirtor_disc = np.loadtxt(self.file_disc) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]

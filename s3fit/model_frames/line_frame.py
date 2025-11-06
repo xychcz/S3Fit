@@ -23,6 +23,12 @@ class LineFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.num_comps = len(self.cframe.info_c)
+        # set default profile as gaussian
+        for i_comp in range(self.num_comps):
+            if ~np.isin('profile', [*self.cframe.info_c[i_comp]]):
+                self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
+
         if self.use_pyneb: 
             self.initialize_linelist_pyneb()
         else:
@@ -210,7 +216,6 @@ class LineFrame(object):
         self.lineratio_n = self.lineratio_n[mask_valid_n]
         self.linename_n = self.linename_n[mask_valid_n]
 
-        self.num_comps = len(self.cframe.info_c)
         self.num_lines = len(self.linerest_n)
         self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
 
@@ -314,6 +319,7 @@ class LineFrame(object):
         for tied_name in tied_names:
             if not np.isin(tied_name, self.linename_n):
                 # raise ValueError((f"The tied line '{tied_name}' is not included in the available line list."))
+                tied_names.remove(tied_name)
                 continue
             i_tied = np.where(self.linename_n == tied_name)[0][0]
             tied_valid = self.mask_valid_cn[:, i_tied].sum() > 0 # if tied_name exists in any one comp
@@ -330,8 +336,6 @@ class LineFrame(object):
                     ratio_dt = (tied_emi_td / ref_emi_td).T
                     func_ratio_dt = RegularGridInterpolator((logdens, logtems), ratio_dt, method='linear', bounds_error=False)
                     self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
-                    if self.verbose:
-                        print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio from pyneb under the best-fit (or fixed) electron density and temperature.", self.log_message)
                 else:                
                     if tied_name == '[S II]:6718':
                         # https://ui.adsabs.harvard.edu/abs/2014A&A...561A..10P 
@@ -352,6 +356,10 @@ class LineFrame(object):
                                 print_log(f"Line tying: {tied_name} is tied to {ref_name} with the input flux ratio, {tmp}.", self.log_message)
                         def func_ratio_dt(pars, ret=tmp): return [ret]
                     self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
+
+        if use_pyneb & self.verbose:
+            if len(tied_names) > 1: print_log(f"    {tied_names} --> {ref_name}", self.log_message)
+            if len(tied_names) == 1: print_log(f"    {tied_names[0]} --> {ref_name}", self.log_message)
                 
     def release_pair(self, tied_names):
         if not isinstance(tied_names, list): tied_names = [tied_names]
@@ -369,6 +377,9 @@ class LineFrame(object):
         self.linelink_n = np.zeros_like(self.linename_n); self.linelink_n[:] = 'free'
         # initialize the ratio library dict of tied lines
         self.linelink_dict = {}
+
+        if self.use_pyneb & self.verbose:
+            print_log(f"Line tying (if line available) with flux ratios from pyneb under the best-fit (or fixed) electron density and temperature:", self.log_message)
 
         self.tie_pair(['Hb','Hg','Hd','H7','H8'], ['Ha','Hb','Hg','Hd']) # use set alternative line is Ha is not covered
         self.tie_pair('[S II]:6718', '[S II]:6733')
@@ -406,57 +417,72 @@ class LineFrame(object):
 
         self.num_coeffs = self.mask_free_cn.sum()
         
-        # set component name and enable mask for each free line; _f denotes free or coeffs
-        self.component_f = [] # np.zeros((self.num_coeffs), dtype='<U16')
+        # set component name and enable mask for each free line; _e denotes free or coeffs
+        self.component_e = [] # np.zeros((self.num_coeffs), dtype='<U16')
         for i_comp in range(self.num_comps):
             for i_line in range(self.num_lines):
                 if self.mask_free_cn[i_comp, i_line]:
-                    self.component_f.append(self.cframe.info_c[i_comp]['comp_name'])
-        self.component_f = np.array(self.component_f)
-        
+                    self.component_e.append(self.cframe.info_c[i_comp]['comp_name'])
+        self.component_e = np.array(self.component_e)
+
+        # mask free absorption lines
+        absorption_comp_names = np.array([d['comp_name'] for d in self.cframe.info_c if d['sign'] == 'absorption'])
+        self.mask_absorption_e = np.isin(self.component_e, absorption_comp_names)
+
         if self.verbose:
             print_log(f"Free lines in each components: ", self.log_message)
             for i_comp in range(self.num_comps):
-                print_log(f"  '{self.cframe.info_c[i_comp]['comp_name']}' component has "+
-                          f"{self.mask_free_cn[i_comp].sum()} free (out of total {self.mask_valid_cn[i_comp].sum()}) lines: {self.linename_n[self.mask_free_cn[i_comp]]}", self.log_message)
+                print_log(f"({i_comp}) '{self.cframe.info_c[i_comp]['comp_name']}' component has "+
+                          f"{self.mask_free_cn[i_comp].sum()} free (out of total {self.mask_valid_cn[i_comp].sum()}) "+
+                          f"{self.cframe.info_c[i_comp]['profile']}, {self.cframe.info_c[i_comp]['sign']} profiles: \n"+
+                          f"    {list(self.linename_n[self.mask_free_cn[i_comp]])}", self.log_message)
 
     ##################
 
-    def single_gaussian(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8):
+    def single_line(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, sign='emission', profile=None):
         if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
         if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
 
         lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
-        mu =    (1 + voff/299792.458) * lamb_c_obs
-        sigma_line = fwhm/299792.458  * lamb_c_obs / np.sqrt(np.log(256))
+        mu =   (1 + voff/299792.458) * lamb_c_obs
+        fwhm_line = fwhm/299792.458  * lamb_c_obs
 
         if np.isscalar(R_inst_rw):
             local_R_inst = copy(R_inst_rw)
         else:
             local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
+        fwhm_inst = 1 / local_R_inst * lamb_c_obs
 
-        sigma_inst = 1 / local_R_inst * lamb_c_obs / np.sqrt(np.log(256))
-        sigma = np.sqrt(sigma_line**2 + sigma_inst**2)
-        model = np.exp(-0.5 * ((obs_wave_w-mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi)) 
+        fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
+
+        if np.isin(profile, ['gaussian', 'Gaussian']):
+            sigma_tot = fwhm_tot / np.sqrt(np.log(256))
+            model = np.exp(-0.5 * ((obs_wave_w-mu)/sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
+        else:
+            if np.isin(profile, ['lorentz', 'Lorentz']):
+                model = 1 / (1 + ((obs_wave_w-mu) / (fwhm_tot/2))**2) / np.pi
+            else:
+                raise ValueError((f"Please specify either a Gaussian or a Lorentz line profile."))
 
         if model.sum() <= 0: model[0] = 1e-10 # avoid error from full zero output in case line is not covered
+        if sign == 'absorption': model *= -1 # set negative profile for absorption line
 
         return model * flux
 
-    def models_single_comp(self, obs_wave_w, pars, list_valid, list_free):
+    def models_single_comp(self, obs_wave_w, pars, list_valid, list_free, sign, profile):
         # update lineratio_n
         voff, fwhm, AV, logden, logtem = pars
         self.update_lineratio(AV, logden, logtem)
         
         models_scomp = []
         for i_free in list_free:
-            model_sline = self.single_gaussian(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
-                                               1, self.v0_redshift, self.R_inst_rw) # flux=1
+            model_sline = self.single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
+                                           1, self.v0_redshift, self.R_inst_rw, sign, profile) # flux=1
             list_linked = np.where(self.linelink_n == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
-                model_sline += self.single_gaussian(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
-                                                    self.lineratio_n[i_linked], self.v0_redshift, self.R_inst_rw)
+                model_sline += self.single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
+                                                self.lineratio_n[i_linked], self.v0_redshift, self.R_inst_rw, sign, profile)
             models_scomp.append(model_sline)
         return np.array(models_scomp)
     
@@ -470,7 +496,8 @@ class LineFrame(object):
         for i_comp in range(self.num_comps):
             list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
             list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
-            obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp[i_comp], list_valid, list_free)
+            obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp[i_comp], list_valid, list_free, 
+                                                        self.cframe.info_c[i_comp]['sign'], self.cframe.info_c[i_comp]['profile'])
 
             if i_comp == 0: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
@@ -483,13 +510,13 @@ class LineFrame(object):
         return obs_flux_mcomp_ew
 
     def mask_line_lite(self, enabled_comps='all'):
-        self.enabled_f = np.zeros((self.num_coeffs), dtype='bool')
+        self.enabled_e = np.zeros((self.num_coeffs), dtype='bool')
         if enabled_comps == 'all':
-            self.enabled_f[:] = True
+            self.enabled_e[:] = True
         else:
             for comp in enabled_comps:
-                self.enabled_f[self.component_f == comp] = True
-        return self.enabled_f
+                self.enabled_e[self.component_e == comp] = True
+        return self.enabled_e
 
     ##########################################################################
     ########################## Output functions ##############################

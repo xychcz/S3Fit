@@ -53,6 +53,9 @@ class SSPFrame(object):
             else:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
 
+        # currently do not consider negative spectra 
+        self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
+
         for i_comp in range(self.num_comps):
             if 10.0**self.cframe.max_cp[i_comp][3] > cosmo.age(self.v0_redshift).value:
                 self.cframe.max_cp[i_comp][3] = np.log10(cosmo.age(self.v0_redshift).value)
