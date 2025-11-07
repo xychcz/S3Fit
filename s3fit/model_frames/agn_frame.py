@@ -4,12 +4,13 @@
 # Contact: s3fit@xychen.me
 
 import numpy as np
+np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from astropy.io import fits
 import astropy.units as u
 import astropy.constants as const
 from astropy.cosmology import WMAP9 as cosmo
-from astropy.modeling.models import BlackBody
+# from astropy.modeling.models import BlackBody
 from scipy.interpolate import interp1d
 
 from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_width_fft
@@ -127,8 +128,12 @@ class AGNFrame(object):
         # normalize at rest 3000 AA
 
         # Planck function for the given electron temperature
-        planck_func = BlackBody(temperature=10.0**logtem * u.K, scale=1*u.erg/(u.s*u.cm**2*u.AA*u.sr))
-        planck_flux_w = planck_func(wavelength * u.AA).value 
+        C1 = 1.1910429723971885e27   # 2 h c^2 * 1e40 * 1e3
+        C2 = 1.4387768775039336e8    # hc/k * 1e10
+        tmp = C2 / (wavelength * 10.0**logtem)
+        planck_flux_w = C1 / wavelength**5 / np.expm1(tmp) # in erg/s/cm2/AA/sr
+        # planck_func = BlackBody(temperature=10.0**logtem * u.K, scale=1*u.erg/(u.s*u.cm**2*u.AA*u.sr))
+        # planck_flux_w = planck_func(wavelength * u.AA).value 
         
         # calculate the optical depth at each wavelength
         # τ_λ = τ_BE * (λ_BE / λ)^3  (as in Grandi 1982)
@@ -159,13 +164,13 @@ class AGNFrame(object):
             # read and append intrinsic templates in rest frame
             if np.isin('powerlaw', self.cframe.info_c[i_comp]['mod_used']):
                 pl = self.powerlaw_func(self.orig_wave_w, alpha_lambda=par_cp[i_comp,3], wave_norm=self.w_norm)
-                orig_flux_int_ew = np.vstack((pl)).T # convert to (1,w) format
+                orig_flux_int_ew = pl[None,:] # convert to (1,w) format
             if np.isin('iron', self.cframe.info_c[i_comp]['mod_used']):
                 iron = self.iron_func()
-                orig_flux_int_ew = np.vstack((iron)).T # convert to (1,w) format; support multi-element for wavelength bins later
+                orig_flux_int_ew = iron[None,:] # convert to (1,w) format; support multi-element for wavelength bins later
             if np.isin('bac', self.cframe.info_c[i_comp]['mod_used']):
                 bac = self.bac_func(self.orig_wave_w, logtem=par_cp[i_comp,3], logtau=par_cp[i_comp,4])
-                orig_flux_int_ew = np.vstack((bac)).T # convert to (1,w) format
+                orig_flux_int_ew = bac[None,:] # convert to (1,w) format
 
             if mask_lite_e is not None:
                 orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp,:],:] # limit element number for accelarate calculation

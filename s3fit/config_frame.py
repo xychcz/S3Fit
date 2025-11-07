@@ -4,6 +4,7 @@
 # Contact: s3fit@xychen.me
 
 import numpy as np
+np.set_printoptions(linewidth=10000)
 
 class ConfigFrame(object):
     def __init__(self, config):

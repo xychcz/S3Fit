@@ -5,6 +5,7 @@
 
 import sys, time, traceback, inspect, pickle, gzip
 import numpy as np
+np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.optimize import lsq_linear, least_squares, dual_annealing
 from scipy.interpolate import RegularGridInterpolator
@@ -29,7 +30,7 @@ class FitFrame(object):
                  inst_calib_ratio=0.1, inst_calib_ratio_rev=True, inst_calib_smooth=1e4, 
                  examine_result=True, accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
-                 fit_grid='linear', conv_nbin_max=5, 
+                 fit_grid='linear', conv_nbin_max=5, resample_width_ratio=3, 
                  print_step=True, plot_step=False, canvas=None, 
                  save_per_loop=False, output_filename=None, 
                  save_test=False, verbose=False): 
@@ -105,6 +106,8 @@ class FitFrame(object):
             print_log(f"[Note] Pure line fitting (i.e., after subtracting continuum), if enabled, is always in linear space.", self.log_message)
         # control on fitting quality: linear process, maximum of bins to perform fft convolution with variable width/resolution
         self.conv_nbin_max = conv_nbin_max
+        # control on fitting quality: the value equals the resampling number of model template points for each data spectral point
+        self.resample_width_ratio = resample_width_ratio
 
         # whether to output intermediate results
         self.print_step = print_step # if display in stdout
@@ -265,7 +268,7 @@ class FitFrame(object):
                 self.model_dict[mod]['spec_mod'] = SSPFrame(filename=self.model_config[mod]['file'], 
                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                             cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                            resample_width=np.diff(self.spec['wave_w']).mean()/(1+self.v0_redshift)/5, 
+                                                            resample_width=np.diff(self.spec['wave_w']).mean()/(1+self.v0_redshift)/self.resample_width_ratio, 
                                                             log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 91) & (self.spec_wmin < 1e5)
                 if self.have_phot:
@@ -303,7 +306,7 @@ class FitFrame(object):
                 self.model_dict[mod]['spec_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                             cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                            resample_width=np.diff(self.spec['wave_w']).mean()/(1+self.v0_redshift)/5, 
+                                                            resample_width=np.diff(self.spec['wave_w']).mean()/(1+self.v0_redshift)/self.resample_width_ratio, 
                                                             log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 91) & (self.spec_wmin < 1e5)
                 if self.have_phot:
@@ -805,7 +808,7 @@ class FitFrame(object):
         # create the dictonary to return; copy all input
         frame = inspect.currentframe()
         arg_list = list(self.nonlinear_process.__code__.co_varnames)
-        ret_dict = {arg: copy(frame.f_locals[arg]) for arg in arg_list if arg != 'self' and arg in frame.f_locals}
+        ret_dict = {arg: copy(frame.f_locals[arg]) for arg in arg_list if arg != 'self' and arg != 'frame' and arg in frame.f_locals}
  
         x0 = copy(x0_input) # avoid modify the input x0_input
         # for input of called functions:
@@ -1512,7 +1515,7 @@ class FitFrame(object):
         ax1.plot(rest_wave_w, self.spec['flux_w'], c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
         ax1.plot(rest_wave_w[mask_spec_w], flux_w[:self.num_spec_wave][mask_spec_w], c='C0', label='Data used for fitting (spec)')
         ax1.plot(rest_wave_w, model_w[:self.num_spec_wave], c='C1', label='Best-fit model (spec)')
-        ax2.fill_between(rest_wave_w, -ferr_w[:self.num_spec_wave], ferr_w[:self.num_spec_wave], color='C5', alpha=0.2, label='1$\sigma$ error')
+        ax2.fill_between(rest_wave_w, -ferr_w[:self.num_spec_wave], ferr_w[:self.num_spec_wave], color='C5', alpha=0.2, label=r'1$\sigma$ error')
         ax2.plot(rest_wave_w[mask_spec_w], (flux_w-model_w)[:self.num_spec_wave][mask_spec_w], c='C2', alpha=0.6, label='Residuals (spec)')
         ax1.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
@@ -1540,9 +1543,9 @@ class FitFrame(object):
         # ax2.set_ylim(-np.percentile(ferr_w[mask_w], 95)*1.1, np.percentile(ferr_w[mask_w], 95)*1.1)
         tmp_ylim = np.percentile(np.abs(flux_w-model_w)[mask_w], 90) * 1.5
         ax2.set_ylim(-tmp_ylim, tmp_ylim)
-        ax1.set_xticks([]); ax2.set_xlabel('Wavelength ($\AA$)')
-        ax1.set_ylabel('Flux ('+str(self.spec_flux_scale)+' $erg/s/cm2/\AA$)'); ax2.set_ylabel('Res.')
-        title = fit_message + f' ($\chi^2$ = {chi_sq:.3f}, '
+        ax1.set_xticks([]); ax2.set_xlabel(r'Wavelength ($\AA$)')
+        ax1.set_ylabel('Flux ('+str(self.spec_flux_scale)+r' $erg/s/cm2/\AA$)'); ax2.set_ylabel('Res.')
+        title = fit_message + r' ($\chi^2$ = ' + f'{chi_sq:.3f}, '
         title += f'loop {i_loop+1}/{self.num_loops}, ' + ('original data)' if i_loop == 0 else 'mock data)')
         ax1.set_title(title)
         if self.canvas is not None:

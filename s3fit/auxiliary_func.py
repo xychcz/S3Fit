@@ -5,6 +5,7 @@
 
 import time
 import numpy as np
+np.set_printoptions(linewidth=10000)
 import scipy.sparse as sparse
 from scipy.signal import fftconvolve
 from scipy.interpolate import interp1d

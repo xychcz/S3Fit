@@ -4,6 +4,7 @@
 # Contact: s3fit@xychen.me
 
 import numpy as np
+np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
@@ -286,7 +287,7 @@ class LineFrame(object):
                 atomdata = self.pyneblib['RecAtom'][element+str(notation)]
             else:
                 if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
-                    raise ValueError((f"{name} not provided in pyneb, please add it into LineFrame.initialize_linelist() manually."))
+                    raise ValueError((f"{name} not provided in pyneb, please add it manually following the github/advanced_usage page."))
                 if ~np.isin(element+str(notation), [*self.pyneblib['Atom']]):
                     self.pyneblib['Atom'][element+str(notation)] = self.pyneb.Atom(element, notation) # , noExtrapol=True
                 atomdata = self.pyneblib['Atom'][element+str(notation)]
@@ -435,7 +436,7 @@ class LineFrame(object):
                 print_log(f"({i_comp}) '{self.cframe.info_c[i_comp]['comp_name']}' component has "+
                           f"{self.mask_free_cn[i_comp].sum()} free (out of total {self.mask_valid_cn[i_comp].sum()}) "+
                           f"{self.cframe.info_c[i_comp]['profile']}, {self.cframe.info_c[i_comp]['sign']} profiles: \n"+
-                          f"    {list(self.linename_n[self.mask_free_cn[i_comp]])}", self.log_message)
+                          f"    {self.linename_n[self.mask_free_cn[i_comp]]}", self.log_message)
 
     ##################
 

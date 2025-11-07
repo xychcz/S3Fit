@@ -4,6 +4,7 @@
 # Contact: s3fit@xychen.me
 
 import numpy as np
+np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from astropy.io import fits
 import astropy.units as u
