@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
 # Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
 # Repository: https://github.com/xychcz/S3Fit
-# Contact: xiaoyang.chen.cz@gmail.com
+# Contact: s3fit@xychen.me
 
 from .fit_frame import FitFrame
 from .config_frame import ConfigFrame

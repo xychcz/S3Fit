@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Xiaoyang Chen - All Rights Reserved
 # Licensed under the GNU GENERAL PUBLIC LICENSE Version 3
 # Repository: https://github.com/xychcz/S3Fit
-# Contact: xiaoyang.chen.cz@gmail.com
+# Contact: s3fit@xychen.me
 
 import numpy as np
 from copy import deepcopy as copy
@@ -61,6 +61,11 @@ class SSPFrame(object):
                 self.cframe.max_cp[i_comp][3] = np.log10(cosmo.age(self.v0_redshift).value)
                 print_log(f"[WARNING]: Upper bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}.", self.log_message)
+            if 10.0**self.cframe.min_cp[i_comp][3] > cosmo.age(self.v0_redshift).value:
+                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min())
+                print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
+                    +f" exceeds the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}, "
+                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_ssp_allowed()].min():.3f} Gyr.", self.log_message)
             if 10.0**self.cframe.min_cp[i_comp][3] < self.age_e[self.mask_ssp_allowed()].min():
                 self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min())
                 print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
