@@ -105,25 +105,27 @@ def convolve_fix_width_fft(wave_w, flux_mw, fwhm_wave=None, reset_edge=True):
 
     return conv_flux_mw 
 
-def convolve_var_width_fft(wave_w, flux_mw, fwhm_vel_kin=None, R_inst_w=1e8, 
-                           fwhm_vel_ref=None, R_ref=None, 
-                           fwhm_wave_func=None, num_bins=10, reset_edge=True):
-    if np.isscalar(R_inst_w):
-        if R_inst_w <= 0: R_inst_w = 1e-8
-    else: 
-        R_inst_w[R_inst_w <= 0] = 1e-8
-    if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
+def convolve_var_width_fft(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=None, 
+                           fwhm_wave_ref=None, fwhm_vel_ref=None, R_ref=None, 
+                           R_inst_w=1e8, fwhm_wave_func=None, num_bins=10, reset_edge=True):
+    # if np.isscalar(R_inst_w):
+    #     if R_inst_w <= 0: R_inst_w = 1e-8
+    # else: 
+    #     R_inst_w[R_inst_w <= 0] = 1e-8
+    # if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
 
     if fwhm_wave_func is not None: 
         if callable(fwhm_wave_func): 
             fwhm_wave_w = fwhm_wave_func(wave_w)
     else:
-        fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
+        if fwhm_wave_kin is not None: fwhm_wave_kin_w = fwhm_wave_kin * 1.0
+        if fwhm_vel_kin  is not None: fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
         fwhm_wave_inst_w = wave_w / R_inst_w
         fwhm2_wave_w = fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2
 
         fwhm_wave_ref_w = None
-        if fwhm_vel_ref is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
+        if fwhm_wave_ref is not None: fwhm_wave_ref_w = fwhm_wave_ref * 1.0
+        if fwhm_vel_ref  is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
         if R_ref is not None: fwhm_wave_ref_w = wave_w / R_ref
         if fwhm_wave_ref_w is not None:
             fwhm2_wave_w -= fwhm_wave_ref_w**2 # reduce the dispersion of refered template
@@ -174,25 +176,27 @@ def convolve_var_width_fft(wave_w, flux_mw, fwhm_vel_kin=None, R_inst_w=1e8,
 
         return ret_flux_mw
 
-def convolve_var_width_csr(wave_w, flux_mw, fwhm_vel_kin=None, R_inst_w=1e8, 
-                           fwhm_vel_ref=None, R_ref=None, 
-                           fwhm_wave_func=None, sigma_cutoff=3, num_step=1000):
-    if np.isscalar(R_inst_w):
-        if R_inst_w <= 0: R_inst_w = 1e-8
-    else: 
-        R_inst_w[R_inst_w <= 0] = 1e-8
-    if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
+def convolve_var_width_csr(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=None, 
+                           fwhm_wave_ref=None, fwhm_vel_ref=None, R_ref=None, 
+                           R_inst_w=1e8, fwhm_wave_func=None, num_bins=10, reset_edge=True):
+    # if np.isscalar(R_inst_w):
+    #     if R_inst_w <= 0: R_inst_w = 1e-8
+    # else: 
+    #     R_inst_w[R_inst_w <= 0] = 1e-8
+    # if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
 
     if fwhm_wave_func is not None: 
         if callable(fwhm_wave_func): 
             fwhm_wave_w = fwhm_wave_func(wave_w)
     else:
-        fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
+        if fwhm_wave_kin is not None: fwhm_wave_kin_w = fwhm_wave_kin * 1.0
+        if fwhm_vel_kin  is not None: fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
         fwhm_wave_inst_w = wave_w / R_inst_w
         fwhm2_wave_w = fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2
 
         fwhm_wave_ref_w = None
-        if fwhm_vel_ref is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
+        if fwhm_wave_ref is not None: fwhm_wave_ref_w = fwhm_wave_ref * 1.0
+        if fwhm_vel_ref  is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
         if R_ref is not None: fwhm_wave_ref_w = wave_w / R_ref
         if fwhm_wave_ref_w is not None:
             fwhm2_wave_w -= fwhm_wave_ref_w**2 # reduce the dispersion of refered template

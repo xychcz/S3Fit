@@ -28,8 +28,11 @@ class ConfigFrame(object):
             # group used model elements in a list
             for item in ['mod_used', 'line_used']:
                 if np.isin(item, [*self.info_c[i_comp]]): 
-                    if not isinstance(self.info_c[i_comp][item], list): 
-                        self.info_c[i_comp][item] = [self.info_c[i_comp][item]]
+                    if isinstance(self.info_c[i_comp][item], list): 
+                        self.info_c[i_comp][item] = np.array(self.info_c[i_comp][item])
+                    else:
+                        self.info_c[i_comp][item] = np.array([self.info_c[i_comp][item]])
+
             # rename sign for absorption/emission
             if np.isin('sign', [*self.info_c[i_comp]]):
                 if np.isin(self.info_c[i_comp]['sign'], ['absorption', 'negative', '-']):

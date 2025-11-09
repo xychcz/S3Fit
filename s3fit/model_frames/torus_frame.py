@@ -15,15 +15,15 @@ from scipy.interpolate import RegularGridInterpolator
 from ..auxiliary_func import print_log
 
 class TorusFrame(object): 
-    # SKIRTor, https://sites.google.com/site/skirtorus/sed-library
-    def __init__(self, filename=None, w_min=None, w_max=None, 
-                 cframe=None, v0_redshift=None, lum_norm=None, flux_scale=None, verbose=True, log_message=[]): 
-        
+    def __init__(self, cframe=None, v0_redshift=None, 
+                 filename=None, w_min=None, w_max=None, lum_norm=None, flux_scale=None, 
+                 verbose=True, log_message=[]): 
+
+        self.cframe = cframe 
+        self.v0_redshift = v0_redshift        
         self.filename = filename        
         self.w_min = w_min # currently not used
         self.w_max = w_max # currently not used
-        self.cframe = cframe 
-        self.v0_redshift = v0_redshift
         self.flux_scale = flux_scale
         self.lum_norm = lum_norm if lum_norm is not None else 1e10 # normlize model by 1e10 Lsun
         self.verbose = verbose
@@ -38,6 +38,7 @@ class TorusFrame(object):
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
         
     def read_skirtor(self): 
+        # https://sites.google.com/site/skirtorus/sed-library
         # skirtor_disc = np.loadtxt(self.file_disc) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
         # skirtor_torus = np.loadtxt(self.file_dust) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
         skirtor_lib = fits.open(self.filename)

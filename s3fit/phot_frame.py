@@ -68,9 +68,9 @@ class PhotFrame(object):
         for name in name_b:
             filterdata = np.loadtxt(trans_dir+name+'.dat')
             wave_ini, trans_ini = filterdata[:,0], filterdata[:,1]
-            trans_ini /= np.trapz(trans_ini, x=wave_ini)
-            # trans_ini /= np.trapz(trans_ini * const.c.to('micron Hz').value / wave_ini**2, x=wave_ini) # in Hz-1
-            tmp_center = np.trapz(trans_ini*wave_ini, x=wave_ini)
+            trans_ini /= np.trapezoid(trans_ini, x=wave_ini)
+            # trans_ini /= np.trapezoid(trans_ini * const.c.to('micron Hz').value / wave_ini**2, x=wave_ini) # in Hz-1
+            tmp_center = np.trapezoid(trans_ini*wave_ini, x=wave_ini)
             tmp_trans = np.interp(wave_w, wave_ini, trans_ini, left=0, right=0)
             # tmp_trans = np.interp(wave_w, np.array([wave_w[0]]+list(wave_ini)+[wave_w[-1]]), np.array([0]+list(trans_ini)+[0]), left=0, right=0)
             # tmp_trans[wave_w < wave_ini.min()] = 0; tmp_trans[wave_w > wave_ini.max()] = 0
@@ -96,18 +96,18 @@ class PhotFrame(object):
         else:
             # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/AA); wave in AA
             unitfint = unitflam * (1 * u.angstrom)
-            # here (1 * u.angstrom) = np.trapz(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
-            width_nu = np.trapz(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
+            # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
+            width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
             return (unitfint / width_nu).to('mJy').value
         
     def spec2phot(self, wave_w, spec_mw, trans_bw):
         # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)
         if (spec_mw.ndim == 1) & (trans_bw.ndim == 1):
-            return np.trapz(trans_bw * spec_mw, x=wave_w, axis=0) # return flux, 1-model, 1-band
+            return np.trapezoid(trans_bw * spec_mw, x=wave_w, axis=0) # return flux, 1-model, 1-band
         if (spec_mw.ndim == 1) & (trans_bw.ndim == 2):
-            return np.trapz(trans_bw * spec_mw[None,:], x=wave_w, axis=1) # return flux_b, 1-model, multi-band
+            return np.trapezoid(trans_bw * spec_mw[None,:], x=wave_w, axis=1) # return flux_b, 1-model, multi-band
         if (spec_mw.ndim == 2) & (trans_bw.ndim == 1):
-            return np.trapz(trans_bw[None,:] * spec_mw, x=wave_w, axis=1) # return flux_m, multi-model, 1-band
+            return np.trapezoid(trans_bw[None,:] * spec_mw, x=wave_w, axis=1) # return flux_m, multi-model, 1-band
         if (spec_mw.ndim == 2) & (trans_bw.ndim == 2):
-            return np.trapz(trans_bw[None,:,:] * spec_mw[:,None,:], x=wave_w, axis=2) # return flux_mb
-        # short for np.trapz(trans * spec, x=wave, axis=axis) / np.trapz(trans, x=wave, axis=axis), trans is normalized to int=1
+            return np.trapezoid(trans_bw[None,:,:] * spec_mw[:,None,:], x=wave_w, axis=2) # return flux_mb
+        # short for np.trapezoid(trans * spec, x=wave, axis=axis) / np.trapezoid(trans, x=wave, axis=axis), trans is normalized to int=1

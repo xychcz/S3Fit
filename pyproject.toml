@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "s3fit"
-version = "2.2.4"
+version = "2.3"
 description = "S3Fit: a Simultaneous Spectrum and photometric-SED Fitting code for observation of galaxies"
 authors = [
     { name = "Xiaoyang Chen", email = "s3fit@xychen.me" }
