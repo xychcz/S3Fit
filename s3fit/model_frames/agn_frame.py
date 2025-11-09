@@ -13,7 +13,7 @@ from astropy.cosmology import WMAP9 as cosmo
 # from astropy.modeling.models import BlackBody
 from scipy.interpolate import interp1d
 
-from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_width_fft
+from ..auxiliary_func import print_log, convolve_var_width_fft
 from ..extinct_law import ExtLaw
 
 class AGNFrame(object):

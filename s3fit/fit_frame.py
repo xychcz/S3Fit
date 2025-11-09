@@ -8,7 +8,6 @@ import numpy as np
 np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.optimize import lsq_linear, least_squares, dual_annealing
-from scipy.interpolate import RegularGridInterpolator
 from scipy.signal import savgol_filter
 # from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
@@ -16,7 +15,7 @@ import matplotlib.pyplot as plt
 from .config_frame import ConfigFrame
 from .phot_frame import PhotFrame
 # from .model_frames import *
-from .auxiliary_func import print_log, center_string, convolve_fix_width_fft, convolve_var_width_fft
+from .auxiliary_func import print_log, center_string, convolve_var_width_fft
 
 class FitFrame(object):
     def __init__(self, 
