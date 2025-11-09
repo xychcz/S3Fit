@@ -1,2 +1,6 @@
 .DS_Store
+.gitignore
+.gitattributes
+s3fit/__pycache__
+s3fit/model_frames/__pycache__
 .pyc
