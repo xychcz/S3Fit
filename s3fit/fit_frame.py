@@ -28,7 +28,8 @@ class FitFrame(object):
                  v0_redshift=None, model_config=None, norm_wave=5500, norm_width=25, 
                  num_mocks=0, 
                  inst_calib_ratio=0.1, inst_calib_ratio_rev=True, inst_calib_smooth=1e4, 
-                 examine_result=True, accept_chi_sq=3, nlfit_ntry_max=3, 
+                 examine_result=True, accept_model_SN=2, 
+                 accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
                  fit_grid='linear', conv_nbin_max=5, R_mod_ratio=2, 
                  print_step=True, plot_step=False, canvas=None, 
@@ -87,8 +88,11 @@ class FitFrame(object):
 
         # control on fitting quality: fitting steps
         self.examine_result = examine_result 
-        if not self.examine_result: 
-            print_log(f"[Note] The examination of S/N of models and the updating of fitting will be skipped since examine_result=False.", self.log_message)
+        self.accept_model_SN = accept_model_SN
+        if self.examine_result: 
+            print_log(f"All continuum models and line components with peak S/N < {self.accept_model_SN} (set with 'accept_model_SN') will be automatically disabled in examination.", self.log_message)
+        else:
+            print_log(f"[Note] The examination of S/N of models and the updating of fitting will be skipped since 'examine_result' is set to False.", self.log_message)
         # control on fitting quality: nonlinear process, general
         self.accept_chi_sq = accept_chi_sq
         self.nlfit_ntry_max = nlfit_ntry_max 
@@ -201,7 +205,8 @@ class FitFrame(object):
         # check if norm_wave is coverd in input wavelength range
         if (self.norm_wave < self.spec_wmin) | (self.norm_wave > self.spec_wmax):
             med_wave = np.median(self.spec_wave_w[mask_valid_w]) / (1+self.v0_redshift)
-            print_log(f'[WARNING] The input normalization wavelength (rest frame, AA) {self.norm_wave} is out of the valid range, which is forced to the median valid wavelength {med_wave:.3f}.', 
+            med_wave = round(med_wave/100)*100
+            print_log(f'[WARNING] The input normalization wavelength (rest frame, AA) {self.norm_wave} is out of the valid range, which is forced to the median valid wavelength {med_wave}.', 
                       self.log_message, verbose)
             self.norm_wave = med_wave
 
@@ -344,8 +349,8 @@ class FitFrame(object):
 
         # create non-line mask if line is enabled
         if np.isin('line', self.full_model_type.split('+')): 
-            line_center_n = self.model_dict['line']['spec_mod'].linerest_n * (1 + self.v0_redshift)
-            vel_win = np.array([-4000, 2000])
+            line_center_n = self.model_dict['line']['spec_mod'].linerest_default * (1 + self.v0_redshift)
+            vel_win = np.array([-3000, 3000])
             mask_line_w = np.zeros_like(self.spec['wave_w'], dtype='bool')
             for i_line in range(len(line_center_n)):
                 line_bounds = line_center_n[i_line] * (1 + vel_win/299792.458)
@@ -467,10 +472,13 @@ class FitFrame(object):
         return index_start_x, index_end_x, index_start_coeff, index_end_coeff
     
     def examine_model_SN(self, model_w, noise_w, accept_SN=1.5):
-        mask_valid_w = model_w > (np.nanmax(model_w)*0.05) # only consider line wavelength range with non-zero values
-        if mask_valid_w.sum() > 0:
-            peak_SN = np.nanpercentile(model_w[mask_valid_w] / noise_w[mask_valid_w], 90)
-            return peak_SN, peak_SN >= accept_SN
+        if len(model_w) > 0:
+            mask_valid_w = model_w > (np.nanmax(model_w)*0.05) # only consider line wavelength range with significant non-zero values
+            if mask_valid_w.sum() > 0:
+                peak_SN = np.nanpercentile(model_w[mask_valid_w] / noise_w[mask_valid_w], 90)
+                return peak_SN, peak_SN >= accept_SN
+            else:
+                return 0, False
         else:
             return 0, False
 
@@ -669,7 +677,7 @@ class FitFrame(object):
                         ref_mod, ref_comp, ref_i_par = single_tie.split(':')
                         if np.isin(ref_mod, rev_model_type.split('+')):
                             ref_num_pars_per_comp = self.model_dict[ref_mod]['cframe'].num_pars_per_comp
-                            ref_i_comp = np.where(np.array([self.model_dict[ref_mod]['cframe'].comp_c]) == ref_comp)[0]
+                            ref_i_comp = np.where(np.array(self.model_dict[ref_mod]['cframe'].comp_c) == ref_comp)[0]
                             if len(ref_i_comp) == 1:
                                 ref_i_comp = ref_i_comp[0]
                             else:
@@ -703,13 +711,13 @@ class FitFrame(object):
                 self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"Negative value detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
                                  +f", position (m,w) = {np.where(spec_fmod_positive_ew < 0)}."))
-            if (spec_fmod_positive_ew.sum(axis=1) <= 0).any(): 
-                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
-                raise ValueError((f"Zero or negative integrated flux detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
-                                 +f", position (m) = {np.where(spec_fmod_positive_ew.sum(axis=1) <= 0)}."))
+            # if (spec_fmod_positive_ew.sum(axis=1) <= 0).any(): 
+            #     self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':x[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
+            #     raise ValueError((f"Zero or negative integrated flux detected in returned spectra of '{mod}' model with x = {x[mp0:mp1]}"
+            #                      +f", position (m) = {np.where(spec_fmod_positive_ew.sum(axis=1) <= 0)}."))
             ####
             fit_model_ew = spec_fmod_ew if (fit_model_ew is None) else np.vstack((fit_model_ew, spec_fmod_ew))
-        n_models = fit_model_ew.shape[0]
+        n_elements = fit_model_ew.shape[0]
 
         mask_valid_w = mask_w & (ferr_w > 0)
         if fit_grid == 'log': 
@@ -721,14 +729,16 @@ class FitFrame(object):
 
         significance_w = self.spec['significance_w']
         if fit_phot: significance_w = np.hstack((self.spec['significance_w'], self.phot['significance_b']))
-        degree_of_freedom = np.sum(significance_w[mask_valid_w]) - (n_models + n_freepars) # only sum valid measurements with mask_valid_w
+        degree_of_freedom = np.sum(significance_w[mask_valid_w]) - (n_elements + n_freepars) # only sum valid measurements with mask_valid_w
         if degree_of_freedom < 1: 
             raise ValueError((f"The effective significance of valid measurements, {np.sum(significance_w[mask_valid_w])}, "
                              +f"(original number of measurements: {np.sum(mask_valid_w)}), "
-                             +f"is less than the total number of free models ({n_models}) and free parameters({n_freepars})."))
+                             +f"is less than the total number of free models ({n_elements}) and free parameters({n_freepars})."))
         weight_w = np.divide(np.sqrt(significance_w/degree_of_freedom), ferr_w, where=mask_valid_w, out=np.zeros_like(ferr_w))
 
-        coeff_e, model_w, chi_w = self.linear_lsq_solver(flux_w, fit_model_ew, weight_w, fit_grid, verbose=self.verbose)
+        coeff_e = np.zeros(n_elements, dtype='float')
+        mask_valid_e = fit_model_ew[:,mask_valid_w].sum(axis=1) != 0
+        coeff_e[mask_valid_e], model_w, chi_w = self.linear_lsq_solver(flux_w, fit_model_ew[mask_valid_e,:], weight_w, fit_grid, verbose=self.verbose)
         chi_sq = np.sum(chi_w**2) # already reduced
         
         if not ret_coeffs:
@@ -739,10 +749,10 @@ class FitFrame(object):
             # should match format of jac_matrix: Jac_1x if sqrt(2 * chi_sq); Jac_wx if sqrt(2)*chi_w
         else:
             if not fit_phot:
-                print_log(f"Fit with {n_models} free elements and {n_freepars} free parameters of {len(rev_model_type.split('+'))} models, "
+                print_log(f"Fit with {n_elements} free elements and {n_freepars} free parameters of {len(rev_model_type.split('+'))} models, "
                          +f"reduced chi-squared = {chi_sq:.3f}.", self.log_message, self.print_step)
             else:                
-                print_log(f"Fit with {n_models} free elements and {n_freepars} free parameters of {len(rev_model_type.split('+'))} models: ", 
+                print_log(f"Fit with {n_elements} free elements and {n_freepars} free parameters of {len(rev_model_type.split('+'))} models: ", 
                           self.log_message, self.print_step)
                 print_log(f"Reduced chi-squared with scaled errors = {chi_sq:.3f} for spectrum+SED;", self.log_message, self.print_step)
                 spec_chi_sq = np.sum(chi_w[:self.num_spec_wave]**2)
@@ -1083,7 +1093,7 @@ class FitFrame(object):
                     mask_abs_w = mask_valid_w & (line_fit_init['line_spec_fmod_w'] < 0)
                     line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=2)
                     if not line_abs_examine:
-                        print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak SN: {-line_abs_peak_SN:.3f}', self.log_message, self.print_step)                 
+                        print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {-line_abs_peak_SN:.3f}', self.log_message, self.print_step)                 
                         # fix the parameters of disabled components (to reduce number of free parameters)
                         for i_comp in range(line_mod.num_comps):
                             if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'
@@ -1124,9 +1134,9 @@ class FitFrame(object):
                     mod_peak_SN, mod_examine = self.examine_model_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=2)
                     if mod_examine: 
                         cont_type += mod + '+'
-                        print_log(f'{mod} continuum peak SN = {mod_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
+                        print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
                     else:
-                        print_log(f'{mod} continuum peak SN = {mod_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
+                        print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
                 if cont_type != '':
                     cont_type = cont_type[:-1] # remove the last '+'
                     print_log(f'#### Continuum models after examination: {cont_type}', self.log_message, self.print_step)
@@ -1151,9 +1161,9 @@ class FitFrame(object):
                         line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=2)
                         if line_comp_examine: 
                             line_comps.append(line_comp)
-                            print_log(f'{line_comp} peak SN = {line_comp_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
+                            print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
                         else:
-                            print_log(f'{line_comp} peak SN = {line_comp_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
+                            print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
                     if len(line_comps) > 0:
                         print_log(f'#### Emission line components after examination: {line_comps}', self.log_message, self.print_step)
                     else:

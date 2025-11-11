@@ -56,7 +56,7 @@ class AGNFrame(object):
             self.read_iron()
 
         if self.verbose:
-            print_log(f"AGN UV/optical continuum components: {[self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]}", self.log_message)
+            print_log(f"AGN UV/optical continuum components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
 
     ##############################
 
@@ -99,7 +99,7 @@ class AGNFrame(object):
         mask_norm_w = (iron_wave_w > 4000) & (iron_wave_w < 5800)
         flux_norm_opt = np.trapezoid(iron_flux_w[mask_norm_w], x=iron_wave_w[mask_norm_w])
         iron_flux_w /= flux_norm_uv
-        # for any observed spectrum, fuv_obs = fnorm_obs, fopt_obs = fnorm_obs * fopt_mod/fuv_mod
+        self.iron_flux_opt_uv_ratio = flux_norm_opt / flux_norm_uv
 
         # determine the required model resolution and bin size (in AA) to downsample the model
         if self.R_mod_ratio is not None:
@@ -236,12 +236,13 @@ class AGNFrame(object):
             step = 'joint_fit_3' if ff.have_phot else 'joint_fit_2'
         if (step == 'spec+SED'):  step = 'joint_fit_3'
         if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
-        
-        best_chi_sq_l = ff.output_s[step]['chi_sq_l']
-        best_par_lp   = ff.output_s[step]['par_lp']
-        best_coeff_le = ff.output_s[step]['coeff_le']
 
-        fp0, fp1, fe0, fe1 = ff.search_model_index('agn', ff.full_model_type)
+        best_chi_sq_l = copy(ff.output_s[step]['chi_sq_l'])
+        best_par_lp   = copy(ff.output_s[step]['par_lp'])
+        best_coeff_le = copy(ff.output_s[step]['coeff_le'])
+
+        mod = 'agn'
+        fp0, fp1, fe0, fe1 = ff.search_model_index(mod, ff.full_model_type)
         spec_wave_w = ff.spec['wave_w']
         spec_flux_scale = ff.spec_flux_scale
         num_loops = ff.num_loops
@@ -251,8 +252,7 @@ class AGNFrame(object):
         num_coeffs_per_comp = int(self.num_coeffs / num_comps)
 
         # list the properties to be output
-        val_names  = ['voff', 'fwhm', 'AV', 'powerlaw_alpha'] # basic fitting parameters
-        val_names += ['flux_wavenorm', 'loglambLum_wavenorm']
+        val_names  = ['voff', 'fwhm', 'AV'] # basic fitting parameters
 
         # format of results
         # output_c['comp']['par_lp'][i_l,i_p]: parameters
@@ -264,34 +264,58 @@ class AGNFrame(object):
             output_c[comp_c[i_comp]]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['values'] = {}
-            for val_name in val_names:
+            if np.isin('powerlaw', self.cframe.info_c[i_comp]['mod_used']):       
+                comp_val_names = val_names + ['index_alpha', 'flux_3000', 'flux_5100', 'flux_wavenorm', 'loglambLum_3000', 'loglambLum_5100', 'loglambLum_wavenorm']
+            if np.isin('iron', self.cframe.info_c[i_comp]['mod_used']):      
+                comp_val_names = val_names + ['flux_3000', 'flux_5100', 'flux_wavenorm', 'logLum_uv', 'logLum_opt']
+            if np.isin('bac', self.cframe.info_c[i_comp]['mod_used']):
+                comp_val_names = val_names + ['logtem', 'logtau', 'flux_3000', 'flux_5100', 'flux_wavenorm', 'logLum_int']
+            for val_name in comp_val_names:
                 output_c[comp_c[i_comp]]['values'][val_name] = np.zeros(num_loops, dtype='float')
         output_c['sum'] = {}
         output_c['sum']['values'] = {} # only init values for sum of all comp
-        for val_name in val_names:
+        for val_name in ['flux_3000', 'flux_5100', 'flux_wavenorm']:
             output_c['sum']['values'][val_name] = np.zeros(num_loops, dtype='float')
 
         for i_comp in range(num_comps): 
-            for i_par in range(num_pars_per_comp):
-                output_c[comp_c[i_comp]]['values'][val_names[i_par]] = output_c[comp_c[i_comp]]['par_lp'][:, i_par]
+            for i_par in range(len(self.cframe.config[comp_c[i_comp]]['pars'])): # use the actual valid par number instead of num_pars_per_comp
+                comp_val_names = [*output_c[comp_c[i_comp]]['values']]
+                output_c[comp_c[i_comp]]['values'][comp_val_names[i_par]] = output_c[comp_c[i_comp]]['par_lp'][:, i_par]
             for i_loop in range(num_loops):
                 par_p   = output_c[comp_c[i_comp]]['par_lp'][i_loop]
                 coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]
-
                 rev_redshift = (1+par_p[0]/299792.458)*(1+self.v0_redshift)-1
-                tmp_spec_w = ff.output_mc['agn'][comp_c[i_comp]]['spec_lw'][i_loop, :]
-                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # observed flux at wavenorm=5500AA(rest)
+
+                tmp_spec_w = ff.output_mc[mod][comp_c[i_comp]]['spec_lw'][i_loop, :]
+                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 3000) < 25 # for observed flux at rest 3000 AA 
+                if mask_norm_w.sum() > 0:
+                    output_c[comp_c[i_comp]]['values']['flux_3000'][i_loop] = tmp_spec_w[mask_norm_w].mean()
+                    output_c['sum']['values']['flux_3000'][i_loop] += tmp_spec_w[mask_norm_w].mean()
+                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 5100) < 25 # for observed flux at rest 5100 AA
+                if mask_norm_w.sum() > 0:
+                    output_c[comp_c[i_comp]]['values']['flux_5100'][i_loop] = tmp_spec_w[mask_norm_w].mean()
+                    output_c['sum']['values']['flux_5100'][i_loop] += tmp_spec_w[mask_norm_w].mean()
+                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
                 output_c[comp_c[i_comp]]['values']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                 output_c['sum']['values']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-                # output_c[comp_c[i_comp]]['values']['flux_wavenorm'][i_loop] = coeff_e[0] # this is the intrinsic flux_wavenorm
-                # output_c['sum']['values']['flux_wavenorm'][i_loop] += coeff_e[0]
 
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
-                unitconv = 4*np.pi*dist_lum**2 / const.L_sun.to('erg/s').value * spec_flux_scale # convert intrinsic flux5500(rest) to L5500 
-                output_c[comp_c[i_comp]]['values']['loglambLum_wavenorm'][i_loop] = np.log10(coeff_e[0] * unitconv * self.w_norm) # intrinsic λL5500, in Lsun
-                output_c['sum']['values']['loglambLum_wavenorm'][i_loop] = coeff_e[0] * unitconv * self.w_norm
-        output_c['sum']['values']['loglambLum_wavenorm'] = np.log10(output_c['sum']['values']['loglambLum_wavenorm'])
-
+                unitconv = 4*np.pi*dist_lum**2 * spec_flux_scale # convert intrinsic flux to Lum in erg/s
+                if np.isin('powerlaw', self.cframe.info_c[i_comp]['mod_used']):
+                    lambLum_wavenorm = coeff_e[0] * unitconv / const.L_sun.to('erg/s').value * self.w_norm # in Lsun
+                    lambLum_3000 = lambLum_wavenorm * (3000/self.w_norm) ** (1+par_p[3])
+                    lambLum_5100 = lambLum_wavenorm * (5100/self.w_norm) ** (1+par_p[3])
+                    output_c[comp_c[i_comp]]['values']['loglambLum_3000'][i_loop] = np.log10(lambLum_3000)
+                    output_c[comp_c[i_comp]]['values']['loglambLum_5100'][i_loop] = np.log10(lambLum_5100)
+                    output_c[comp_c[i_comp]]['values']['loglambLum_wavenorm'][i_loop] = np.log10(lambLum_wavenorm)
+                if np.isin('iron', self.cframe.info_c[i_comp]['mod_used']):
+                    output_c[comp_c[i_comp]]['values']['logLum_uv'][i_loop] = np.log10(coeff_e[0] * unitconv)
+                    output_c[comp_c[i_comp]]['values']['logLum_opt'][i_loop] = np.log10(coeff_e[0] * unitconv * self.iron_flux_opt_uv_ratio)
+                if np.isin('bac', self.cframe.info_c[i_comp]['mod_used']):
+                    tmp_wave_w = np.linspace(912.0, 3646.0, 10000)
+                    tmp_bac_w = self.bac_func(tmp_wave_w, logtem=par_p[3], logtau=par_p[4]) # full bac spectrum with unit flux normalized at rest 3000 AA
+                    output_c[comp_c[i_comp]]['values']['logLum_int'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_bac_w, x=tmp_wave_w))
+                    
         self.output_c = output_c # save to model frame
         self.num_loops = num_loops # for print_results
         self.spec_flux_scale = spec_flux_scale # to calculate luminosity in printing
@@ -314,25 +338,52 @@ class AGNFrame(object):
             msg = ''
             if i_comp < self.cframe.num_comps:
                 print_log(f'Best-fit properties of AGN component: <{self.cframe.comp_c[i_comp]}>', log)
-                if np.isin('iron', self.cframe.info_c[i_comp]['mod_used']): # != 'powerlaw':
-                    msg += f'| Velocity shift (km/s)                     = {tmp_values_vl["voff"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["voff"].std()[i_comp,1]:<8.4f}|\n'
-                    msg += f'| Velocity FWHM (km/s)                      = {tmp_values_vl["fwhm"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["fwhm"].std()[i_comp,2]:<8.4f}|\n'
+                if np.isin(['iron', 'bac'], self.cframe.info_c[i_comp]['mod_used']).any(): # != 'powerlaw':
+                    msg += f'| Velocity shift (km/s)                               = {tmp_values_vl["voff"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["voff"].std():<8.4f}|\n'
+                    msg += f'| Velocity FWHM (km/s)                                = {tmp_values_vl["fwhm"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["fwhm"].std():<8.4f}|\n'
                 else:
                     print_log(f'[Note] velocity shift (i.e., redshift) and FWHM are tied following the input model_config.', log)
-                msg += f'| Extinction (AV)                           = {tmp_values_vl["AV"][mask_l].mean():10.4f}'
+                msg += f'| Extinction (AV)                                     = {tmp_values_vl["AV"][mask_l].mean():10.4f}'
                 msg += f' +/- {tmp_values_vl["AV"].std():<8.4f}|\n'
-                msg += f'| Powerlaw α_λ                              = {tmp_values_vl["powerlaw_alpha"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["powerlaw_alpha"].std():<8.4f}|\n'
+                if np.isin('powerlaw', self.cframe.info_c[i_comp]['mod_used']):
+                    msg += f'| Powerlaw α_λ                                        = {tmp_values_vl["index_alpha"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["index_alpha"].std():<8.4f}|\n'  
+                    msg += f'| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_3000"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["loglambLum_3000"].std():<8.4f}|\n'
+                    msg += f'| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_5100"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["loglambLum_5100"].std():<8.4f}|\n'
+                    if ~np.isin(self.w_norm, [3000,5100]):
+                        msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_wavenorm"][mask_l].mean():10.4f}'
+                        msg += f' +/- {tmp_values_vl["loglambLum_wavenorm"].std():<8.4f}|\n'
+                if np.isin('iron', self.cframe.info_c[i_comp]['mod_used']):
+                    msg += f'| Fe II integrated Lum in 2200-4000 A (log erg/s/cm2) = {tmp_values_vl["logLum_uv"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["logLum_uv"].std():<8.4f}|\n'
+                    msg += f'| Fe II integrated Lum in 4000-5800 A (log erg/s/cm2) = {tmp_values_vl["logLum_opt"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["logLum_opt"].std():<8.4f}|\n'
+                if np.isin('bac', self.cframe.info_c[i_comp]['mod_used']):
+                    msg += f'| Balmer continuum e- temperature (log K)             = {tmp_values_vl["logtem"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["logtem"].std():<8.4f}|\n'       
+                    msg += f'| Balmer continuum optical depth at 3646 A (log τ)    = {tmp_values_vl["logtau"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["logtem"].std():<8.4f}|\n'
+                    msg += f'| Balmer continuum integrated Lum (log erg/s/cm2)     = {tmp_values_vl["logLum_int"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["logLum_int"].std():<8.4f}|\n'
             else:
                 print_log(f'Best-fit stellar properties of the sum of all components.', log)
-            msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale} erg/s/cm2/AA) = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["loglambLum_wavenorm"].std():<8.4f}|\n'
-            msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)        = {tmp_values_vl["loglambLum_wavenorm"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["loglambLum_wavenorm"].std():<8.4f}|'
+            msg += f'| F3000 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/AA)           = {tmp_values_vl["flux_3000"][mask_l].mean():10.4f}'
+            msg += f' +/- {tmp_values_vl["flux_3000"].std():<8.4f}|\n'
+            msg += f'| F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/AA)           = {tmp_values_vl["flux_5100"][mask_l].mean():10.4f}'
+            msg += f' +/- {tmp_values_vl["flux_5100"].std():<8.4f}|'
+            if ~np.isin(self.w_norm, [3000,5100]):
+                msg += '\n'
+                msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/AA)           = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["flux_wavenorm"].std():<8.4f}|'      
+
             bar = '=' * len(msg.split('|\n')[-1])
             print_log(bar, log)
             print_log(msg, log)
             print_log(bar, log)
-        
+
+
+

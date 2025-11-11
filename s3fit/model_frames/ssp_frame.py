@@ -37,9 +37,6 @@ class SSPFrame(object):
 
         # load popstar library
         self.read_ssp_library()
-        # resample (wave,spec) to logw grid for following spectral convolution
-        # self.to_logw_grid(w_min=self.w_min, w_max=self.w_max, w_norm=self.w_norm, dw_norm=self.dw_norm, 
-        #                   spec_R_init_w=self.spec_R_init_w, spec_R_rsmp_w=self.spec_R_rsmp_w)
 
         # read SFH setup from input config file
         self.sfh_names = np.array([d['sfh_name'] for d in self.cframe.info_c])
@@ -127,6 +124,28 @@ class SSPFrame(object):
         orig_wave_w = orig_wave_w[mask_select_w]
         orig_flux_ew = orig_flux_ew[:, mask_select_w]
 
+        # calculate the mean flux at both 5500 AA and the user given wavelength
+        mask_5500_w = np.abs(orig_wave_w - 5500) < 25
+        flux_5500_e = np.mean(orig_flux_ew[:, mask_5500_w], axis=1)
+        mask_norm_w = np.abs(orig_wave_w - self.w_norm) < self.dw_norm
+        flux_norm_e = np.mean(orig_flux_ew[:, mask_norm_w], axis=1)
+        self.flux_norm_ratio_e = flux_norm_e / flux_5500_e
+
+        # normalize models at 5500+/-25 AA
+        orig_flux_ew /= flux_5500_e[:, None]
+        # The original spectra of SSP models are normalized by 1 Msun in unit Lsun/AA.
+        # The spectra used here is re-normalized to 1 Lsun/AA at rest 5500AA,
+        # i.e., the norm-factor is norm=L5500 before re-normalization.  
+        # The re-normalized spectra corresponds to mass of (1/norm) Msun, 
+        # i.e., mass-to-lum(5500) ratio is (1/norm) Msun / (1 Lsun/AA) = (1/norm) Msun/(Lsun/AA),
+        # i.e., mtol = 1/norm = 1/L5500
+        self.mtol_e = 1 / flux_5500_e # i.e., (1 Msun) / (flux_5500_e Lsun/AA)
+        # The corresponding SFR of normalized spectra is 
+        # mtol_e Msun / (duration_e Gyr) = mtol_e/duration_e Msun/Gyr, duration_e in unit of Gyr (as age)
+        # Name sfrtol_e = mtol_e/duration_e * 1e-9, and 
+        # self.orig_flux_ew / sfrtol_e return models renormalized to unit SFR, i.e., 1 Mun/yr.
+        self.sfrtol_e = self.mtol_e / (self.duration_e * 1e9)
+
         # determine the required model resolution and bin size (in AA) to downsample the model
         if self.R_mod_ratio is not None:
             ds_R_mod_w = np.interp(orig_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.R_mod_ratio) # R_inst_rw in observed frame
@@ -163,26 +182,9 @@ class SSPFrame(object):
                 orig_flux_ew = orig_flux_ew[:,::self.ds_bin_pix]
                 self.ds_fwhm_wave_w = self.ds_fwhm_wave_w[::self.ds_bin_pix]
 
-        # normalize models at given wavelength
-        mask_norm_w = np.abs(orig_wave_w - self.w_norm) < self.dw_norm
-        flux_norm_e = np.mean(orig_flux_ew[:, mask_norm_w], axis=1)
-        orig_flux_ew /= flux_norm_e[:, None]
-        self.orig_flux_ew = orig_flux_ew
+        # save the smoothed models
         self.orig_wave_w = orig_wave_w
-
-        # The original spectra of SSP models are normalized by 1 Msun in unit Lsun/AA.
-        # The spectra used here is re-normalized to 1 Lsun/AA at rest 5500AA,
-        # i.e., the norm-factor is norm=L5500 before re-normalization.  
-        # The re-normalized spectra corresponds to mass of (1/norm) Msun, 
-        # i.e., mass-to-lum(5500) ratio is (1/norm) Msun / (1 Lsun/AA) = (1/norm) Msun/(Lsun/AA),
-        # i.e., mtol = 1/norm = 1/L5500
-        self.mtol_e = 1 / flux_norm_e # i.e., (1 Msun) / (flux_norm_e Lsun/AA)
-
-        # The corresponding SFR of normalized spectra is 
-        # mtol_e Msun / (duration_e Gyr) = mtol_e/duration_e Msun/Gyr, duration_e in unit of Gyr (as age)
-        # Name sfrtol_e = mtol_e/duration_e * 1e-9, and 
-        # self.orig_flux_ew / sfrtol_e return models renormalized to unit SFR, i.e., 1 Mun/yr.
-        self.sfrtol_e = self.mtol_e / (self.duration_e * 1e9)
+        self.orig_flux_ew = orig_flux_ew
 
         # extend to longer wavelength in NIR-MIR (e.g., > 3 micron)
         # please comment these lines if moving to another SSP library that initially covers the NIR-MIR range. 
@@ -434,11 +436,12 @@ class SSPFrame(object):
         if (step == 'spec+SED'):  step = 'joint_fit_3'
         if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
         
-        best_chi_sq_l = ff.output_s[step]['chi_sq_l']
-        best_par_lp   = ff.output_s[step]['par_lp']
-        best_coeff_le = ff.output_s[step]['coeff_le']
+        best_chi_sq_l = copy(ff.output_s[step]['chi_sq_l'])
+        best_par_lp   = copy(ff.output_s[step]['par_lp'])
+        best_coeff_le = copy(ff.output_s[step]['coeff_le'])
 
-        fp0, fp1, fe0, fe1 = ff.search_model_index('ssp', ff.full_model_type)
+        mod = 'ssp'
+        fp0, fp1, fe0, fe1 = ff.search_model_index(mod, ff.full_model_type)
         spec_wave_w = ff.spec['wave_w']
         spec_flux_scale = ff.spec_flux_scale
         num_loops = ff.num_loops
@@ -451,6 +454,7 @@ class SSPFrame(object):
         val_names  = ['voff', 'fwhm', 'AV'] # basic fitting parameters
         val_names += ['sfh_par'+str(i) for i in range(num_pars_per_comp-3)] # SFH related fitting parameters
         val_names += ['redshift', 
+                      'flux_5500', 'loglambLum_5500', 
                       'flux_wavenorm', 'loglambLum_wavenorm', 
                       'logMass_formed', 'logMass_remaining', 'logMtoL',
                       'logAge_Lweight', 'logAge_Mweight', 'logZ_Lweight', 'logZ_Mweight']
@@ -481,8 +485,13 @@ class SSPFrame(object):
                 rev_redshift = (1+par_p[0]/299792.458)*(1+self.v0_redshift)-1
                 output_c[comp_c[i_comp]]['values']['redshift'][i_loop] = copy(rev_redshift)
 
-                tmp_spec_w = ff.output_mc['ssp'][comp_c[i_comp]]['spec_lw'][i_loop, :]
-                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at wavenorm=5500AA(rest)
+                tmp_spec_w = ff.output_mc[mod][comp_c[i_comp]]['spec_lw'][i_loop, :]
+                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 AA
+                if mask_norm_w.sum() > 0:
+                    output_c[comp_c[i_comp]]['values']['flux_5500'][i_loop] = tmp_spec_w[mask_norm_w].mean()
+                    output_c['sum']['values']['flux_5500'][i_loop] += tmp_spec_w[mask_norm_w].mean()
+
+                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
                 output_c[comp_c[i_comp]]['values']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                 output_c['sum']['values']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
 
@@ -495,11 +504,12 @@ class SSPFrame(object):
                     # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element
                     coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e 
                 Lum_e = coeff_e * unitconv # intrinsic L5500, in Lsun/AA
-                lambLum_e = Lum_e * self.w_norm # intrinsic λL5500, in Lsun
+                lambLum_e = Lum_e * 5500 # intrinsic λL5500, in Lsun
                 Mass_formed_e = Lum_e * self.mtol_e
                 Mass_remaining_e = Mass_formed_e * self.remainmassfrac_e
 
-                output_c[comp_c[i_comp]]['values']['loglambLum_wavenorm'][i_loop]   = np.log10(lambLum_e.sum())
+                output_c[comp_c[i_comp]]['values']['loglambLum_5500'][i_loop]   = np.log10(lambLum_e.sum())
+                output_c[comp_c[i_comp]]['values']['loglambLum_wavenorm'][i_loop]   = np.log10((lambLum_e * self.flux_norm_ratio_e).sum())
                 output_c[comp_c[i_comp]]['values']['logMass_formed'][i_loop]    = np.log10(Mass_formed_e.sum())
                 output_c[comp_c[i_comp]]['values']['logMass_remaining'][i_loop] = np.log10(Mass_remaining_e.sum())
                 output_c[comp_c[i_comp]]['values']['logMtoL'][i_loop]   = np.log10(Mass_remaining_e.sum() / lambLum_e.sum())
@@ -508,7 +518,8 @@ class SSPFrame(object):
                 output_c[comp_c[i_comp]]['values']['logZ_Lweight'][i_loop] = (lambLum_e * np.log10(self.met_e)).sum() / lambLum_e.sum()
                 output_c[comp_c[i_comp]]['values']['logZ_Mweight'][i_loop] = (Mass_remaining_e * np.log10(self.met_e)).sum() / Mass_remaining_e.sum()
 
-                output_c['sum']['values']['loglambLum_wavenorm'][i_loop]   += lambLum_e.sum() # keep in linear for sum
+                output_c['sum']['values']['loglambLum_5500'][i_loop]   += lambLum_e.sum() # keep in linear for sum
+                output_c['sum']['values']['loglambLum_wavenorm'][i_loop]   += (lambLum_e * self.flux_norm_ratio_e).sum() # keep in linear for sum
                 output_c['sum']['values']['logMass_formed'][i_loop]    += Mass_formed_e.sum() # keep in linear for sum
                 output_c['sum']['values']['logMass_remaining'][i_loop] += Mass_remaining_e.sum() # keep in linear for sum
                 output_c['sum']['values']['logAge_Lweight'][i_loop] += (lambLum_e * np.log10(self.age_e)).sum()
@@ -521,6 +532,7 @@ class SSPFrame(object):
         output_c['sum']['values']['logAge_Mweight'] = output_c['sum']['values']['logAge_Mweight'] / output_c['sum']['values']['logMass_remaining']
         output_c['sum']['values']['logZ_Lweight'] = output_c['sum']['values']['logZ_Lweight'] / output_c['sum']['values']['loglambLum_wavenorm']
         output_c['sum']['values']['logZ_Mweight'] = output_c['sum']['values']['logZ_Mweight'] / output_c['sum']['values']['logMass_remaining']
+        output_c['sum']['values']['loglambLum_5500']       = np.log10(output_c['sum']['values']['loglambLum_5500'])
         output_c['sum']['values']['loglambLum_wavenorm']   = np.log10(output_c['sum']['values']['loglambLum_wavenorm'])
         output_c['sum']['values']['logMass_formed']    = np.log10(output_c['sum']['values']['logMass_formed'])
         output_c['sum']['values']['logMass_remaining'] = np.log10(output_c['sum']['values']['logMass_remaining'])
@@ -551,7 +563,7 @@ class SSPFrame(object):
                 if self.sfh_names[i_comp] == 'nonparametric':
                     print_log('', log)
                     print_log('Best-fit single stellar populations (SSP) of nonparametric SFH', log)
-                    cols = 'ID,Age (Gyr),Metallicity,Coeff.mean,Coeff.rms,log(M/Lnorm)'
+                    cols = 'ID,Age (Gyr),Metallicity,Coeff.mean,Coeff.rms,log(M/L5500)'
                     fmt_cols = '| {0:^4} | {1:^10} | {2:^6} | {3:^6} | {4:^9} | {5:^8} |'
                     fmt_numbers = '| {:=04d} |   {:=6.4f}   |    {:=6.4f}   |   {:=6.4f}   |   {:=6.4f}  |    {:=6.4f}    |'
                     cols_split = cols.split(',')
@@ -573,7 +585,7 @@ class SSPFrame(object):
                         tbl_row.append(np.log10(self.mtol_e[i_e]))
                         print_log(fmt_numbers.format(*tbl_row), log)
                     print_log(tbl_border, log)
-                    print_log(f'[Note] Coeff is the normalized fraction of the intrinsic flux at rest {self.w_norm} AA.', log)
+                    print_log(f'[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 AA.', log)
                     print_log(f'[Note] only SSPs with flux fraction over 5% are listed.', log)
 
             print_log('', log)
@@ -600,21 +612,27 @@ class SSPFrame(object):
                         msg += f' +/- {tmp_values_vl[par_name].std():<8.4f}|\n'
             else:
                 print_log(f'Best-fit stellar properties of the sum of all components.', log)
-            msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale} erg/s/cm2/AA) = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["flux_wavenorm"].std():<8.4f}|\n'
-            msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)        = {tmp_values_vl["loglambLum_wavenorm"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["loglambLum_wavenorm"].std():<8.4f}|\n'
+            msg += f'| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/AA) = {tmp_values_vl["flux_5500"][mask_l].mean():10.4f}'
+            msg += f' +/- {tmp_values_vl["flux_5500"].std():<8.4f}|\n'
+            if self.w_norm != 5500:
+                msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/AA) = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["flux_wavenorm"].std():<8.4f}|\n'
+            msg += f'| λL5500 (rest,intrinsic) (log Lsun)        = {tmp_values_vl["loglambLum_5500"][mask_l].mean():10.4f}'
+            msg += f' +/- {tmp_values_vl["loglambLum_5500"].std():<8.4f}|\n'
+            if self.w_norm != 5500:
+                msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)        = {tmp_values_vl["loglambLum_wavenorm"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["loglambLum_wavenorm"].std():<8.4f}|\n'
             msg += f'| Mass (all formed) (log Msun)              = {tmp_values_vl["logMass_formed"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["logMass_formed"].std():<8.4f}|\n'
             msg += f'| Mass (remaining) (log Msun)               = {tmp_values_vl["logMass_remaining"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["logMass_remaining"].std():<8.4f}|\n'
-            msg += f'| Mass/λL{self.w_norm} (log Msun/Lsun)               = {tmp_values_vl["logMtoL"][mask_l].mean():10.4f}'
+            msg += f'| Mass/λL5500 (log Msun/Lsun)               = {tmp_values_vl["logMtoL"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["logMtoL"].std():<8.4f}|\n'
-            msg += f'| λL{self.w_norm}-weight age (log Gyr)               = {tmp_values_vl["logAge_Lweight"][mask_l].mean():10.4f}'
+            msg += f'| λL5500-weight age (log Gyr)               = {tmp_values_vl["logAge_Lweight"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["logAge_Lweight"].std():<8.4f}|\n'
             msg += f'| Mass-weight age (log Gyr)                 = {tmp_values_vl["logAge_Mweight"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["logAge_Mweight"].std():<8.4f}|\n'
-            msg += f'| λL{self.w_norm}-weight metallicity (log Z)         = {tmp_values_vl["logZ_Lweight"][mask_l].mean():10.4f}'
+            msg += f'| λL5500-weight metallicity (log Z)         = {tmp_values_vl["logZ_Lweight"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["logZ_Lweight"].std():<8.4f}|\n'
             msg += f'| Mass-weight metallicity (log Z)           = {tmp_values_vl["logZ_Mweight"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["logZ_Mweight"].std():<8.4f}|'

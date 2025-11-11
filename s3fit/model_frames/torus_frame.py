@@ -192,11 +192,12 @@ class TorusFrame(object):
         if (step == 'spec+SED'):  step = 'joint_fit_3'
         if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
         
-        best_chi_sq_l = ff.output_s[step]['chi_sq_l']
-        best_par_lp   = ff.output_s[step]['par_lp']
-        best_coeff_le = ff.output_s[step]['coeff_le']
+        best_chi_sq_l = copy(ff.output_s[step]['chi_sq_l'])
+        best_par_lp   = copy(ff.output_s[step]['par_lp'])
+        best_coeff_le = copy(ff.output_s[step]['coeff_le'])
 
-        fp0, fp1, fe0, fe1 = ff.search_model_index('torus', ff.full_model_type)
+        mod = 'torus'
+        fp0, fp1, fe0, fe1 = ff.search_model_index(mod, ff.full_model_type)
         num_loops = ff.num_loops
         comp_c = self.cframe.comp_c
         num_comps = self.cframe.num_comps
