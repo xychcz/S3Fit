@@ -393,7 +393,78 @@ class LineFrame(object):
                 self.linename_n = np.hstack((self.linename_n, linename))
                 self.linerest_n = np.hstack((self.linerest_n, linerest))
                 self.lineratio_n = np.hstack((self.lineratio_n, 1.0))
-        
+
+    def search_pyneb(self, name, ret_atomdata=False, verbose=True):
+        # due to the current coverage of elements and atoms of pyneb, 
+        # currently only use pyneb to identify Hydrogen recombination lines
+        # add other recombination lines manually
+        # also add collisionally excited lines manually if not provided by pyneb        
+        # convert roman numbers
+        def roman_to_int(roman_num):
+            roman_dict = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000,'IV':4,'IX':9,'XL':40,'XC':90,'CD':400,'CM':900}
+            i = 0; int_num = 0
+            while i < len(roman_num):
+                if i+1<len(roman_num) and roman_num[i:i+2] in roman_dict:
+                    int_num+=roman_dict[roman_num[i:i+2]]; i+=2
+                else:
+                    int_num+=roman_dict[roman_num[i]]; i+=1
+            return int_num
+
+        HI_lv_up_max = 40 # limited by atomdata._Energy of H1, max lv_up = 40
+        HI_lv_low_dict = {}
+        for u in ['a','b','g','d'] + [str(i+1) for i in range(HI_lv_up_max)]: 
+            HI_lv_low_dict['Ly'+u] = 1 # Lyman
+            HI_lv_low_dict['H' +u] = 2 # Balmer
+            HI_lv_low_dict['Pa'+u] = 3 # Paschen
+            HI_lv_low_dict['Br'+u] = 4 # Brackett
+            HI_lv_low_dict['Pf'+u] = 5 # Pfund
+
+        if name in HI_lv_low_dict:
+            element = 'H'; notation = 1; line_id = name
+            if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
+                self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+            atomdata = self.pyneblib['RecAtom'][element+str(notation)]
+            lv_low = HI_lv_low_dict[name]
+            if np.isin(name[-1], ['a','b','g','d']): 
+                lv_up = lv_low + {'a':1,'b':2,'g':3,'d':4}[name[-1]] 
+            else:
+                lv_up = int(name[1:]) if name[1].isdigit() else int(name[2:])
+            wave_vac = 1/(atomdata._Energy[lv_up-1] - atomdata._Energy[lv_low-1])
+        else:
+            ion, wave = name.split(':')
+            if ion[0] == '[': 
+                element, notation = ion[1:-1].split(' ')
+            else:
+                if ion[-1] == ']': 
+                    element, notation = ion[:-1].split(' ')
+                else:
+                    element, notation = ion.split(' ')
+            notation = roman_to_int(notation)
+            if np.isin(element+str(notation), ['H1', 'He2']):
+                if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
+                    self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+                atomdata = self.pyneblib['RecAtom'][element+str(notation)]
+            else:
+                if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
+                    if verbose: print(f"{name} not provided in pyneb, please add it manually following the github/advanced_usage page.")
+                    if ret_atomdata: 
+                        return None, None, None
+                    else:
+                        return None, None
+                if ~np.isin(element+str(notation), [*self.pyneblib['Atom']]):
+                    self.pyneblib['Atom'][element+str(notation)] = self.pyneb.Atom(element, notation) # , noExtrapol=True
+                atomdata = self.pyneblib['Atom'][element+str(notation)]
+            wave = float(wave[:-2])*1e4 if wave[-2:] == 'um' else float(wave)
+            lv_up, lv_low = atomdata.getTransition(wave=wave)
+            wave_vac = 1/(atomdata._Energy[lv_up-1] - atomdata._Energy[lv_low-1])
+            line_id = f'{ion}:{round(wave_vac)}'
+        # line_id = f'{element}{notation}_{int(wave_vac)}'
+        # line_id = f'{element}{notation}u{lv_up}l{lv_low}'
+        if ret_atomdata: 
+            return line_id, wave_vac, atomdata
+        else:
+            return line_id, wave_vac
+
     def add_line(self, linenames=None, linerests=None, lineratios=None, force=False, use_pyneb=False):
         if not isinstance(linenames, list): linenames = [linenames]
         for (i_line, linename) in enumerate(linenames):
@@ -529,10 +600,9 @@ class LineFrame(object):
         self.linename_n = self.linename_n[mask_valid_n]
         self.linerest_n = self.linerest_n[mask_valid_n]
         self.lineratio_n = self.lineratio_n[mask_valid_n]
-
         self.num_lines = len(self.linename_n)
-        self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
 
+        self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
         # check minimum coverage        
         for i_comp in range(self.num_comps):
             for i_line in range(self.num_lines):
@@ -544,85 +614,47 @@ class LineFrame(object):
                     if self.mask_valid_w is not None:
                         if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() < 0.1: # minimum valid coverage fraction
                             self.mask_valid_cn[i_comp, i_line] = False
-
         # only keep lines if they are specified 
         for i_comp in range(self.num_comps):
             self.mask_valid_cn[i_comp] &= np.isin(self.linename_n, self.cframe.info_c[i_comp]['linelist'])
 
+        # only keep used lines
+        mask_valid_n = self.mask_valid_cn.any(axis=0)
+        self.linename_n = self.linename_n[mask_valid_n]
+        self.linerest_n = self.linerest_n[mask_valid_n]
+        self.lineratio_n = self.lineratio_n[mask_valid_n]
+        self.mask_valid_cn = self.mask_valid_cn[:,mask_valid_n]
+        self.num_lines = len(self.linename_n)
+
         # check the relations between lines
         self.initialize_linelink()
             
-    def search_pyneb(self, name, ret_atomdata=False, verbose=True):
-        # due to the current coverage of elements and atoms of pyneb, 
-        # currently only use pyneb to identify Hydrogen recombination lines
-        # add other recombination lines manually
-        # also add collisionally excited lines manually if not provided by pyneb        
-        # convert roman numbers
-        def roman_to_int(roman_num):
-            roman_dict = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000,'IV':4,'IX':9,'XL':40,'XC':90,'CD':400,'CM':900}
-            i = 0; int_num = 0
-            while i < len(roman_num):
-                if i+1<len(roman_num) and roman_num[i:i+2] in roman_dict:
-                    int_num+=roman_dict[roman_num[i:i+2]]; i+=2
-                else:
-                    int_num+=roman_dict[roman_num[i]]; i+=1
-            return int_num
+    def initialize_linelink(self):
+        # initialize the list of refered line names
+        self.linelink_n = np.zeros_like(self.linename_n); self.linelink_n[:] = 'free'
+        # initialize the ratio library dict of tied lines
+        self.linelink_dict = {}
 
-        HI_lv_up_max = 40 # limited by atomdata._Energy of H1, max lv_up = 40
-        HI_lv_low_dict = {}
-        for u in ['a','b','g','d'] + [str(i+1) for i in range(HI_lv_up_max)]: 
-            HI_lv_low_dict['Ly'+u] = 1 # Lyman
-            HI_lv_low_dict['H' +u] = 2 # Balmer
-            HI_lv_low_dict['Pa'+u] = 3 # Paschen
-            HI_lv_low_dict['Br'+u] = 4 # Brackett
-            HI_lv_low_dict['Pf'+u] = 5 # Pfund
+        if self.use_pyneb & self.verbose:
+            print_log(f"Line tying (if line available) with flux ratios from pyneb under the best-fit (or fixed) electron density and temperature:", self.log_message)
 
-        if name in HI_lv_low_dict:
-            element = 'H'; notation = 1; line_id = name
-            if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
-                self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
-            atomdata = self.pyneblib['RecAtom'][element+str(notation)]
-            lv_low = HI_lv_low_dict[name]
-            if np.isin(name[-1], ['a','b','g','d']): 
-                lv_up = lv_low + {'a':1,'b':2,'g':3,'d':4}[name[-1]] 
-            else:
-                lv_up = int(name[1:]) if name[1].isdigit() else int(name[2:])
-            wave_vac = 1/(atomdata._Energy[lv_up-1] - atomdata._Energy[lv_low-1])
-        else:
-            ion, wave = name.split(':')
-            if ion[0] == '[': 
-                element, notation = ion[1:-1].split(' ')
-            else:
-                if ion[-1] == ']': 
-                    element, notation = ion[:-1].split(' ')
-                else:
-                    element, notation = ion.split(' ')
-            notation = roman_to_int(notation)
-            if np.isin(element+str(notation), ['H1', 'He2']):
-                if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
-                    self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
-                atomdata = self.pyneblib['RecAtom'][element+str(notation)]
-            else:
-                if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
-                    if verbose: print(f"{name} not provided in pyneb, please add it manually following the github/advanced_usage page.")
-                    if ret_atomdata: 
-                        return None, None, None
-                    else:
-                        return None, None
-                if ~np.isin(element+str(notation), [*self.pyneblib['Atom']]):
-                    self.pyneblib['Atom'][element+str(notation)] = self.pyneb.Atom(element, notation) # , noExtrapol=True
-                atomdata = self.pyneblib['Atom'][element+str(notation)]
-            wave = float(wave[:-2])*1e4 if wave[-2:] == 'um' else float(wave)
-            lv_up, lv_low = atomdata.getTransition(wave=wave)
-            wave_vac = 1/(atomdata._Energy[lv_up-1] - atomdata._Energy[lv_low-1])
-            line_id = f'{ion}:{round(wave_vac)}'
-        # line_id = f'{element}{notation}_{int(wave_vac)}'
-        # line_id = f'{element}{notation}u{lv_up}l{lv_low}'
-        if ret_atomdata: 
-            return line_id, wave_vac, atomdata
-        else:
-            return line_id, wave_vac
-                
+        H_linenames = [n+u for n in ['H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.HI_lv_up_max)]] # do not set 'Ly' due to Lya forest
+        self.tie_pair(H_linenames, ['Ha','Hb','Hg','Hd', 'Paa','Pab','Pag','Pad']) # use set alternative line is Ha is not covered
+
+        self.tie_pair('[Ne V]:3347', '[Ne V]:3427')
+        self.tie_pair('[O II]:3727', '[O II]:3730')
+        self.tie_pair('[Ne III]:3969', '[Ne III]:3870')
+        self.tie_pair('[O III]:4960', '[O III]:5008')
+        self.tie_pair('[N I]:5199', '[N I]:5202')
+        self.tie_pair('[O I]:6366', '[O I]:6302')
+        self.tie_pair('[N II]:6550', '[N II]:6585')
+        self.tie_pair('[S II]:6718', '[S II]:6733')
+
+        # update mask of free lines and count num_coeffs
+        self.update_mask_free()
+        # update line ratios with default AV, logden, and logtem
+        self.update_lineratio()
+
     def tie_pair(self, tied_names, ref_names=None, ratio=None, use_pyneb=None):
         # prebuild the tying ratio libraries between tied lines and the reference line (1st valid one if multi given)
         if use_pyneb is None: use_pyneb = self.use_pyneb
@@ -689,42 +721,16 @@ class LineFrame(object):
             self.linelink_dict.pop(tied_name)
             if self.verbose:
                 print_log(f"{tied_name} becomes untied.", self.log_message)
-  
-    def initialize_linelink(self):
-        # initialize the list of refered line names
-        self.linelink_n = np.zeros_like(self.linename_n); self.linelink_n[:] = 'free'
-        # initialize the ratio library dict of tied lines
-        self.linelink_dict = {}
-
-        if self.use_pyneb & self.verbose:
-            print_log(f"Line tying (if line available) with flux ratios from pyneb under the best-fit (or fixed) electron density and temperature:", self.log_message)
-
-        H_linenames = [n+u for n in ['H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.HI_lv_up_max)]] # do not set 'Ly' due to Lya forest
-        self.tie_pair(H_linenames, ['Ha','Hb','Hg','Hd', 'Paa','Pab','Pag','Pad']) # use set alternative line is Ha is not covered
-
-        self.tie_pair('[S II]:6718', '[S II]:6733')
-        self.tie_pair('[N II]:6550', '[N II]:6585')
-        self.tie_pair('[O I]:6366', '[O I]:6302')
-        self.tie_pair('[N I]:5199', '[N I]:5202')
-        self.tie_pair('[O III]:4960', '[O III]:5008')
-        self.tie_pair('[Ne III]:3969', '[Ne III]:3870')
-        self.tie_pair('[O II]:3727', '[O II]:3730')
-        self.tie_pair('[Ne V]:3347', '[Ne V]:3427')
-
-        # update mask of free lines and count num_coeffs
-        self.update_mask_free()
-        # update line ratios with default AV, logden, and logtem
-        self.update_lineratio()
         
     def update_lineratio(self, AV=0, logden=2, logtem=4):
         for tied_name in self.linelink_dict:
-            i_tied = np.where(self.linename_n == tied_name)
+            i_tied = np.where(self.linename_n == tied_name)[0][0]
             # read flux ratio for given logden and logtem
             func_ratio_dt = self.linelink_dict[tied_name]['func_ratio_dt']
             self.lineratio_n[i_tied] = func_ratio_dt(np.array([logden, logtem]))[0]
             # reflect extinction
             ref_name = self.linelink_dict[tied_name]['ref_name']
-            i_ref = np.where(self.linename_n == ref_name)
+            i_ref = np.where(self.linename_n == ref_name)[0][0]
             tmp = ExtLaw(self.linerest_n[i_tied]) - ExtLaw(self.linerest_n[i_ref])
             self.lineratio_n[i_tied] *= 10.0**(-0.4 * AV * tmp)
 

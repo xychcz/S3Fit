@@ -1017,7 +1017,7 @@ class FitFrame(object):
             sed_wave_w = self.sed['wave_w']
 
         num_loops = self.num_loops
-        success_count, total_count = 0, 0
+        success_count, total_count = self.fit_quality_l.sum(), self.fit_quality_l.sum()
         while success_count < num_loops:
             i_loop = np.where(self.fit_quality_l == 0)[0][0] 
             # i_loop is the 0th loop index without good fits, used to save the current fitting results
@@ -1348,7 +1348,7 @@ class FitFrame(object):
 
         # self.output_s is the core results of the fitting
         # delete the format with empty values
-        hide_return = self.output_s.pop('empty_step') 
+        if np.isin('empty_step', [*self.output_s]): hide_return = self.output_s.pop('empty_step') 
 
         # create outputs
         self.extract_results(step='final', print_results=True, return_results=False, num_sed_wave=5000)
@@ -1578,7 +1578,7 @@ class FitFrame(object):
         ax2.set_ylim(-tmp_ylim, tmp_ylim)
         ax1.set_xticks([]); ax2.set_xlabel(r'Wavelength ($\AA$)')
         ax1.set_ylabel('Flux ('+str(self.spec_flux_scale)+r' $erg/s/cm2/\AA$)'); ax2.set_ylabel('Res.')
-        title = fit_message + r' ($\chi^2$ = ' + f'{chi_sq:.3f}, '
+        title = fit_message + r' ($\chi^2_{\nu}$ = ' + f'{chi_sq:.3f}, '
         title += f'loop {i_loop+1}/{self.num_loops}, ' + ('original data)' if i_loop == 0 else 'mock data)')
         ax1.set_title(title)
         if self.canvas is not None:
