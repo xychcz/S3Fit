@@ -40,6 +40,7 @@ class LineFrame(object):
             if ~np.isin('profile', [*self.cframe.info_c[i_comp]]):
                 self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
 
+        self.HI_lv_up_max = 40 # limited by pyneb atomdata._Energy of H1, max lv_up = 40
         if np.array([self.cframe.info_c[i_comp]['H_hi_order'] for i_comp in range(self.num_comps)]).any(): 
             self.enable_H_hi_order = True
             if not self.use_pyneb: raise ValueError((f"Please enable pyneb in line config to include high order Hydrogen lines."))
@@ -350,15 +351,7 @@ class LineFrame(object):
         self.linerest_n = np.array(self.linerest_n)
         self.lineratio_n = np.array(self.lineratio_n)
 
-        self.linelist_full = copy(self.linename_n)
-        self.HI_lv_up_max = 40 # limited by pyneb atomdata._Energy of H1, max lv_up = 40
-        linelist_H = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.HI_lv_up_max)]])
-        self.linelist_elements = {}
-        self.linelist_elements['H'] = linelist_H[np.isin(linelist_H, self.linelist_full)]
-        elements = np.unique([line.split(' ')[0][1:] for line in self.linelist_full if line[0] == '['] + [line.split(' ')[0] for line in self.linelist_full if line[0] != '['])
-        for element in elements[~np.isin(elements, self.linelist_elements['H'])]:
-            self.linelist_elements[element] = np.array([line for line in self.linename_n if line[0] != '[' if line.split(' ')[0] == element] 
-                                                     + [line for line in self.linename_n if line[0] == '[' if line.split(' ')[0][1:] == element])
+        self.linelist_full = copy(self.linename_n)        
         # list main lines in G06 and RR06
         self.linelist_default = np.array(['Lyb', 'O VI:1032', 'O VI:1038', 'Lya', 'N V:1239', 'N V:1243', 'Si IV:1394', 'O IV]:1397', 'O IV]:1400', 
                                           'Si IV:1403', 'C IV:1548', 'He II:1640', 'Al III:1855', 'Al III:1863', 'C III]:1909', 'Mg II]:2796', 'Mg II]:2804', 
@@ -392,10 +385,9 @@ class LineFrame(object):
                 self.linerest_n[i_line] = linerest
 
         if self.enable_H_hi_order: 
-            self.linelist_H_hi_order = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] if n+'10' in self.linelist_elements['H'] for u in [str(i+11) for i in range(self.HI_lv_up_max-10)]]) 
+            self.linelist_H_hi_order = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] if n+'10' in self.linelist_full for u in [str(i+11) for i in range(self.HI_lv_up_max-10)]]) 
             # lv_up from 11 to 40
             self.linelist_full = np.hstack((self.linelist_full, self.linelist_H_hi_order))
-            self.linelist_elements['H'] = np.hstack((self.linelist_elements['H'], self.linelist_H_hi_order))
             for linename in self.linelist_H_hi_order:
                 linename, linerest = self.search_pyneb(linename)
                 self.linename_n = np.hstack((self.linename_n, linename))
@@ -417,6 +409,7 @@ class LineFrame(object):
                 self.linename_n  = np.hstack((self.linename_n, linename))
                 self.linerest_n  = np.hstack((self.linerest_n, linerest))
                 self.lineratio_n = np.hstack((self.lineratio_n, lineratio))
+                self.linelist_full = np.hstack((self.linelist_full, linename))
                 self.linelist_default = np.hstack((self.linelist_default, linename))
                 print_log(f"{linename, linerest} with linkratio={lineratio} is added into the line list.", self.log_message)
             else:
@@ -428,51 +421,111 @@ class LineFrame(object):
         if not isinstance(linenames, list): linenames = [linenames]
         mask_remain_n = np.ones_like(self.linename_n, dtype='bool')
         for linename in linenames:
-            mask_remain_n &= self.linename_n != linename
-        self.linename_n  = self.linename_n[mask_remain_n]
-        self.linerest_n  = self.linerest_n[mask_remain_n]
-        self.lineratio_n = self.lineratio_n[mask_remain_n]
+            mask_remain_n = self.linename_n != linename
+            self.linename_n  = self.linename_n[mask_remain_n]
+            self.linerest_n  = self.linerest_n[mask_remain_n]
+            self.lineratio_n = self.lineratio_n[mask_remain_n]
+            self.linelist_full = self.linelist_full[self.linelist_full != linename]
+            self.linelist_default = self.linelist_default[self.linelist_default != linename]
         self.update_linelist()
 
     def update_linelist(self):
-        # sort lines with increasing wavelength
+        # update self.linename_n, self.linelist_full, and self.linelist_default and the other corresponding linelists
+
+        # only keep covered lines
+        mask_valid_n  = self.linerest_n > (self.rest_wave_w.min()-50)
+        mask_valid_n &= self.linerest_n < (self.rest_wave_w.max()+50)
+        self.linename_n = self.linename_n[mask_valid_n]
+        self.linerest_n = self.linerest_n[mask_valid_n]
+        self.lineratio_n = self.lineratio_n[mask_valid_n]
+        # sort self.linename_n with increasing wavelength
         index_line = np.argsort(self.linerest_n)
         self.linename_n = self.linename_n[index_line]
         self.linerest_n = self.linerest_n[index_line]
         self.lineratio_n = self.lineratio_n[index_line]
 
-        linelist_purepermitted = np.array([line for line in self.linename_n if (line[0] != '[') & (line.split(':')[0][-1] != ']')])
-        linelist_semipermitted = np.array([line for line in self.linename_n if (line[0] != '[') & (line.split(':')[0][-1] == ']')])
-        linelist_permitted = np.hstack((linelist_purepermitted, linelist_semipermitted))
-        linelist_forbidden = np.array([line for line in self.linename_n if line[0] == '['])
+        ########################################
+        # linelists from self.linelist_full
+        self.linelist_allowed          = np.array([line for line in self.linelist_full if (line[0] != '[') & (line.split(':')[0][-1] != ']')])
+        self.linelist_intercombination = np.array([line for line in self.linelist_full if (line[0] != '[') & (line.split(':')[0][-1] == ']')])
+        self.linelist_forbidden        = np.array([line for line in self.linelist_full if  line[0] == '['])
+
+        linelist_H = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.HI_lv_up_max)]])
+        linelist_H = linelist_H[np.isin(linelist_H, self.linelist_full)]
+        linelist_nonH = self.linelist_full[~np.isin(self.linelist_full, linelist_H)]
+
+        spectra_full = np.array([line.split(':')[0] for line in self.linelist_full])
+        spectra_full = spectra_full[~np.isin(spectra_full, linelist_H)]
+        spectra_uniq = []
+        for spectrum in spectra_full:
+            if ~np.isin(spectrum, spectra_uniq): spectra_uniq.append(str(spectrum))
+        spectra_uniq = np.array(spectra_uniq)
+        self.linelist_spectra = {}
+        self.linelist_spectra['H I'] = linelist_H
+        for spectrum in spectra_uniq: self.linelist_spectra[str(spectrum)] = linelist_nonH[spectra_full == spectrum]
+
+        notations_full = copy(spectra_full)
+        for i in range(len(notations_full)):
+            if notations_full[i][0]  == '[': notations_full[i] = notations_full[i][1:]
+            if notations_full[i][-1] == ']': notations_full[i] = notations_full[i][:-1]
+        notations_uniq = []
+        for notation in notations_full:
+            if ~np.isin(notation, notations_uniq): notations_uniq.append(str(notation))
+        notations_uniq = np.array(notations_uniq)
+        self.linelist_notations = {}
+        self.linelist_notations['H I'] = linelist_H
+        for notation in notations_uniq: self.linelist_notations[str(notation)] = linelist_nonH[notations_full == notation]
+
+        elements_full = copy(notations_full)
+        for i in range(len(elements_full)):
+            elements_full[i] = elements_full[i].split(' ')[0]
+        elements_uniq = []
+        for element in elements_full:
+            if ~np.isin(element, elements_uniq): elements_uniq.append(str(element))
+        elements_uniq = np.array(elements_uniq)
+        self.linelist_elements = {}
+        self.linelist_elements['H'] = linelist_H
+        for element in elements_uniq: self.linelist_elements[str(element)] = linelist_nonH[elements_full == element]
+        ########################################
+
         linelist_used_total = np.array([])
         for i_comp in range(self.num_comps):
-            self.cframe.info_c[i_comp]['linelist'] = copy(self.cframe.info_c[i_comp]['line_used']) # avoid changing the input config
-            enable_all_lines = self.cframe.info_c[i_comp]['linelist'][0] == 'all'
-            if np.isin(self.cframe.info_c[i_comp]['linelist'][0], ['all']): 
-                self.cframe.info_c[i_comp]['linelist'] = self.linename_n
-            if np.isin(self.cframe.info_c[i_comp]['linelist'][0], ['default', 'NLR', 'AGN_NLR', 'HII', 'outflow']): 
-                self.cframe.info_c[i_comp]['linelist'] = self.linelist_default
-            if np.isin(self.cframe.info_c[i_comp]['linelist'][0], ['BLR', 'AGN_BLR']): 
-                self.cframe.info_c[i_comp]['linelist'] = np.hstack((linelist_permitted[np.isin(linelist_permitted, self.linelist_default)], self.linelist_elements['H']))
-            if np.isin(self.cframe.info_c[i_comp]['linelist'][0], ['permitted']): 
-                self.cframe.info_c[i_comp]['linelist'] = linelist_permitted
-            if np.isin(self.cframe.info_c[i_comp]['linelist'][0], ['purepermitted', 'pure-permitted']): 
-                self.cframe.info_c[i_comp]['linelist'] = linelist_purepermitted
-            if np.isin(self.cframe.info_c[i_comp]['linelist'][0], ['semipermitted', 'semi-permitted']): 
-                self.cframe.info_c[i_comp]['linelist'] = linelist_semipermitted
-            if np.isin(self.cframe.info_c[i_comp]['linelist'][0], ['forbidden']): 
-                self.cframe.info_c[i_comp]['linelist'] = linelist_forbidden
+            # firstly read any specified lines in input config
+            self.cframe.info_c[i_comp]['linelist'] = self.cframe.info_c[i_comp]['line_used'][np.isin(self.cframe.info_c[i_comp]['line_used'], self.linelist_full)]
+            if np.isin(self.cframe.info_c[i_comp]['line_used'], ['all']).any():
+                enable_all_lines = True
+                self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_full))
+            else:
+                enable_all_lines = False
+                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['default', 'NLR', 'AGN_NLR', 'HII', 'outflow']).any():
+                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_default))
+                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['BLR', 'AGN_BLR']).any():
+                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  
+                                                                        self.linelist_allowed[np.isin(self.linelist_allowed, self.linelist_default)],
+                                                                        self.linelist_intercombination[np.isin(self.linelist_intercombination, self.linelist_default)],
+                                                                        self.linelist_elements['H']))
+                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['allowed', 'permitted']).any():
+                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_allowed))
+                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['intercombination', 'semiforbidden', 'semi-forbidden', 'semipermitted', 'semi-permitted']).any():
+                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_intercombination))
+                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['forbidden']).any():
+                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_forbidden))  
+                if np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_elements]).any():
+                    for element in self.cframe.info_c[i_comp]['line_used'][np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_elements])]:
+                        self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_elements[element]))  
+                if np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_spectra]).any():
+                    for spectrum in self.cframe.info_c[i_comp]['line_used'][np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_spectra])]:
+                        self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_spectra[spectrum])) 
+            # remove duplicates
+            self.cframe.info_c[i_comp]['linelist'] = self.linename_n[np.isin(self.linename_n, self.cframe.info_c[i_comp]['linelist'])]
             # disable high order Hydrogen lines if not specify in config
             if (not enable_all_lines) & self.enable_H_hi_order:
                 if not self.cframe.info_c[i_comp]['H_hi_order']:
                     self.cframe.info_c[i_comp]['linelist'] = self.cframe.info_c[i_comp]['linelist'][~np.isin(self.cframe.info_c[i_comp]['linelist'], self.linelist_H_hi_order)] 
             linelist_used_total = np.hstack((linelist_used_total, self.cframe.info_c[i_comp]['linelist']))
+
         # only keep used lines
         mask_valid_n = np.isin(self.linename_n, linelist_used_total)
-        # only keep covered lines
-        mask_valid_n &= self.linerest_n > (self.rest_wave_w.min()-50)
-        mask_valid_n &= self.linerest_n < (self.rest_wave_w.max()+50)
         self.linename_n = self.linename_n[mask_valid_n]
         self.linerest_n = self.linerest_n[mask_valid_n]
         self.lineratio_n = self.lineratio_n[mask_valid_n]

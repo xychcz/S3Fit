@@ -471,7 +471,7 @@ class FitFrame(object):
                 index_end_coeff += model_nums[singlecomp]['coeff']            
         return index_start_x, index_end_x, index_start_coeff, index_end_coeff
     
-    def examine_model_SN(self, model_w, noise_w, accept_SN=1.5):
+    def examine_model_SN(self, model_w, noise_w, accept_SN=2):
         if len(model_w) > 0:
             mask_valid_w = model_w > (np.nanmax(model_w)*0.05) # only consider line wavelength range with significant non-zero values
             if mask_valid_w.sum() > 0:
@@ -891,7 +891,7 @@ class FitFrame(object):
                                             # here simplify with significance_w=1 and n_mods=n_pars=0. 
                                             # Adopt a scaling ratio nllsq_ftol_ratio with default of 0.01 to guarantee a better accuracy (from test). 
             except Exception as ex: 
-                print('Exception:', ex); traceback.print_exc(); sys.exit()
+                print('Exception:', ex); traceback.print_exc(); # sys.exit()
             else:
                 if ls_solution.success:
                     # coeff_e, model_w, chi_sq = self.linear_process(ls_solution.x, *args, ret_coeffs=True)
@@ -1091,9 +1091,10 @@ class FitFrame(object):
                 line_disabled_comps = [line_mod.cframe.comp_c[i_comp] for i_comp in range(line_mod.num_comps) if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption']
                 if len(line_disabled_comps) > 0:
                     mask_abs_w = mask_valid_w & (line_fit_init['line_spec_fmod_w'] < 0)
-                    line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=2)
+                    line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.accept_model_SN)
                     if not line_abs_examine:
-                        print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {-line_abs_peak_SN:.3f}', self.log_message, self.print_step)                 
+                        print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.accept_model_SN} (set by accept_model_SN).', 
+                                  self.log_message, self.print_step)                 
                         # fix the parameters of disabled components (to reduce number of free parameters)
                         for i_comp in range(line_mod.num_comps):
                             if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'
@@ -1124,14 +1125,15 @@ class FitFrame(object):
             if self.examine_result: 
                 ########################################
                 ########### Examine models #############
-                print_log(center_string(f'Examine if each continuum model is indeed required', 80), self.log_message, self.print_step)
+                print_log(center_string(f'Examine if each continuum model is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
+                          self.log_message, self.print_step)
                 cont_type = '' # reset
                 for mod in joint_fit_1['model_type'].split('+'):
                     if mod == 'line': continue
                     mp0, mp1, me0, me1 = self.search_model_index(mod, joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
                     spec_fmod_ew = self.model_dict[mod]['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_dict'][mod], conv_nbin=1)
                     spec_fmod_w = joint_fit_1['coeff_e'][me0:me1] @ spec_fmod_ew
-                    mod_peak_SN, mod_examine = self.examine_model_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=2)
+                    mod_peak_SN, mod_examine = self.examine_model_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
                     if mod_examine: 
                         cont_type += mod + '+'
                         print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
@@ -1148,7 +1150,8 @@ class FitFrame(object):
                     if mod == 'line': continue
                     if ~np.isin(mod, cont_type.split('+')): self.model_dict[mod]['cframe'].tie_cp[:,:] = 'fix'
                 ########################################
-                print_log(center_string(f'Examine if each emission line component is indeed required', 80), self.log_message, self.print_step)
+                print_log(center_string(f'Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
+                          self.log_message, self.print_step)
                 if np.isin('line', joint_fit_1['model_type'].split('+')): 
                     line_mod = self.model_dict['line']['spec_mod']
                     mp0, mp1, me0, me1 = self.search_model_index('line', joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
@@ -1158,7 +1161,7 @@ class FitFrame(object):
                         line_comp = line_mod.cframe.comp_c[i_comp]
                         mask_line_lite = line_mod.mask_line_lite(enabled_comps=[line_comp])[joint_fit_1['mask_lite_dict']['line']]
                         line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][me0:me1][mask_line_lite] @ line_spec_fmod_ew[mask_line_lite, :]
-                        line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=2)
+                        line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
                         if line_comp_examine: 
                             line_comps.append(line_comp)
                             print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> remaining', self.log_message, self.print_step)

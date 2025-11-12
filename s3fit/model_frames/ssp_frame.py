@@ -61,12 +61,12 @@ class SSPFrame(object):
                 print_log(f"[WARNING]: Upper bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}.", self.log_message)
             if 10.0**self.cframe.min_cp[i_comp][3] > cosmo.age(self.v0_redshift).value:
-                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min())
+                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min()*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
                 print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" exceeds the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}, "
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_ssp_allowed()].min():.3f} Gyr.", self.log_message)
             if 10.0**self.cframe.min_cp[i_comp][3] < self.age_e[self.mask_ssp_allowed()].min():
-                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min())
+                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min()*1.0001)
                 print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_ssp_allowed()].min():.3f} Gyr.", self.log_message)                
         
