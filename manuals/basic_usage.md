@@ -11,8 +11,8 @@ from s3fit import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_w=None, spec_valid_range=None, 
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
               v0_redshift=None, model_config=None, 
-              num_mocks=0, fit_grid='linear', 
-              print_step=True, plot_step=False, canvas=None)
+              num_mocks=0, fit_grid='linear', examine_result=True, 
+              print_step=True, plot_step=False)
 ```
 #### 1.1 Input spectroscopic data
 - `spec_wave_w` (list or numpy array of floats, <ins>**required**</ins>) \
@@ -64,7 +64,13 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
    Set `fit_grid='log'` to run the fitting in logarithmic flux grid.
    Note that if emisison line is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`.
-   (please refer to [fitting strategy](./fitting_strategy.md) for details). 
+   (please refer to [fitting strategy](./fitting_strategy.md) for details).
+- `examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
+   If `examine_result=True` (default), the best-fit models will be examined.
+   All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled.
+   An additional fitting step will be performed with the updated model configuration 
+   (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)).
+   If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
 #### 1.5 Auxiliary
 - `print_step` (bool, optional) \
    Whether or not to print the information each intermediate step (e.g., the examination of each model component).
@@ -72,9 +78,6 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 - `plot_step` (bool, optional) \
    Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step.
    Default is `False`. 
-- `canvas` (tuple, optional) \
-   Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
-   Please read the [Jupyter Notebook](../example/example.ipynb) for an example case. 
 > [!NOTE]
 > Please refer to the [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 
