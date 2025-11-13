@@ -127,7 +127,7 @@
    Increasing the number will slow down the fitting process significantly.
 - `R_mod_ratio` (float, optional) \
    In order to save the memory usage and accelerate the running speed, 
-   the model templated will be smoothed and downsampled to match the sampling and resulotion of the input data.  
+   the model templated will be smoothed and downsampled to match the sampling and resulotion of the input data.
    `R_mod_ratio` is the ratio of modified model resolution and data instrumental resolution (set with `spec_R_inst_w`).
    Default is 2, i.e., the model is smoothed and downsampled to have twice better resolution than the input data. 
 
