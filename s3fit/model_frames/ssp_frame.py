@@ -202,62 +202,6 @@ class SSPFrame(object):
             self.orig_flux_ew = np.hstack((orig_flux_ew[:,mask_keep_w], ext_flux_ew))
             self.orig_wave_w = np.hstack((orig_wave_w[mask_keep_w], ext_wave_w))
 
-    # def to_logw_grid(self, w_min=None, w_max=None, w_norm=None, dw_norm=None, spec_R_init_w=None, spec_R_rsmp_w=None):
-    #     # re-project models to log-wavelength grid to following convolution,
-    #     # and normalize models at given wavelength
-    #     # convolve models if spec_R_init_w is not None
-    #     mask_valid_w = (self.orig_wave_w >= w_min) & (self.orig_wave_w <= w_max)
-    #     linw_wave_w = self.orig_wave_w[mask_valid_w]
-    #     logw_flux_ew = []
-    #     mtol_e = np.zeros(self.num_models, dtype='float')
-    #     for i_mod in range(self.num_models):
-    #         linw_flux_w = self.orig_flux_ew[i_mod, mask_valid_w]
-    #         logw_wave_w, logw_flux_w = convert_linw_to_logw(linw_wave_w, linw_flux_w, resolution=spec_R_rsmp_w)
-    #         # The original spectra of SSP models are normalized by 1 Msun in unit Lsun/AA.
-    #         # The spectra used here is re-normalized to 1 Lsun/AA at rest 5500AA,
-    #         # i.e., the norm-factor is norm=L5500 before re-normalization.  
-    #         # The re-normalized spectra corresponds to mass of 1 Msun / norm, 
-    #         # i.e., mass-to-lum(5500) ratio is (1 Msun / norm) / (1 Lsun/AA) = 1/norm Msun/(Lsun/AA),
-    #         # i.e., mtol = 1/norm = 1/L5500
-    #         if spec_R_init_w is not None:
-    #             sigma_init = 299792.458 / spec_R_init_w / np.sqrt(np.log(256))
-    #             logw_flux_w = convolve_spec_logw(logw_wave_w, logw_flux_w, sigma_init, axis=0)
-    #         mask_norm_w = np.abs(logw_wave_w - w_norm) < dw_norm
-    #         logw_flux_norm = np.mean(logw_flux_w[mask_norm_w])
-    #         logw_flux_ew.append(logw_flux_w / logw_flux_norm)
-    #         mtol_e[i_mod] = 1 / logw_flux_norm # i.e., 1 Msun / logw_flux_norm Lsun/AA
-    #     logw_flux_ew = np.array(logw_flux_ew)
-    #     self.logw_flux_ew = logw_flux_ew
-    #     self.logw_wave_w = logw_wave_w
-    #     self.mtol_e = mtol_e
-
-    #     # self.logw_flux_ew is normalized to 1 Lsun/AA at rest 5500AA.
-    #     # The corresponding mass is 1 Lsun/AA * mtol_e Msun/(Lsun/AA) = mtol_e Msun = 1/L5500 Msun.
-    #     # The corresponding SFR is mtol_e Msun / (duration_e Gyr) = mtol_e/duration_e Msun/Gyr, duration_e in unit of Gyr (as age)
-    #     # Name sfrtol_e = mtol_e/duration_e * 1e-9, and 
-    #     # self.logw_flux_ew / sfrtol_e return models renormalized to unit SFR, i.e., 1 Mun/yr.
-    #     self.sfrtol_e = self.mtol_e / (self.duration_e * 1e9)
-
-    #     # extend to longer wavelength in NIR-MIR (e.g., > 3 micron)
-    #     # please comment these lines if moving to another SSP library that initially covers the NIR-MIR range. 
-    #     if  (self.orig_wave_w.max() < 3e4) & (w_max > 2.3e4):
-    #         logw_w = np.log10(logw_wave_w)
-    #         logw_width = logw_w[-1] - logw_w[-2]
-    #         num_ext = 1+int((np.log10(w_max) - logw_w[-1]) / logw_width)
-    #         ext_wave_w = 10.0**np.hstack((logw_w, logw_w[-1] + logw_width * (np.arange(num_ext)+1))) 
-    #         mask0 = (ext_wave_w > 2.1e4) & (ext_wave_w <= 2.3e4)
-    #         mask1 = (ext_wave_w > 2.3e4)
-    #         index = -4
-    #         ext_flux_ew = []
-    #         for i_mod in range(self.num_models):
-    #                 ext_flux_w = np.interp(ext_wave_w, logw_wave_w, logw_flux_ew[i_mod])
-    #                 tmp_r = np.mean(ext_flux_w[mask0]/ext_wave_w[mask0]**index)
-    #                 ext_flux_w[mask1] = ext_wave_w[mask1]**index * tmp_r
-    #                 ext_flux_ew.append(ext_flux_w)
-    #         ext_flux_ew = np.array(ext_flux_ew)
-    #         self.logw_flux_ew = ext_flux_ew
-    #         self.logw_wave_w = ext_wave_w
-
     def sfh_factor(self, i_comp, sfh_pars):
         # For a given SFH, i.e., SFR(t) = SFR(csp_age-ssp_age_e), in unit of Msun/yr, 
         # the model of a given ssp (_e) is ssp_spec_ew = SFR(csp_age-ssp_age_e) * (self.orig_flux_ew/sfrtol_e), 

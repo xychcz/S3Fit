@@ -164,7 +164,7 @@ class FitFrame(object):
             print_log(f"Mask out {(~mask_specified_w).sum()} data points with the input spec_valid_range.", self.log_message, verbose)
             mask_valid_w &= mask_specified_w
 
-        num_invalid_ferr = np.sum(mask_valid_w & (self.spec_ferr_w <= 0))
+        num_invalid_ferr = (mask_valid_w & (self.spec_ferr_w <= 0)).sum()
         if num_invalid_ferr > 0: 
             print_log(f"Mask out additional {num_invalid_ferr} wavelengths with non-positive spec_ferr_w.", self.log_message, verbose)
             mask_valid_w &= (self.spec_ferr_w > 0)
@@ -406,7 +406,6 @@ class FitFrame(object):
     def init_output_results(self):
         self.num_loops = self.num_mocks+1
         # format to save fitting quality, chi_sq, parameters, and coefficients (normalization factors) of final best-fits    
-        self.fit_quality_l = np.zeros(self.num_loops, dtype='int')
         self.output_s = {}
         self.output_s['empty_step'] = {}
         self.output_s['empty_step']['chi_sq_l'] = np.zeros(self.num_loops, dtype='float')
@@ -481,6 +480,33 @@ class FitFrame(object):
                 return 0, False
         else:
             return 0, False
+
+    def examine_fit_quality(self, step=None):
+        if step is None: step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
+
+        best_chi_sq_l = self.output_s[step]['chi_sq_l'] 
+        accept_chi_sq = copy(self.accept_chi_sq)
+        if self.num_loops > 1:
+            if (best_chi_sq_l[1:] > 0).sum() > 0:
+                accept_chi_sq = best_chi_sq_l[1:][best_chi_sq_l[1:] > 0].min() * 1.5 # update using the finished fitting of mock data
+        self.fit_quality_l = (best_chi_sq_l > 0) & (best_chi_sq_l < accept_chi_sq)
+        success_count = self.fit_quality_l.sum()
+
+        if success_count > 0:
+            if self.fit_quality_l[0]: 
+                tmp_msg = f'original data and {success_count - 1} mock data'
+            else:
+                tmp_msg = f'{success_count} mock data'
+            print_log(f'{success_count} fitting loops ({tmp_msg}) have good quality, with chi_sq = {np.round(best_chi_sq_l[self.fit_quality_l],3)}.', self.log_message)
+        else:
+            print_log(f'No fitting loop has good quality.', self.log_message)
+
+        if (self.num_loops-success_count) > 0:
+            print_log(f'{self.num_loops-success_count} loops need refitting, with current chi_sq = {np.round(best_chi_sq_l[~self.fit_quality_l],3)}.', self.log_message)
+        else:
+            print_log(f'No fitting loop needs refitting. Run with main_fit(refit=True) to force refitting.', self.log_message)
+
+        return success_count
 
     def create_mock_data(self, i_loop=None, ret_phot=False, chi_sq=None):
         spec_wave_w, spec_flux_w, spec_ferr_w = self.spec['wave_w'], self.spec['flux_w'], self.spec['ferr_w']
@@ -664,7 +690,7 @@ class FitFrame(object):
             bound_min_p = np.hstack((bound_min_p, self.model_dict[mod]['cframe'].min_cp.flatten()))
             bound_max_p = np.hstack((bound_max_p, self.model_dict[mod]['cframe'].max_cp.flatten()))
             tie_p = np.hstack((tie_p, self.model_dict[mod]['cframe'].tie_cp.flatten()))
-        n_freepars = np.sum(tie_p == 'free')
+        n_freepars = (tie_p == 'free').sum()
         for i_p in range(len(x)):
             if tie_p[i_p] == 'free': 
                 if x[i_p] < bound_min_p[i_p]: x[i_p] = bound_min_p[i_p] # re-check if x matches bounds
@@ -725,21 +751,21 @@ class FitFrame(object):
                 mask_valid_w &= flux_w > 0
             else:
                 fit_grid == 'linear'
-                print_log(f"[Warning] Over 20% of the input data has non-positive values, reset fit_grid = linear.", self.log_message)
+                print_log(f"[WARNING] Over 20% of the input data has non-positive values, reset fit_grid = linear.", self.log_message)
 
         significance_w = self.spec['significance_w']
         if fit_phot: significance_w = np.hstack((self.spec['significance_w'], self.phot['significance_b']))
-        degree_of_freedom = np.sum(significance_w[mask_valid_w]) - (n_elements + n_freepars) # only sum valid measurements with mask_valid_w
+        degree_of_freedom = (significance_w[mask_valid_w]).sum() - (n_elements + n_freepars) # only sum valid measurements with mask_valid_w
         if degree_of_freedom < 1: 
-            raise ValueError((f"The effective significance of valid measurements, {np.sum(significance_w[mask_valid_w])}, "
-                             +f"(original number of measurements: {np.sum(mask_valid_w)}), "
+            raise ValueError((f"The effective significance of valid measurements, {(significance_w[mask_valid_w]).sum()}, "
+                             +f"(original number of measurements: {(mask_valid_w).sum()}), "
                              +f"is less than the total number of free models ({n_elements}) and free parameters({n_freepars})."))
         weight_w = np.divide(np.sqrt(significance_w/degree_of_freedom), ferr_w, where=mask_valid_w, out=np.zeros_like(ferr_w))
 
         coeff_e = np.zeros(n_elements, dtype='float')
         mask_valid_e = fit_model_ew[:,mask_valid_w].sum(axis=1) != 0
         coeff_e[mask_valid_e], model_w, chi_w = self.linear_lsq_solver(flux_w, fit_model_ew[mask_valid_e,:], weight_w, fit_grid, verbose=self.verbose)
-        chi_sq = np.sum(chi_w**2) # already reduced
+        chi_sq = (chi_w**2).sum() # already reduced
         
         if not ret_coeffs:
             # for callback of optimization solvers
@@ -755,16 +781,16 @@ class FitFrame(object):
                 print_log(f"Fit with {n_elements} free elements and {n_freepars} free parameters of {len(rev_model_type.split('+'))} models: ", 
                           self.log_message, self.print_step)
                 print_log(f"Reduced chi-squared with scaled errors = {chi_sq:.3f} for spectrum+SED;", self.log_message, self.print_step)
-                spec_chi_sq = np.sum(chi_w[:self.num_spec_wave]**2)
+                spec_chi_sq = (chi_w[:self.num_spec_wave]**2).sum()
                 print_log(f"Reduced chi-squared with scaled errors = {spec_chi_sq:.3f} for pure spectrum;", self.log_message, self.print_step)
-                phot_chi_sq = np.sum(chi_w[-self.num_phot_band:]**2)
+                phot_chi_sq = (chi_w[-self.num_phot_band:]**2).sum()
                 print_log(f"Reduced chi-squared with scaled errors = {phot_chi_sq:.3f} for pure phot-SED;", self.log_message, self.print_step)
 
                 orig_ferr_w = np.hstack((self.spec['ferr_w'], self.phot['ferr_b']))
                 tmp_chi_w = np.divide(chi_w*ferr_w, orig_ferr_w, where=mask_valid_w, out=np.zeros_like(ferr_w))
-                spec_chi_sq = np.sum(tmp_chi_w[:self.num_spec_wave]**2)
+                spec_chi_sq = (tmp_chi_w[:self.num_spec_wave]**2).sum()
                 print_log(f"Reduced chi-squared with original errors = {spec_chi_sq:.3f} for pure spectrum;", self.log_message, self.print_step)
-                phot_chi_sq = np.sum(tmp_chi_w[-self.num_phot_band:]**2)
+                phot_chi_sq = (tmp_chi_w[-self.num_phot_band:]**2).sum()
                 print_log(f"Reduced chi-squared with original errors = {phot_chi_sq:.3f} for pure phot-SED.", self.log_message, self.print_step)
 
             return coeff_e, model_w, chi_sq
@@ -854,7 +880,7 @@ class FitFrame(object):
                     x0[mask_x] = x0_new[mask_x] # update x0 used in this step
                     # use dual_annealing with a few iteration for a rough solution of global minima
                     # calling func of dual_annealing should return a scalar; 
-                    da_solution = dual_annealing(lambda x, *args: 0.5*np.sum(self.linear_process(x, *args)**2),
+                    da_solution = dual_annealing(lambda x, *args: 0.5*(self.linear_process(x, *args)**2).sum(),
                                                  list(zip(self.bound_min_p[mask_x], self.bound_max_p[mask_x])), 
                                                  args=args, x0=x0[mask_x], no_local_search=True, initial_temp=1e4, visit=1.5, maxiter=da_niter_max)
                     x0[mask_x] = da_solution.x # update x0 used in this step
@@ -913,10 +939,10 @@ class FitFrame(object):
                             achieved_chi_sq = copy(chi_sq) # save the achieved min chi_sq
                             achieved_ls_solution = copy(ls_solution)
                         print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max}, '+
-                                  f'poor-fit with chi_sq = {chi_sq:.3f} > {accept_chi_sq:.3f} (goal) --> try refit; '+
+                                  f'poor-fit with chi_sq = {chi_sq:.3f} > {accept_chi_sq:.3f} (goal) --> try refitting; '+
                                   f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.print_step)
                 else:
-                    print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max} failed --> try refit; '+
+                    print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max} failed --> try refitting; '+
                               f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.print_step) 
         if accept_condition: 
             best_fit = ls_solution # accept the solution in the final try
@@ -978,14 +1004,18 @@ class FitFrame(object):
         if save_best_fit:
             step_id = fit_message.split(':')[0]
             if ~np.isin(step_id, [*self.output_s]):
+                # copy the format template
                 self.output_s[step_id] = copy(self.output_s['empty_step'])
-            self.output_s[step_id]['chi_sq_l'][i_loop] = chi_sq
-            for mod in model_type.split('+'):
-                fp0, fp1, fe0, fe1 = self.search_model_index(mod, self.full_model_type)
-                mp0, mp1, me0, me1 = self.search_model_index(mod, model_type, mask_lite_dict)
-                self.output_s[step_id]['par_lp'][i_loop, fp0:fp1] = best_fit.x[mp0:mp1]
-                self.output_s[step_id]['coeff_le'][i_loop, fe0:fe1][mask_lite_dict[mod]] = coeff_e[me0:me1]
-            self.output_s[step_id]['ret_dict_l'][i_loop] = ret_dict
+
+            if (self.output_s[step_id]['chi_sq_l'][i_loop] == 0) | (self.output_s[step_id]['chi_sq_l'][i_loop] > chi_sq): 
+                # save results only if the loop is the 1st run or the refitting gets smaller chi_sq
+                self.output_s[step_id]['chi_sq_l'][i_loop] = chi_sq
+                for mod in model_type.split('+'):
+                    fp0, fp1, fe0, fe1 = self.search_model_index(mod, self.full_model_type)
+                    mp0, mp1, me0, me1 = self.search_model_index(mod, model_type, mask_lite_dict)
+                    self.output_s[step_id]['par_lp'][i_loop, fp0:fp1] = best_fit.x[mp0:mp1]
+                    self.output_s[step_id]['coeff_le'][i_loop, fe0:fe1][mask_lite_dict[mod]] = coeff_e[me0:me1]
+                self.output_s[step_id]['ret_dict_l'][i_loop] = ret_dict
         ##############################################################
 
         print_log('#### <'+fit_message.split(':')[0]+'> finish: '+
@@ -997,15 +1027,17 @@ class FitFrame(object):
 
         return ret_dict
 
-    def main_fit(self):
+    def main_fit(self, refit=False):
         self.time_init = time.time()
 
         if not self.input_initialized: 
             print_log(f'\n', self.log_message, display=False)
             print_log(f'[Note] Re-initialize FitFrame since the input data is modified.', self.log_message)
+            output_s = self.output_s # save the current fitting results
             log_message = self.log_message # save the current running message
             current_canvas = self.canvas # save the current canvas
             self.__init__(**self.input_args) # reset FitFrame if data is modified (e.g., in extract_results)
+            self.output_s = output_s # copy the current fitting results
             self.log_message = log_message + ['\n'] + self.log_message + ['\n'] # copy the current running message
             self.canvas = current_canvas # transfer the current canvas
 
@@ -1016,12 +1048,25 @@ class FitFrame(object):
             mask_valid_b = self.phot['mask_valid_b']
             sed_wave_w = self.sed['wave_w']
 
-        num_loops = self.num_loops
-        success_count, total_count = self.fit_quality_l.sum(), self.fit_quality_l.sum()
-        while success_count < num_loops:
-            i_loop = np.where(self.fit_quality_l == 0)[0][0] 
-            # i_loop is the 0th loop index without good fits, used to save the current fitting results
-            print_log(center_string(f'Loop {i_loop+1}/{num_loops} starts', 80), self.log_message)
+        # restore the fitting status if it is reloaded
+        step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
+        if np.isin(step, [*self.output_s]): 
+            if not refit:
+                print_log(center_string(f'Reload the results from the finished fitting loops', 80), self.log_message)
+                success_count = self.examine_fit_quality() # self.fit_quality_l updated
+                total_count = copy(success_count)
+            else:
+                print_log(center_string(f'Current fitting results are erased; refitting starts', 80), self.log_message)
+                self.fit_quality_l[:] = False
+                success_count, total_count = 0, 0
+        else:
+            self.fit_quality_l = np.zeros(self.num_loops, dtype='bool')
+            success_count, total_count = 0, 0
+
+        while success_count < self.num_loops:
+            i_loop = np.where(~self.fit_quality_l)[0][0] 
+            # i_loop is the 0th loop index without good fits, which used to save the results of current fitting loop
+            print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} starts', 80), self.log_message)
             self.time_loop = time.time()
 
             if i_loop == 0: 
@@ -1029,10 +1074,6 @@ class FitFrame(object):
             else:
                 print_log(center_string(f'Fit the mock spectrum', 80), self.log_message, self.print_step)
             spec_fmock_w = self.create_mock_data(i_loop)
-
-            # create random initial parameters
-            # x0mock = self.bound_min_p + np.random.rand(self.num_tot_pars) * self.bound_width_p
-            # x0mock = np.random.uniform(self.bound_min_p, self.bound_max_p)
             
             ####################################################
             # # for test
@@ -1318,36 +1359,24 @@ class FitFrame(object):
             ########################################
             
             success_count += 1; total_count += 1
-            self.fit_quality_l[i_loop] = 1 # set as good fits temporarily
+            self.fit_quality_l[i_loop] = True # set as good fits temporarily
             last_chi_sq = joint_fit_2['chi_sq'] if not self.have_phot else joint_fit_3['chi_sq']
-            print_log(center_string(f'Loop {i_loop+1}/{num_loops} ends, chi_sq = {last_chi_sq:.3f} '+
+            print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} ends, chi_sq = {last_chi_sq:.3f} '+
                                     f'{time.time()-self.time_loop:.1f}s', 80), self.log_message)
                 
             # check fitting quality after all loops finished
             # allow additional loops to remove outlier fit; exit if additional loops > 3
-            if (success_count == num_loops) & (total_count <= (num_loops+3)):
-                best_chi_sq_l = self.output_s[[*self.output_s][-1]]['chi_sq_l'] # use chi_sq_l of the last step
-                if num_loops > 1:
-                    accept_chi_sq = best_chi_sq_l[1:].min() * 1.5
-                else:
-                    accept_chi_sq = self.accept_chi_sq # for a single fitting
-                mask_goodfit_l = best_chi_sq_l < accept_chi_sq
-                success_count = np.sum(mask_goodfit_l) # reduce counts to trigger refit
-                print_log(f'{success_count} loops have good fit, chi_sq = {np.round(best_chi_sq_l[mask_goodfit_l], 3)}', self.log_message)
-                print_log(f'{num_loops-success_count} loops need refit, chi_sq = {np.round(best_chi_sq_l[~mask_goodfit_l], 3)}', self.log_message)
-                # mask out bad fit results to allow refit
-                self.fit_quality_l[~mask_goodfit_l] = 0
-                for step_id in [*self.output_s]: self.output_s[step_id]['chi_sq_l'][~mask_goodfit_l] = 0
-                for step_id in [*self.output_s]: self.output_s[step_id]['par_lp'][~mask_goodfit_l, :] = 0
-                for step_id in [*self.output_s]: self.output_s[step_id]['coeff_le'][~mask_goodfit_l, :] = 0
+            if (success_count == self.num_loops) & (total_count <= (self.num_loops+3)):
+                success_count = self.examine_fit_quality() # self.fit_quality_l updated
 
             if self.save_per_loop:
-                self.save_to_file(self.output_filename) 
+                self.save_to_file(self.output_filename)
+
         print_log(center_string(f'{success_count} successful loops in total {total_count} loops, '+
                                 f'{time.time()-self.time_init:.1f}s', 80), self.log_message)
 
         # self.output_s is the core results of the fitting
-        # delete the format with empty values
+        # delete the format template with empty values
         if np.isin('empty_step', [*self.output_s]): hide_return = self.output_s.pop('empty_step') 
 
         # create outputs
@@ -1382,10 +1411,9 @@ class FitFrame(object):
             sed_wave_w = self.sed['wave_w']
             phot_trans_bw = self.pframe.read_transmission(name_b=self.phot_name_b, trans_dir=self.phot_trans_dir, wave_w=sed_wave_w)[1]
 
-        num_loops = self.num_loops
         rev_model_type = ''
         for mod in self.full_model_type.split('+'):
-            for i_loop in range(num_loops): 
+            for i_loop in range(self.num_loops): 
                 if np.isin(mod, best_ret_dict_l[i_loop]['model_type'].split('+')):
                     if ~np.isin(mod, rev_model_type.split('+')):
                         rev_model_type += mod+'+'
@@ -1432,17 +1460,17 @@ class FitFrame(object):
             num_comps = self.model_dict[mod]['cframe'].num_comps            
             for i_comp in range(num_comps): # init results for each comp of mod
                 output_mc[mod][comp_c[i_comp]] = {}
-                output_mc[mod][comp_c[i_comp]]['spec_lw'] = np.zeros((num_loops, len(spec_wave_w)))
+                output_mc[mod][comp_c[i_comp]]['spec_lw'] = np.zeros((self.num_loops, len(spec_wave_w)))
                 if self.have_phot:
-                    output_mc[mod][comp_c[i_comp]]['sed_lw'] = np.zeros((num_loops, len(sed_wave_w)))
+                    output_mc[mod][comp_c[i_comp]]['sed_lw'] = np.zeros((self.num_loops, len(sed_wave_w)))
             output_mc[mod]['sum'] = {} # init results for the comp's sum for each mod
-            output_mc[mod]['sum']['spec_lw'] = np.zeros((num_loops, len(spec_wave_w)))
+            output_mc[mod]['sum']['spec_lw'] = np.zeros((self.num_loops, len(spec_wave_w)))
             if self.have_phot:
-                output_mc[mod]['sum']['sed_lw'] = np.zeros((num_loops, len(sed_wave_w)))
+                output_mc[mod]['sum']['sed_lw'] = np.zeros((self.num_loops, len(sed_wave_w)))
         output_mc['tot']['fmod'] = {} # init results for the total model
-        output_mc['tot']['fmod']['spec_lw'] = np.zeros((num_loops, len(spec_wave_w)))
+        output_mc['tot']['fmod']['spec_lw'] = np.zeros((self.num_loops, len(spec_wave_w)))
         if self.have_phot:
-            output_mc['tot']['fmod']['sed_lw'] = np.zeros((num_loops, len(sed_wave_w)))
+            output_mc['tot']['fmod']['sed_lw'] = np.zeros((self.num_loops, len(sed_wave_w)))
 
         # extract the best-fit models in spec and spec+SED fitting
         for mod in rev_model_type.split('+'): 
@@ -1459,7 +1487,7 @@ class FitFrame(object):
                     i_e0 += 0 if i_comp == 0 else int(num_coeffs / num_comps)
                     i_e1 += int(num_coeffs / num_comps)
 
-                for i_loop in range(num_loops): 
+                for i_loop in range(self.num_loops): 
                     spec_fmod_ew = self.model_dict[mod]['spec_func'](spec_wave_w, best_par_lp[i_loop, fp0:fp1], conv_nbin=self.conv_nbin_max)
                     spec_fmod_w  = best_coeff_le[i_loop, fe0:fe1][i_e0:i_e1] @ spec_fmod_ew[i_e0:i_e1]
                     output_mc[mod][comp_c[i_comp]]['spec_lw'][i_loop, :] = spec_fmod_w
