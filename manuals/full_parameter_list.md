@@ -84,10 +84,12 @@
    in calculation of revised errors (i.e., to reflect calibration errors).
    The convolution is adopted to avoid involving artifacts into Monte Carlo mock spectra surrounding bright lines.
    Default is `10000` (km/s). Set it to `0` if you want to disable the convolution. 
-- `examine_result` (bool, optional) \
-   If set `examine_result=False`, the examination of S/N of models and the updating of fitting
-   (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)) will be skipped.
-   Default is `True`.
+- `examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
+   If `examine_result=True` (default), the best-fit models will be examined.
+   All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled.
+   An additional fitting step will be performed with the updated model configuration 
+   (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)).
+   If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
 - `accept_chi_sq` (float, optional) \
    The accepted $\chi^2$ in the initial and intermediate fitting steps. Default is `3`.
    The accepted $\chi^2$ in the final fitting step will be dynamically chosen with $\chi^2$ of the progenitor steps. 
@@ -122,7 +124,12 @@
    The convolved spectrum at wavelengths between the 5 selected wavelengths will be interploted linearly using the
    spectra convolved with the kernel at the two neighboring selected wavelengths. 
    A small number of `conv_nbin_max` works well for a smooth function of wavelength-dependent resolution.
-   Increasing the number will slow down the fitting process significantly. 
+   Increasing the number will slow down the fitting process significantly.
+- `R_mod_ratio` (float, optional) \
+   In order to save the memory usage and accelerate the running speed, 
+   the model templated will be smoothed and downsampled to match the sampling and resulotion of the input data.  
+   `R_mod_ratio` is the ratio of modified model resolution and data instrumental resolution (set with `spec_R_inst_w`).
+   Default is 2, i.e., the model is smoothed and downsampled to have twice better resolution than the input data. 
 
 ### Auxiliary
 - `print_step` (bool, optional) \
