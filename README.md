@@ -55,14 +55,14 @@ which is used to calculate intrinsic flux ratios of emission lines:
 pip install s3fit[pyneb]
 ```
 
-The test environment is list as follows. 
+Dependencies:
 ```
-python = 3.10
-scipy = 1.12.0
-numpy = 1.26.4
-astropy = 6.0.0
-matplotlib = 3.9.1
-pyneb = 1.1.23 (optional)
+python >= 3.10
+scipy >= 1.12
+numpy >= 1.26
+astropy >= 6.0
+matplotlib >= 3.9
+pyneb >= 1.1.23 (optional)
 ```
 
 ## Future updating
