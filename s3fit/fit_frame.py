@@ -9,7 +9,7 @@ np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.optimize import lsq_linear, least_squares, dual_annealing
 from scipy.signal import savgol_filter
-# from joblib import Parallel, delayed
+from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 
 from .config_frame import ConfigFrame
@@ -32,6 +32,7 @@ class FitFrame(object):
                  accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
                  fit_grid='linear', conv_nbin_max=5, R_mod_ratio=2, 
+                 use_multi_thread=False, num_multi_thread=-1, 
                  print_step=True, plot_step=False, canvas=None, 
                  save_per_loop=False, output_filename=None, 
                  save_test=False, verbose=False): 
@@ -79,6 +80,11 @@ class FitFrame(object):
         # number of mock data
         self.num_mocks = num_mocks
         print_log(f"Perform fitting for the original data and {self.num_mocks} mock data.", self.log_message)
+        # control parallel mock data fitting 
+        self.use_multi_thread = use_multi_thread # if use joblib parallelism with backend="threading"
+        self.num_multi_thread = num_multi_thread # number of threads 
+        if self.use_multi_thread & (self.num_mocks > 1): 
+            print_log(f"Perform fitting for the {self.num_mocks} mock data in multithreading with {num_multi_thread if num_multi_thread !=-1 else 'system available'} threads.", self.log_message)
 
         # initial ratio to estimate calibration error
         self.inst_calib_ratio = inst_calib_ratio
@@ -1007,8 +1013,8 @@ class FitFrame(object):
                 # copy the format template
                 self.output_s[step_id] = copy(self.output_s['empty_step'])
 
-            if (self.output_s[step_id]['chi_sq_l'][i_loop] == 0) | (self.output_s[step_id]['chi_sq_l'][i_loop] > chi_sq): 
-                # save results only if the loop is the 1st run or the refitting gets smaller chi_sq
+            if (self.output_s[step_id]['chi_sq_l'][i_loop] < 0.01) | (self.output_s[step_id]['chi_sq_l'][i_loop] > chi_sq): 
+                # save results only if the loop is the 1st run (use < 0.01, not == 0, to make it robust and overwrite overfit), or the refitting gets smaller chi_sq
                 self.output_s[step_id]['chi_sq_l'][i_loop] = chi_sq
                 for mod in model_type.split('+'):
                     fp0, fp1, fe0, fe1 = self.search_model_index(mod, self.full_model_type)
@@ -1027,6 +1033,312 @@ class FitFrame(object):
 
         return ret_dict
 
+    def single_loop_fit(self, i_loop):
+
+        spec_wave_w, spec_flux_w, spec_ferr_w = self.spec['wave_w'], self.spec['flux_w'], self.spec['ferr_w']
+        mask_valid_w, mask_noline_w = self.spec['mask_valid_w'], self.spec['mask_noline_w']
+        if self.have_phot:
+            phot_wave_b, phot_flux_b, phot_ferr_b = self.phot['wave_b'], self.phot['flux_b'], self.phot['ferr_b']
+            mask_valid_b = self.phot['mask_valid_b']
+            sed_wave_w = self.sed['wave_w']
+
+        print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} starts', 80), self.log_message)
+        self.time_loop = time.time()
+
+        if i_loop == 0: 
+            print_log(center_string(f'Fit the original spectrum', 80), self.log_message, self.print_step)
+        else:
+            print_log(center_string(f'Fit the mock spectrum', 80), self.log_message, self.print_step)
+        spec_fmock_w = self.create_mock_data(i_loop)
+        
+        ####################################################
+        # # for test
+        # sys.exit()
+        ####################################################
+
+        ####################################################
+        ################## init fit cycle ##################
+        # determine model types for continuum fitting
+        cont_type = ''
+        for mod in self.full_model_type.split('+'):
+            if (mod != 'line') & self.model_dict[mod]['spec_enable']: cont_type += mod + '+'
+        cont_type = cont_type[:-1] # remove the last '+' 
+        print_log(f'Continuum models used in spectral fitting: {cont_type}', self.log_message, self.print_step)
+        ########################################
+        # obtain a rough fit of continuum with emission line wavelength ranges masked out
+        if np.isin('ssp', cont_type.split('+')): 
+            mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.print_step)
+            mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite)
+        else:
+            mask_lite_dict = self.update_mask_lite_dict()
+        cont_fit_init = self.nonlinear_process(None, spec_fmock_w, spec_ferr_w, mask_noline_w, 
+                                               cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=1, 
+                                               annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                               fit_message='cont_fit_init: spectral fitting, initialize continuum models', i_loop=i_loop)
+        ########################################
+        if np.isin('line', self.full_model_type.split('+')): 
+            # obtain a rough fit of emission lines with continuum of cont_fit_init subtracted
+            line_fit_init = self.nonlinear_process(None, (spec_fmock_w - cont_fit_init['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                                                   'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None,
+                                                   annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                                   fit_message='line_fit_init: spectral fitting, initialize emission lines', i_loop=i_loop)
+        else:
+            # just copy the cont_fit to line_fit. note that line_fit['line_spec_fmod_w'] = 0, but line_fit['fmod_w'] = cont_fit['fmod_w']
+            line_fit_init = cont_fit_init
+            self.output_s['line_fit_init'] = self.output_s['cont_fit_init']
+        ####################################################
+        ####################################################
+        
+        ####################################################
+        ################## 1st fit cycle ###################
+        # obtain a better fit of stellar continuum after subtracting emission lines of line_fit_init
+        if np.isin('ssp', cont_type.split('+')): 
+            mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.print_step)
+            mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite)
+        else:
+            mask_lite_dict = self.update_mask_lite_dict()
+        cont_fit_1 = self.nonlinear_process(None, (spec_fmock_w - line_fit_init['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                                            cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
+                                            annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                            fit_message='cont_fit_1: spectral fitting, update continuum models', i_loop=i_loop)
+        ########################################
+        if np.isin('line', self.full_model_type.split('+')): 
+            # examine if absorption line components are necessary
+            line_mod = self.model_dict['line']['spec_mod']
+            line_disabled_comps = [line_mod.cframe.comp_c[i_comp] for i_comp in range(line_mod.num_comps) if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption']
+            if len(line_disabled_comps) > 0:
+                mask_abs_w = mask_valid_w & (line_fit_init['line_spec_fmod_w'] < 0)
+                line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.accept_model_SN)
+                if not line_abs_examine:
+                    print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.accept_model_SN} (set by accept_model_SN).', 
+                              self.log_message, self.print_step)                 
+                    # fix the parameters of disabled components (to reduce number of free parameters)
+                    for i_comp in range(line_mod.num_comps):
+                        if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'
+                    # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
+                    mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_line_lite(disabled_comps=line_disabled_comps), dict=mask_lite_dict)
+            # obtain a better fit of emission lines after subtracting continuum models of cont_fit_1
+            # here use cont_fit_1['x0_final'] to transfer the best-fit parameters from cont_fit_1
+            line_fit_1 = self.nonlinear_process(cont_fit_1['x0_final'], (spec_fmock_w - cont_fit_1['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                                                'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
+                                                annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                                fit_message='line_fit_1: spectral fitting, update emission lines', i_loop=i_loop)
+        else:
+            # just copy the cont_fit to line_fit, i.e., with zero line flux
+            line_fit_1 = cont_fit_1
+            self.output_s['line_fit_1'] = self.output_s['cont_fit_1']
+        ########################################
+        # joint fit of continuum models and emission lines with best-fit parameters of cont_fit_1 and line_fit_1
+        model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
+        joint_fit_1 = self.nonlinear_process(line_fit_1['x0_final'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
+                                             model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
+                                             annealing=False, perturb_scale=self.perturb_scale, accept_chi_sq=max(cont_fit_1['chi_sq'], line_fit_1['chi_sq']),
+                                             fit_message='joint_fit_1: spectral fitting, fit with all models', i_loop=i_loop) 
+        ################################################################
+        ################################################################
+
+        ################################################################
+        ############### Examine models and 2nd fit cycle ###############
+        if self.examine_result: 
+            ########################################
+            ########### Examine models #############
+            print_log(center_string(f'Examine if each continuum model is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
+                      self.log_message, self.print_step)
+            cont_type = '' # reset
+            for mod in joint_fit_1['model_type'].split('+'):
+                if mod == 'line': continue
+                mp0, mp1, me0, me1 = self.search_model_index(mod, joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
+                spec_fmod_ew = self.model_dict[mod]['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_dict'][mod], conv_nbin=1)
+                spec_fmod_w = joint_fit_1['coeff_e'][me0:me1] @ spec_fmod_ew
+                mod_peak_SN, mod_examine = self.examine_model_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
+                if mod_examine: 
+                    cont_type += mod + '+'
+                    print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
+                else:
+                    print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
+            if cont_type != '':
+                cont_type = cont_type[:-1] # remove the last '+'
+                print_log(f'#### Continuum models after examination: {cont_type}', self.log_message, self.print_step)
+            else:
+                cont_type = 'ssp'
+                print_log(f'#### Continuum is very faint, only stellar continuum model is enabled.', self.log_message, self.print_step)
+            # fix the parameters of disabled models (to reduce number of free parameters)
+            for mod in joint_fit_1['model_type'].split('+'):
+                if mod == 'line': continue
+                if ~np.isin(mod, cont_type.split('+')): self.model_dict[mod]['cframe'].tie_cp[:,:] = 'fix'
+            ########################################
+            print_log(center_string(f'Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
+                      self.log_message, self.print_step)
+            if np.isin('line', joint_fit_1['model_type'].split('+')): 
+                line_mod = self.model_dict['line']['spec_mod']
+                mp0, mp1, me0, me1 = self.search_model_index('line', joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
+                line_spec_fmod_ew = self.model_dict['line']['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_dict']['line'])
+                line_comps = [] 
+                for i_comp in range(line_mod.num_comps):
+                    line_comp = line_mod.cframe.comp_c[i_comp]
+                    mask_line_lite = line_mod.mask_line_lite(enabled_comps=[line_comp])[joint_fit_1['mask_lite_dict']['line']]
+                    line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][me0:me1][mask_line_lite] @ line_spec_fmod_ew[mask_line_lite, :]
+                    line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
+                    if line_comp_examine: 
+                        line_comps.append(line_comp)
+                        print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
+                    else:
+                        print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
+                if len(line_comps) > 0:
+                    print_log(f'#### Emission line components after examination: {line_comps}', self.log_message, self.print_step)
+                else:
+                    line_comps.append(line_mod.cframe.comp_c[0]) # only use the 1st component if emission lines are too faint
+                    print_log(f'#### Emission lines are too faint, only {line_comps} is enabled.', self.log_message, self.print_step)                    
+                # fix the parameters of disabled components (to reduce number of free parameters)
+                for i_comp in range(line_mod.num_comps):
+                    if ~np.isin(line_mod.cframe.comp_c[i_comp], line_comps): self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'                
+                # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
+                mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_line_lite(enabled_comps=line_comps), dict=mask_lite_dict)
+            ########################################
+            # update parameter_constraints since parameters of disabled model components are fixed
+            self.set_par_constraints()
+            ########################################
+            ########################################
+
+            ########################################
+            ############# 2nd fit cycle ############
+            # update continuum models after model examination
+            # initialize parameters using best-fit of joint_fit_1
+            cont_fit_2a = self.nonlinear_process(joint_fit_1['x0_final'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                                                 cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
+                                                 annealing=False, perturb_scale=0, 
+                                                 fit_message='cont_fit_2a: spectral fitting, update continuum models', i_loop=i_loop) 
+            ########################################
+            # in steps above, ssp models in a sparse grid of ages (and metalicities) are used, now update continuum fitting with all allowed ssp models
+            # initialize parameters using best-fit of cont_fit_2a
+            if np.isin('ssp', cont_type.split('+')): 
+                sfh_name = self.model_dict['ssp']['spec_mod'].sfh_names[0]
+                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_allowed(csp=(sfh_name!='nonparametric'))
+                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+                cont_fit_2b = self.nonlinear_process(cont_fit_2a['x0_final'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                                                     cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
+                                                     annealing=False, perturb_scale=self.perturb_scale, 
+                                                     fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
+                # create new mask_ssp_lite with new ssp_coeffs; do not use full allowed ssp models to save time
+                mp0, mp1, me0, me1 = self.search_model_index('ssp', cont_fit_2b['model_type'], cont_fit_2b['mask_lite_dict'])
+                ssp_coeff_e = cont_fit_2b['coeff_e'][me0:me1]
+                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_coeffs(ssp_coeff_e, num_mods_min=24, verbose=self.print_step)
+                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+            else:
+                cont_fit_2b = cont_fit_2a
+            ########################################
+            if np.isin('line', self.full_model_type.split('+')): 
+                # update emission line with the latest mask_lite_dict for el
+                # initialize parameters from best-fit of joint_fit_1 and subtract continuum models from cont_fit_2b
+                line_fit_2 = self.nonlinear_process(cont_fit_2b['x0_final'], (spec_fmock_w - cont_fit_2b['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                                                    'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
+                                                    annealing=False, perturb_scale=self.perturb_scale, 
+                                                    fit_message='line_fit_2: spectral fitting, update emission lines', i_loop=i_loop)
+            else:
+                # just copy the cont_fit to line_fit, i.e., with zero line flux
+                line_fit_2 = cont_fit_2b
+                self.output_s['line_fit_2'] = self.output_s['cont_fit_2b']
+            ########################################
+            # joint fit of continuum and emission lines with initial values from best-fit of cont_fit_2b and line_fit_2
+            model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
+            joint_fit_2 = self.nonlinear_process(line_fit_2['x0_final'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
+                                                 model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
+                                                 annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_2b['chi_sq'], line_fit_2['chi_sq']),
+                                                 fit_message='joint_fit_2: spectral fitting, update all models', i_loop=i_loop)
+            # set perturb_scale=0 since this is the final step for pure-spectral fitting
+            ########################################
+            ########################################
+        else:
+            # just copy the results of joint_fit_1 to joint_fit_2
+            joint_fit_2 = joint_fit_1
+            self.output_s['joint_fit_2'] = self.output_s['joint_fit_1']
+        ################################################################
+        ################################################################
+
+        ################################################################
+        ######################## 3rd fit cycle #########################
+        # simultaneous spectrum+SED fitting
+        if self.have_phot:
+            specphot_flux_w = np.hstack((spec_flux_w, phot_flux_b))
+            specphot_ferr_w = np.hstack((spec_ferr_w, phot_ferr_b))
+            specphot_mask_w = np.hstack((mask_valid_w, mask_valid_b))
+            # re-create mock spectrum and SED 
+            if i_loop == 0: 
+                print_log(center_string(f'Perform simultaneous spectrum+SED fitting with original data', 80), self.log_message, self.print_step)
+            else:
+                print_log(center_string(f'Perform simultaneous spectrum+SED fitting with mock data', 80), self.log_message, self.print_step)
+            specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True)
+            ########################################
+            # update model types for coninuum fitting
+            cont_type = ''
+            for mod in self.full_model_type.split('+'):
+                if (mod != 'line') & self.model_dict[mod]['sed_enable']: cont_type += mod + '+'
+            cont_type = cont_type[:-1] # remove the last '+' 
+            print_log(f'Continuum models used in spectrum+SED fitting: {cont_type}', self.log_message, self.print_step)
+            ########################################
+            # spectrum+SED fitting for continuum
+            # initialize parameters using best-fit of joint_fit_2; subtract emission lines from joint_fit_2
+            cont_fit_3a = self.nonlinear_process(joint_fit_2['x0_final'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
+                                                 specphot_reverr_w, specphot_mask_w, 
+                                                 cont_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
+                                                 annealing=False, perturb_scale=0, 
+                                                 fit_message='cont_fit_3a: spectrum+SED fitting, update continuum models', i_loop=i_loop) 
+            # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
+            ########################################
+            # update mask_lite_dict for ssp for spectrum+SED continuum fitting
+            if np.isin('ssp', cont_type.split('+')): 
+                sfh_name = self.model_dict['ssp']['spec_mod'].sfh_names[0]
+                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_allowed(csp=(sfh_name!='nonparametric'))
+                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+            # update scaled error based on chi_sq of cont_fit_3a and re-create mock data
+            specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3a['chi_sq'])
+            # use initial best-fit values from cont_fit_3a and subtract emission lines from joint_fit_2
+            cont_fit_3b = self.nonlinear_process(cont_fit_3a['x0_final'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
+                                                 specphot_reverr_w, specphot_mask_w, 
+                                                 cont_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
+                                                 annealing=False, perturb_scale=self.perturb_scale, 
+                                                 fit_message='cont_fit_3b: spectrum+SED fitting, update continuum models', i_loop=i_loop)
+            # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
+            if np.isin('ssp', cont_type.split('+')): 
+                # create new mask_ssp_lite with new ssp_coeffs; do not use full allowed ssp models to save time
+                mp0, mp1, me0, me1 = self.search_model_index('ssp', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_dict'])
+                ssp_coeff_e = cont_fit_3b['coeff_e'][me0:me1]
+                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_coeffs(ssp_coeff_e, num_mods_min=24, verbose=self.print_step)
+                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+            ########################################
+            if np.isin('line', self.full_model_type.split('+')): 
+                # update emission line after subtracting the lastest continuum models from cont_fit_3b
+                # initialize parameters from best-fit of joint_fit_2 (transfer via cont_fit_3b)
+                # update scaled error based on chi_sq of cont_fit_3b and re-create mock data
+                specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3b['chi_sq'])
+                line_fit_3 = self.nonlinear_process(cont_fit_3b['x0_final'], specphot_fmock_w - cont_fit_3b['cont_specphot_fmod_w'], 
+                                                    specphot_reverr_w, specphot_mask_w, 
+                                                    'line', mask_lite_dict, fit_phot=True, fit_grid='linear', conv_nbin=None, 
+                                                    annealing=False, perturb_scale=0, 
+                                                    fit_message='line_fit_3: spectral fitting, update emission lines', i_loop=i_loop)
+            else:
+                # just copy the cont_fit to line_fit, i.e., with zero line flux
+                line_fit_3 = cont_fit_3b
+                self.output_s['line_fit_3'] = self.output_s['cont_fit_3b']
+            ########################################
+            # joint fit of continuum models and emission lines with initial values from best-fit of cont_fit_3b and line_fit_3
+            # update scaled error based on chi_sq of line_fit_3 and re-create mock data
+            specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=line_fit_3['chi_sq'])
+            model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
+            joint_fit_3 = self.nonlinear_process(line_fit_3['x0_final'], specphot_fmock_w, specphot_reverr_w, specphot_mask_w, 
+                                                 model_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=2, 
+                                                 annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_3b['chi_sq'], line_fit_3['chi_sq']),
+                                                 fit_message='joint_fit_3: spectrum+SED fitting, update all models', i_loop=i_loop)
+            # set conv_nbin=2 instead of self.conv_nbin_max since this step may not be sensitive to convolved spectral features with scaled errors
+            # set perturb_scale=0 since this is the final step for spectrum+SED fitting
+        ########################################
+        ########################################
+
+        self.fit_quality_l[i_loop] = True # set as good fits temporarily
+        last_chi_sq = joint_fit_2['chi_sq'] if not self.have_phot else joint_fit_3['chi_sq']
+        print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} ends, chi_sq = {last_chi_sq:.3f} '+
+                                f'{time.time()-self.time_loop:.1f}s', 80), self.log_message)
+
     def main_fit(self, refit=False):
         self.time_init = time.time()
 
@@ -1041,345 +1353,50 @@ class FitFrame(object):
             self.log_message = log_message + ['\n'] + self.log_message + ['\n'] # copy the current running message
             self.canvas = current_canvas # transfer the current canvas
 
-        spec_wave_w, spec_flux_w, spec_ferr_w = self.spec['wave_w'], self.spec['flux_w'], self.spec['ferr_w']
-        mask_valid_w, mask_noline_w = self.spec['mask_valid_w'], self.spec['mask_noline_w']
-        if self.have_phot:
-            phot_wave_b, phot_flux_b, phot_ferr_b = self.phot['wave_b'], self.phot['flux_b'], self.phot['ferr_b']
-            mask_valid_b = self.phot['mask_valid_b']
-            sed_wave_w = self.sed['wave_w']
-
         # restore the fitting status if it is reloaded
         step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
         if np.isin(step, [*self.output_s]): 
             if not refit:
                 print_log(center_string(f'Reload the results from the finished fitting loops', 80), self.log_message)
                 success_count = self.examine_fit_quality() # self.fit_quality_l updated
-                total_count = copy(success_count)
             else:
                 print_log(center_string(f'Current fitting results are erased; refitting starts', 80), self.log_message)
                 self.fit_quality_l[:] = False
-                success_count, total_count = 0, 0
+                success_count = 0
         else:
             self.fit_quality_l = np.zeros(self.num_loops, dtype='bool')
-            success_count, total_count = 0, 0
+            success_count = 0
 
-        while success_count < self.num_loops:
-            i_loop = np.where(~self.fit_quality_l)[0][0] 
-            # i_loop is the 0th loop index without good fits, which used to save the results of current fitting loop
-            print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} starts', 80), self.log_message)
-            self.time_loop = time.time()
+        recycle_count = 0
+        while (recycle_count < 3) & (success_count < self.num_loops):
+            # pick up loops without good fits
+            index_loops = np.where(~self.fit_quality_l)[0]
 
-            if i_loop == 0: 
-                print_log(center_string(f'Fit the original spectrum', 80), self.log_message, self.print_step)
+            if not self.use_multi_thread: 
+                for i_loop in index_loops:
+                    self.single_loop_fit(i_loop) # self.fit_quality_l[i_loop] updated
+                    if self.save_per_loop: self.save_to_file(self.output_filename)
             else:
-                print_log(center_string(f'Fit the mock spectrum', 80), self.log_message, self.print_step)
-            spec_fmock_w = self.create_mock_data(i_loop)
-            
-            ####################################################
-            # # for test
-            # sys.exit()
-            ####################################################
+                if ~self.fit_quality_l[0]: 
+                    # run original data fitting individually
+                    self.single_loop_fit(0) 
+                    index_loops = index_loops[1:] # remove 0th loop if it is included
+                # run mock data fitting in parallel
+                _ = Parallel(n_jobs=self.num_multi_thread, backend="threading")(delayed(self.single_loop_fit)(i_loop) for i_loop in index_loops)
+                if self.save_per_loop: self.save_to_file(self.output_filename)
 
-            ####################################################
-            ################## init fit cycle ##################
-            # determine model types for continuum fitting
-            cont_type = ''
-            for mod in self.full_model_type.split('+'):
-                if (mod != 'line') & self.model_dict[mod]['spec_enable']: cont_type += mod + '+'
-            cont_type = cont_type[:-1] # remove the last '+' 
-            print_log(f'Continuum models used in spectral fitting: {cont_type}', self.log_message, self.print_step)
-            ########################################
-            # obtain a rough fit of continuum with emission line wavelength ranges masked out
-            if np.isin('ssp', cont_type.split('+')): 
-                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.print_step)
-                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite)
-            else:
-                mask_lite_dict = self.update_mask_lite_dict()
-            cont_fit_init = self.nonlinear_process(None, spec_fmock_w, spec_ferr_w, mask_noline_w, 
-                                                   cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=1, 
-                                                   annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
-                                                   fit_message='cont_fit_init: spectral fitting, initialize continuum models', i_loop=i_loop)
-            ########################################
-            if np.isin('line', self.full_model_type.split('+')): 
-                # obtain a rough fit of emission lines with continuum of cont_fit_init subtracted
-                line_fit_init = self.nonlinear_process(None, (spec_fmock_w - cont_fit_init['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                       'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None,
-                                                       annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
-                                                       fit_message='line_fit_init: spectral fitting, initialize emission lines', i_loop=i_loop)
-            else:
-                # just copy the cont_fit to line_fit. note that line_fit['line_spec_fmod_w'] = 0, but line_fit['fmod_w'] = cont_fit['fmod_w']
-                line_fit_init = cont_fit_init
-                self.output_s['line_fit_init'] = self.output_s['cont_fit_init']
-            ####################################################
-            ####################################################
-            
-            ####################################################
-            ################## 1st fit cycle ###################
-            # obtain a better fit of stellar continuum after subtracting emission lines of line_fit_init
-            if np.isin('ssp', cont_type.split('+')): 
-                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.print_step)
-                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite)
-            else:
-                mask_lite_dict = self.update_mask_lite_dict()
-            cont_fit_1 = self.nonlinear_process(None, (spec_fmock_w - line_fit_init['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
-                                                annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
-                                                fit_message='cont_fit_1: spectral fitting, update continuum models', i_loop=i_loop)
-            ########################################
-            if np.isin('line', self.full_model_type.split('+')): 
-                # examine if absorption line components are necessary
-                line_mod = self.model_dict['line']['spec_mod']
-                line_disabled_comps = [line_mod.cframe.comp_c[i_comp] for i_comp in range(line_mod.num_comps) if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption']
-                if len(line_disabled_comps) > 0:
-                    mask_abs_w = mask_valid_w & (line_fit_init['line_spec_fmod_w'] < 0)
-                    line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.accept_model_SN)
-                    if not line_abs_examine:
-                        print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.accept_model_SN} (set by accept_model_SN).', 
-                                  self.log_message, self.print_step)                 
-                        # fix the parameters of disabled components (to reduce number of free parameters)
-                        for i_comp in range(line_mod.num_comps):
-                            if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'
-                        # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
-                        mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_line_lite(disabled_comps=line_disabled_comps), dict=mask_lite_dict)
-                # obtain a better fit of emission lines after subtracting continuum models of cont_fit_1
-                # here use cont_fit_1['x0_final'] to transfer the best-fit parameters from cont_fit_1
-                line_fit_1 = self.nonlinear_process(cont_fit_1['x0_final'], (spec_fmock_w - cont_fit_1['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                    'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
-                                                    annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
-                                                    fit_message='line_fit_1: spectral fitting, update emission lines', i_loop=i_loop)
-            else:
-                # just copy the cont_fit to line_fit, i.e., with zero line flux
-                line_fit_1 = cont_fit_1
-                self.output_s['line_fit_1'] = self.output_s['cont_fit_1']
-            ########################################
-            # joint fit of continuum models and emission lines with best-fit parameters of cont_fit_1 and line_fit_1
-            model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
-            joint_fit_1 = self.nonlinear_process(line_fit_1['x0_final'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
-                                                 model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
-                                                 annealing=False, perturb_scale=self.perturb_scale, accept_chi_sq=max(cont_fit_1['chi_sq'], line_fit_1['chi_sq']),
-                                                 fit_message='joint_fit_1: spectral fitting, fit with all models', i_loop=i_loop) 
-            ################################################################
-            ################################################################
-
-            ################################################################
-            ############### Examine models and 2nd fit cycle ###############
-            if self.examine_result: 
-                ########################################
-                ########### Examine models #############
-                print_log(center_string(f'Examine if each continuum model is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
-                          self.log_message, self.print_step)
-                cont_type = '' # reset
-                for mod in joint_fit_1['model_type'].split('+'):
-                    if mod == 'line': continue
-                    mp0, mp1, me0, me1 = self.search_model_index(mod, joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
-                    spec_fmod_ew = self.model_dict[mod]['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_dict'][mod], conv_nbin=1)
-                    spec_fmod_w = joint_fit_1['coeff_e'][me0:me1] @ spec_fmod_ew
-                    mod_peak_SN, mod_examine = self.examine_model_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
-                    if mod_examine: 
-                        cont_type += mod + '+'
-                        print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
-                    else:
-                        print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
-                if cont_type != '':
-                    cont_type = cont_type[:-1] # remove the last '+'
-                    print_log(f'#### Continuum models after examination: {cont_type}', self.log_message, self.print_step)
-                else:
-                    cont_type = 'ssp'
-                    print_log(f'#### Continuum is very faint, only stellar continuum model is enabled.', self.log_message, self.print_step)
-                # fix the parameters of disabled models (to reduce number of free parameters)
-                for mod in joint_fit_1['model_type'].split('+'):
-                    if mod == 'line': continue
-                    if ~np.isin(mod, cont_type.split('+')): self.model_dict[mod]['cframe'].tie_cp[:,:] = 'fix'
-                ########################################
-                print_log(center_string(f'Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
-                          self.log_message, self.print_step)
-                if np.isin('line', joint_fit_1['model_type'].split('+')): 
-                    line_mod = self.model_dict['line']['spec_mod']
-                    mp0, mp1, me0, me1 = self.search_model_index('line', joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
-                    line_spec_fmod_ew = self.model_dict['line']['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_dict']['line'])
-                    line_comps = [] 
-                    for i_comp in range(line_mod.num_comps):
-                        line_comp = line_mod.cframe.comp_c[i_comp]
-                        mask_line_lite = line_mod.mask_line_lite(enabled_comps=[line_comp])[joint_fit_1['mask_lite_dict']['line']]
-                        line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][me0:me1][mask_line_lite] @ line_spec_fmod_ew[mask_line_lite, :]
-                        line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
-                        if line_comp_examine: 
-                            line_comps.append(line_comp)
-                            print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
-                        else:
-                            print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
-                    if len(line_comps) > 0:
-                        print_log(f'#### Emission line components after examination: {line_comps}', self.log_message, self.print_step)
-                    else:
-                        line_comps.append(line_mod.cframe.comp_c[0]) # only use the 1st component if emission lines are too faint
-                        print_log(f'#### Emission lines are too faint, only {line_comps} is enabled.', self.log_message, self.print_step)                    
-                    # fix the parameters of disabled components (to reduce number of free parameters)
-                    for i_comp in range(line_mod.num_comps):
-                        if ~np.isin(line_mod.cframe.comp_c[i_comp], line_comps): self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'                
-                    # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
-                    mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_line_lite(enabled_comps=line_comps), dict=mask_lite_dict)
-                ########################################
-                # update parameter_constraints since parameters of disabled model components are fixed
-                self.set_par_constraints()
-                ########################################
-                ########################################
-
-                ########################################
-                ############# 2nd fit cycle ############
-                # update continuum models after model examination
-                # initialize parameters using best-fit of joint_fit_1
-                cont_fit_2a = self.nonlinear_process(joint_fit_1['x0_final'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                     cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
-                                                     annealing=False, perturb_scale=0, 
-                                                     fit_message='cont_fit_2a: spectral fitting, update continuum models', i_loop=i_loop) 
-                ########################################
-                # in steps above, ssp models in a sparse grid of ages (and metalicities) are used, now update continuum fitting with all allowed ssp models
-                # initialize parameters using best-fit of cont_fit_2a
-                if np.isin('ssp', cont_type.split('+')): 
-                    sfh_name = self.model_dict['ssp']['spec_mod'].sfh_names[0]
-                    mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_allowed(csp=(sfh_name!='nonparametric'))
-                    mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
-                    cont_fit_2b = self.nonlinear_process(cont_fit_2a['x0_final'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                         cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
-                                                         annealing=False, perturb_scale=self.perturb_scale, 
-                                                         fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
-                    # create new mask_ssp_lite with new ssp_coeffs; do not use full allowed ssp models to save time
-                    mp0, mp1, me0, me1 = self.search_model_index('ssp', cont_fit_2b['model_type'], cont_fit_2b['mask_lite_dict'])
-                    ssp_coeff_e = cont_fit_2b['coeff_e'][me0:me1]
-                    mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_coeffs(ssp_coeff_e, num_mods_min=24, verbose=self.print_step)
-                    mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
-                else:
-                    cont_fit_2b = cont_fit_2a
-                ########################################
-                if np.isin('line', self.full_model_type.split('+')): 
-                    # update emission line with the latest mask_lite_dict for el
-                    # initialize parameters from best-fit of joint_fit_1 and subtract continuum models from cont_fit_2b
-                    line_fit_2 = self.nonlinear_process(cont_fit_2b['x0_final'], (spec_fmock_w - cont_fit_2b['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                        'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
-                                                        annealing=False, perturb_scale=self.perturb_scale, 
-                                                        fit_message='line_fit_2: spectral fitting, update emission lines', i_loop=i_loop)
-                else:
-                    # just copy the cont_fit to line_fit, i.e., with zero line flux
-                    line_fit_2 = cont_fit_2b
-                    self.output_s['line_fit_2'] = self.output_s['cont_fit_2b']
-                ########################################
-                # joint fit of continuum and emission lines with initial values from best-fit of cont_fit_2b and line_fit_2
-                model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
-                joint_fit_2 = self.nonlinear_process(line_fit_2['x0_final'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
-                                                     model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
-                                                     annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_2b['chi_sq'], line_fit_2['chi_sq']),
-                                                     fit_message='joint_fit_2: spectral fitting, update all models', i_loop=i_loop)
-                # set perturb_scale=0 since this is the final step for pure-spectral fitting
-                ########################################
-                ########################################
-            else:
-                # just copy the results of joint_fit_1 to joint_fit_2
-                joint_fit_2 = joint_fit_1
-                self.output_s['joint_fit_2'] = self.output_s['joint_fit_1']
-            ################################################################
-            ################################################################
-
-            ################################################################
-            ######################## 3rd fit cycle #########################
-            # simultaneous spectrum+SED fitting
-            if self.have_phot:
-                specphot_flux_w = np.hstack((spec_flux_w, phot_flux_b))
-                specphot_ferr_w = np.hstack((spec_ferr_w, phot_ferr_b))
-                specphot_mask_w = np.hstack((mask_valid_w, mask_valid_b))
-                # re-create mock spectrum and SED 
-                if i_loop == 0: 
-                    print_log(center_string(f'Perform simultaneous spectrum+SED fitting with original data', 80), self.log_message, self.print_step)
-                else:
-                    print_log(center_string(f'Perform simultaneous spectrum+SED fitting with mock data', 80), self.log_message, self.print_step)
-                specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True)
-                ########################################
-                # update model types for coninuum fitting
-                cont_type = ''
-                for mod in self.full_model_type.split('+'):
-                    if (mod != 'line') & self.model_dict[mod]['sed_enable']: cont_type += mod + '+'
-                cont_type = cont_type[:-1] # remove the last '+' 
-                print_log(f'Continuum models used in spectrum+SED fitting: {cont_type}', self.log_message, self.print_step)
-                ########################################
-                # spectrum+SED fitting for continuum
-                # initialize parameters using best-fit of joint_fit_2; subtract emission lines from joint_fit_2
-                cont_fit_3a = self.nonlinear_process(joint_fit_2['x0_final'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
-                                                     specphot_reverr_w, specphot_mask_w, 
-                                                     cont_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
-                                                     annealing=False, perturb_scale=0, 
-                                                     fit_message='cont_fit_3a: spectrum+SED fitting, update continuum models', i_loop=i_loop) 
-                # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
-                ########################################
-                # update mask_lite_dict for ssp for spectrum+SED continuum fitting
-                if np.isin('ssp', cont_type.split('+')): 
-                    sfh_name = self.model_dict['ssp']['spec_mod'].sfh_names[0]
-                    mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_allowed(csp=(sfh_name!='nonparametric'))
-                    mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
-                # update scaled error based on chi_sq of cont_fit_3a and re-create mock data
-                specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3a['chi_sq'])
-                # use initial best-fit values from cont_fit_3a and subtract emission lines from joint_fit_2
-                cont_fit_3b = self.nonlinear_process(cont_fit_3a['x0_final'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
-                                                     specphot_reverr_w, specphot_mask_w, 
-                                                     cont_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
-                                                     annealing=False, perturb_scale=self.perturb_scale, 
-                                                     fit_message='cont_fit_3b: spectrum+SED fitting, update continuum models', i_loop=i_loop)
-                # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
-                if np.isin('ssp', cont_type.split('+')): 
-                    # create new mask_ssp_lite with new ssp_coeffs; do not use full allowed ssp models to save time
-                    mp0, mp1, me0, me1 = self.search_model_index('ssp', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_dict'])
-                    ssp_coeff_e = cont_fit_3b['coeff_e'][me0:me1]
-                    mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_coeffs(ssp_coeff_e, num_mods_min=24, verbose=self.print_step)
-                    mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
-                ########################################
-                if np.isin('line', self.full_model_type.split('+')): 
-                    # update emission line after subtracting the lastest continuum models from cont_fit_3b
-                    # initialize parameters from best-fit of joint_fit_2 (transfer via cont_fit_3b)
-                    # update scaled error based on chi_sq of cont_fit_3b and re-create mock data
-                    specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3b['chi_sq'])
-                    line_fit_3 = self.nonlinear_process(cont_fit_3b['x0_final'], specphot_fmock_w - cont_fit_3b['cont_specphot_fmod_w'], 
-                                                        specphot_reverr_w, specphot_mask_w, 
-                                                        'line', mask_lite_dict, fit_phot=True, fit_grid='linear', conv_nbin=None, 
-                                                        annealing=False, perturb_scale=0, 
-                                                        fit_message='line_fit_3: spectral fitting, update emission lines', i_loop=i_loop)
-                else:
-                    # just copy the cont_fit to line_fit, i.e., with zero line flux
-                    line_fit_3 = cont_fit_3b
-                    self.output_s['line_fit_3'] = self.output_s['cont_fit_3b']
-                ########################################
-                # joint fit of continuum models and emission lines with initial values from best-fit of cont_fit_3b and line_fit_3
-                # update scaled error based on chi_sq of line_fit_3 and re-create mock data
-                specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=line_fit_3['chi_sq'])
-                model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
-                joint_fit_3 = self.nonlinear_process(line_fit_3['x0_final'], specphot_fmock_w, specphot_reverr_w, specphot_mask_w, 
-                                                     model_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=2, 
-                                                     annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_3b['chi_sq'], line_fit_3['chi_sq']),
-                                                     fit_message='joint_fit_3: spectrum+SED fitting, update all models', i_loop=i_loop)
-                # set conv_nbin=2 instead of self.conv_nbin_max since this step may not be sensitive to convolved spectral features with scaled errors
-                # set perturb_scale=0 since this is the final step for spectrum+SED fitting
-            ########################################
-            ########################################
-            
-            success_count += 1; total_count += 1
-            self.fit_quality_l[i_loop] = True # set as good fits temporarily
-            last_chi_sq = joint_fit_2['chi_sq'] if not self.have_phot else joint_fit_3['chi_sq']
-            print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} ends, chi_sq = {last_chi_sq:.3f} '+
-                                    f'{time.time()-self.time_loop:.1f}s', 80), self.log_message)
-                
             # check fitting quality after all loops finished
             # allow additional loops to remove outlier fit; exit if additional loops > 3
-            if (success_count == self.num_loops) & (total_count <= (self.num_loops+3)):
-                success_count = self.examine_fit_quality() # self.fit_quality_l updated
+            success_count = self.examine_fit_quality() # self.fit_quality_l updated
+            recycle_count += 1
 
-            if self.save_per_loop:
-                self.save_to_file(self.output_filename)
-
-        print_log(center_string(f'{success_count} successful loops in total {total_count} loops, '+
+        print_log(center_string(f'{success_count} successful loops in {recycle_count} recyles, '+
                                 f'{time.time()-self.time_init:.1f}s', 80), self.log_message)
 
         # self.output_s is the core results of the fitting
         # delete the format template with empty values
         if np.isin('empty_step', [*self.output_s]): hide_return = self.output_s.pop('empty_step') 
-
-        # create outputs
+        # extract results
         self.extract_results(step='final', print_results=True, return_results=False, num_sed_wave=5000)
 
         print_log(center_string(f'S3Fit all processes finish', 80), self.log_message)

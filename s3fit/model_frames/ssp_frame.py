@@ -271,7 +271,10 @@ class SSPFrame(object):
                 orig_flux_int_ew = copy(self.orig_flux_ew) # copy intrinsic models
             else:
                 sfh_factor_e = self.sfh_factor(i_comp, par_cp[i_comp,3:])
-                tmp_ew = self.orig_flux_ew * sfh_factor_e[:,None] # scaled with sfh_factor_e
+                tmp_mask_e = sfh_factor_e > 0
+                tmp_ew = np.zeros_like(self.orig_flux_ew)
+                tmp_ew[tmp_mask_e,:] = self.orig_flux_ew[tmp_mask_e,:] * sfh_factor_e[tmp_mask_e,None] # scaled with sfh_factor_e
+                # tmp_ew = self.orig_flux_ew * sfh_factor_e[:,None] # scaled with sfh_factor_e
                 orig_flux_int_ew = tmp_ew.reshape(self.num_mets, self.num_ages, len(self.orig_wave_w)).sum(axis=1)
                 # sum in ages to create csp 
             if mask_lite_e is not None:

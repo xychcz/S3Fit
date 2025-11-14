@@ -9,7 +9,7 @@ np.set_printoptions(linewidth=10000)
 import scipy.sparse as sparse
 from scipy.signal import fftconvolve
 from scipy.interpolate import interp1d
-from astropy.convolution import Gaussian1DKernel
+# from astropy.convolution import Gaussian1DKernel
 
 #####################################################################
 ####################### printing functions ##########################
@@ -61,11 +61,20 @@ def convert_linw_to_logw(linw_wave, linw_flux, linw_error=None, resolution=None)
     else:
         return logw_wave, logw_flux
 
+def gaussian_kernel_1d(sigma_pix, truncate=4.0):
+    # 1D Gaussian kernel equivalent to astropy.convolution.Gaussian1DKernel
+    radius = int(truncate * sigma_pix + 0.5)
+    x = np.arange(-radius, radius + 1)
+    kernel = np.exp(-0.5 * (x / sigma_pix)**2)
+    kernel /= kernel.sum()
+    return kernel
+
 def convolve_spec_logw(logw_wave, logw_flux, conv_sigma, axis=0):
     # logw_wave, logw_flux need to be uniform with log_e wavelength
     logw_width = np.log(logw_wave[1])-np.log(logw_wave[0])
-    kernel = Gaussian1DKernel(stddev=conv_sigma/299792.458/logw_width).array
-    kernel /= kernel.sum()
+    # kernel = Gaussian1DKernel(stddev=conv_sigma/299792.458/logw_width).array
+    # kernel /= kernel.sum()
+    kernel = gaussian_kernel_1d(conv_sigma/299792.458/logw_width)
     if len(logw_flux.shape) == 2:
         if axis == 0: kernel = kernel[:, None]
         if axis == 1: kernel = kernel[None, :]
@@ -78,8 +87,9 @@ def convolve_fix_width_fft(wave_w, flux_mw, fwhm_wave=None, reset_edge=True):
     sigma_wave = fwhm_wave / np.sqrt(np.log(256))
     sigma_pix = sigma_wave / np.gradient(wave_w).mean()
     
-    kernel = Gaussian1DKernel(stddev=sigma_pix).array
-    kernel /= kernel.sum()
+    # kernel = Gaussian1DKernel(stddev=sigma_pix).array
+    # kernel /= kernel.sum()
+    kernel = gaussian_kernel_1d(sigma_pix)
     if len(flux_mw.shape) == 1: 
         conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
     if len(flux_mw.shape) == 2: 
@@ -142,8 +152,9 @@ def convolve_var_width_fft(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=Non
         select_wave_w = np.linspace(min(wave_w), max(wave_w), num_bins)
         for wave_0 in select_wave_w:
             sigma_pix_0 = np.interp(wave_0, wave_w, sigma_pix_w)
-            kernel = Gaussian1DKernel(stddev=sigma_pix_0).array
-            kernel /= kernel.sum()
+            # kernel = Gaussian1DKernel(stddev=sigma_pix_0).array
+            # kernel /= kernel.sum()
+            kernel = gaussian_kernel_1d(sigma_pix_0)
             if len(flux_mw.shape) == 1: 
                 conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
             if len(flux_mw.shape) == 2: 
