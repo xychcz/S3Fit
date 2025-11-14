@@ -72,6 +72,9 @@
 - `num_mocks` (int, optional) \
    Number of the mock spectra for the Monte Carlo method.  
    The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
+- `use_multi_thread` (bool, optional) and `num_multi_thread` (int, optional) \
+   If `use_multi_thread=True` (default `False`), S<sup>3</sup>Fit with run the fitting for mock data in multithreading
+   with threads number specified by `num_multi_thread` (default `-1`, i.e., using all available system threads). 
 - `inst_calib_ratio` (float, optional) \
    Initial ratio to estimate the calibration uncertainties across multiple instruments. 
    Default is `0.1`, i.e., the calibration erros are estimated as 10% of the corresponding fluxes.
