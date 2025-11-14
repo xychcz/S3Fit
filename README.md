@@ -49,6 +49,7 @@ The core requirement of S<sup>3</sup>Fit is the two functions `least_squares` an
 (please read the 
 [fitting strategy](https://github.com/xychcz/S3Fit/blob/main/manuals/fitting_strategy.md) for details). 
 A strong dependency of S<sup>3</sup>Fit on these repositories is not expected. 
+`joblib` is required to run fitting in multithreading. 
 It is optional to run S<sup>3</sup>Fit with [PyNeb](http://research.iac.es/proyecto/PyNeb/), 
 which is used to calculate intrinsic flux ratios of emission lines:
 ```
@@ -58,10 +59,11 @@ pip install s3fit[pyneb]
 Dependencies:
 ```
 python >= 3.10
-scipy >= 1.12
-numpy >= 1.26
-astropy >= 6.0
-matplotlib >= 3.9
+scipy >= 1.12.0
+numpy >= 1.26.4
+astropy >= 6.0.0
+joblib >= 1.5.2
+matplotlib >= 3.9.1
 pyneb >= 1.1.23 (optional)
 ```
 
