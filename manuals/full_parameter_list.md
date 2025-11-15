@@ -27,6 +27,7 @@
 - `keep_invalid` (bool, optional) \
    Whether to keep the invalid wavelength range in the fitting. 
    If `keep_invalid=True`, mock data and models will be created in the invalid range for a reference with the costs of longer running time.
+   The parameter also works for the input photometric data. 
    Default is `False`. 
 
 ### Input photometric data
