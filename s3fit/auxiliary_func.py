@@ -61,11 +61,11 @@ def convert_linw_to_logw(linw_wave, linw_flux, linw_error=None, resolution=None)
     else:
         return logw_wave, logw_flux
 
-def gaussian_kernel_1d(sigma_pix, truncate=4.0):
+def gaussian_kernel_1d(dpix_sigma, truncate=4.0):
     # 1D Gaussian kernel equivalent to astropy.convolution.Gaussian1DKernel
-    radius = int(truncate * sigma_pix + 0.5)
+    radius = int(truncate * dpix_sigma + 0.5)
     x = np.arange(-radius, radius + 1)
-    kernel = np.exp(-0.5 * (x / sigma_pix)**2)
+    kernel = np.exp(-0.5 * (x / dpix_sigma)**2)
     kernel /= kernel.sum()
     return kernel
 
@@ -81,15 +81,16 @@ def convolve_spec_logw(logw_wave, logw_flux, conv_sigma, axis=0):
     logw_fcon = fftconvolve(logw_flux, kernel, mode='same', axes=axis)
     return logw_fcon
 
-def convolve_fix_width_fft(wave_w, flux_mw, fwhm_wave=None, reset_edge=True):
-    if fwhm_wave <= 0: fwhm_wave = 1e-6
-
-    sigma_wave = fwhm_wave / np.sqrt(np.log(256))
-    sigma_pix = sigma_wave / np.gradient(wave_w).mean()
+def convolve_fix_width_fft(wave_w, flux_mw, dw_fwhm=None, dpix_sigma=None, reset_edge=True, ret_kernel_pad=False):
     
-    # kernel = Gaussian1DKernel(stddev=sigma_pix).array
-    # kernel /= kernel.sum()
-    kernel = gaussian_kernel_1d(sigma_pix)
+    if dw_fwhm is not None:
+        dw_sigma   = dw_fwhm  / np.sqrt(np.log(256))
+        dpix_sigma = dw_sigma / np.median(np.gradient(wave_w))
+    
+    kernel = gaussian_kernel_1d(dpix_sigma)
+
+    # if ret_kernel_pad: return np.median(dw_sigma_w) * 4 # default kernel width of +/-4sigma
+
     if len(flux_mw.shape) == 1: 
         conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
     if len(flux_mw.shape) == 2: 
@@ -115,46 +116,47 @@ def convolve_fix_width_fft(wave_w, flux_mw, fwhm_wave=None, reset_edge=True):
 
     return conv_flux_mw 
 
-def convolve_var_width_fft(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=None, 
-                           fwhm_wave_ref=None, fwhm_vel_ref=None, R_ref=None, 
-                           R_inst_w=1e8, fwhm_wave_func=None, num_bins=10, reset_edge=True):
-    # if np.isscalar(R_inst_w):
-    #     if R_inst_w <= 0: R_inst_w = 1e-8
-    # else: 
-    #     R_inst_w[R_inst_w <= 0] = 1e-8
-    # if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
+def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=None, 
+                           dw_fwhm_obj=None, dv_fwhm_obj=None, 
+                           dw_fwhm_ref=None, dv_fwhm_ref=None, R_ref=None, 
+                           dw_fwhm_func=None, 
+                           num_bins=10, reset_edge=True, ret_kernel_pad=False):
 
-    if fwhm_wave_func is not None: 
-        if callable(fwhm_wave_func): 
-            fwhm_wave_w = fwhm_wave_func(wave_w)
+    if dw_fwhm_func is not None: 
+        if callable(dw_fwhm_func): 
+            dw_fwhm_w = dw_fwhm_func(wave_w)
     else:
-        if fwhm_wave_kin is not None: fwhm_wave_kin_w = fwhm_wave_kin * 1.0
-        if fwhm_vel_kin  is not None: fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
-        fwhm_wave_inst_w = wave_w / R_inst_w
-        fwhm2_wave_w = fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2
+        if dw_fwhm_obj is not None: dw_fwhm_obj_w = dw_fwhm_obj * 1.0
+        if dv_fwhm_obj is not None: dw_fwhm_obj_w = wave_w / (299792.458/dv_fwhm_obj)
+        dw2_fwhm_w = dw_fwhm_obj_w**2
 
-        fwhm_wave_ref_w = None
-        if fwhm_wave_ref is not None: fwhm_wave_ref_w = fwhm_wave_ref * 1.0
-        if fwhm_vel_ref  is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
-        if R_ref is not None: fwhm_wave_ref_w = wave_w / R_ref
-        if fwhm_wave_ref_w is not None:
-            fwhm2_wave_w -= fwhm_wave_ref_w**2 # reduce the dispersion of refered template
-            fwhm2_wave_w[fwhm2_wave_w <= 0] = 1e-8
-        fwhm_wave_w = np.sqrt(fwhm2_wave_w)
+        if R_inst_w is not None: 
+            dw_fwhm_inst_w = wave_w / R_inst_w
+            dw2_fwhm_w += dw_fwhm_inst_w**2
+
+        dw_fwhm_ref_w = None
+        if dw_fwhm_ref is not None: dw_fwhm_ref_w = dw_fwhm_ref * 1.0
+        if dv_fwhm_ref is not None: dw_fwhm_ref_w = wave_w / (299792.458/dv_fwhm_ref)
+        if R_ref       is not None: dw_fwhm_ref_w = wave_w / R_ref
+        if dw_fwhm_ref_w is not None:
+            dw2_fwhm_w -= dw_fwhm_ref_w**2 # reduce the dispersion of refered template
+            
+        dw2_fwhm_w[dw2_fwhm_w <= 0] = 1e-8 # avoid non-positive convolving width
+        dw_fwhm_w = np.sqrt(dw2_fwhm_w)
+
+    dw_sigma_w   = dw_fwhm_w  / np.sqrt(np.log(256))
+    dpix_sigma_w = dw_sigma_w / np.gradient(wave_w)
+
+    # if ret_kernel_pad: return dw_sigma_w.max() * 4 # default kernel width of +/-4sigma
 
     if num_bins == 1:
-        return convolve_fix_width_fft(wave_w, flux_mw, np.median(fwhm_wave_w), reset_edge)
+        return convolve_fix_width_fft(wave_w, flux_mw, dpix_sigma=np.median(dpix_sigma_w), reset_edge=reset_edge)
     else:
-        sigma_wave_w = fwhm_wave_w / np.sqrt(np.log(256))
-        sigma_pix_w = sigma_wave_w / np.gradient(wave_w)
-
         ret_flux_mw = np.zeros_like(flux_mw)
         select_wave_w = np.linspace(min(wave_w), max(wave_w), num_bins)
         for wave_0 in select_wave_w:
-            sigma_pix_0 = np.interp(wave_0, wave_w, sigma_pix_w)
-            # kernel = Gaussian1DKernel(stddev=sigma_pix_0).array
-            # kernel /= kernel.sum()
-            kernel = gaussian_kernel_1d(sigma_pix_0)
+            dpix_sigma_0 = np.interp(wave_0, wave_w, dpix_sigma_w)
+            kernel = gaussian_kernel_1d(dpix_sigma_0)
             if len(flux_mw.shape) == 1: 
                 conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
             if len(flux_mw.shape) == 2: 
@@ -162,7 +164,6 @@ def convolve_var_width_fft(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=Non
 
             # correct the artifact negative values
             if ~(flux_mw < 0).any() & (conv_flux_mw < 0).any():
-                # conv_flux_mw[conv_flux_mw < 0] = 0
                 conv_flux_mw[conv_flux_mw <= 0] = flux_mw[flux_mw > 0].min()
 
             factor_w = 1 - np.abs(wave_w-wave_0) / (select_wave_w[1]-select_wave_w[0])
@@ -173,9 +174,8 @@ def convolve_var_width_fft(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=Non
                 ret_flux_mw[:, mask_w] += conv_flux_mw[:, mask_w] * factor_w[None, mask_w]
 
         if reset_edge:
-            pad_total = len(kernel) - 1
-            pad_left = pad_total // 2
-            pad_right = pad_total - pad_left
+            pad_left  = len(gaussian_kernel_1d(dpix_sigma_w[0])) // 2
+            pad_right = len(gaussian_kernel_1d(dpix_sigma_w[-1])) // 2
             start = pad_left
             end = len(wave_w) - pad_right
             if len(flux_mw.shape) == 1: 
@@ -187,35 +187,36 @@ def convolve_var_width_fft(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=Non
 
         return ret_flux_mw
 
-def convolve_var_width_csr(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=None, 
-                           fwhm_wave_ref=None, fwhm_vel_ref=None, R_ref=None, 
-                           R_inst_w=1e8, fwhm_wave_func=None, num_bins=10, reset_edge=True):
-    # if np.isscalar(R_inst_w):
-    #     if R_inst_w <= 0: R_inst_w = 1e-8
-    # else: 
-    #     R_inst_w[R_inst_w <= 0] = 1e-8
-    # if fwhm_vel_kin <= 0: fwhm_vel_kin = 1e-8
+def convolve_var_width_csr(wave_w, flux_mw, R_inst_w=None, 
+                           dw_fwhm_obj=None, dv_fwhm_obj=None, 
+                           dw_fwhm_ref=None, dv_fwhm_ref=None, R_ref=None, 
+                           dw_fwhm_func=None, 
+                           sigma_cutoff=3, num_step=1000):
 
-    if fwhm_wave_func is not None: 
-        if callable(fwhm_wave_func): 
-            fwhm_wave_w = fwhm_wave_func(wave_w)
+    if dw_fwhm_func is not None: 
+        if callable(dw_fwhm_func): 
+            dw_fwhm_w = dw_fwhm_func(wave_w)
     else:
-        if fwhm_wave_kin is not None: fwhm_wave_kin_w = fwhm_wave_kin * 1.0
-        if fwhm_vel_kin  is not None: fwhm_wave_kin_w = wave_w / (299792.458/fwhm_vel_kin)
-        fwhm_wave_inst_w = wave_w / R_inst_w
-        fwhm2_wave_w = fwhm_wave_kin_w**2 + fwhm_wave_inst_w**2
+        if dw_fwhm_obj is not None: dw_fwhm_obj_w = dw_fwhm_obj * 1.0
+        if dv_fwhm_obj is not None: dw_fwhm_obj_w = wave_w / (299792.458/dv_fwhm_obj)
+        dw2_fwhm_w = dw_fwhm_obj_w**2
 
-        fwhm_wave_ref_w = None
-        if fwhm_wave_ref is not None: fwhm_wave_ref_w = fwhm_wave_ref * 1.0
-        if fwhm_vel_ref  is not None: fwhm_wave_ref_w = wave_w / (299792.458/fwhm_vel_ref)
-        if R_ref is not None: fwhm_wave_ref_w = wave_w / R_ref
-        if fwhm_wave_ref_w is not None:
-            fwhm2_wave_w -= fwhm_wave_ref_w**2 # reduce the dispersion of refered template
-            fwhm2_wave_w[fwhm2_wave_w <= 0] = 1e-8
-        fwhm_wave_w = np.sqrt(fwhm2_wave_w)
+        if R_inst_w is not None: 
+            dw_fwhm_inst_w = wave_w / R_inst_w
+            dw2_fwhm_w += dw_fwhm_inst_w**2
 
-    sigma_wave_w = fwhm_wave_w / np.sqrt(np.log(256))
-    sigma_pix_w = sigma_wave_w / np.gradient(wave_w)
+        dw_fwhm_ref_w = None
+        if dw_fwhm_ref is not None: dw_fwhm_ref_w = dw_fwhm_ref * 1.0
+        if dv_fwhm_ref is not None: dw_fwhm_ref_w = wave_w / (299792.458/dv_fwhm_ref)
+        if R_ref       is not None: dw_fwhm_ref_w = wave_w / R_ref
+        if dw_fwhm_ref_w is not None:
+            dw2_fwhm_w -= dw_fwhm_ref_w**2 # reduce the dispersion of refered template
+            
+        dw2_fwhm_w[dw2_fwhm_w <= 0] = 1e-8 # avoid non-positive convolving width
+        dw_fwhm_w = np.sqrt(dw2_fwhm_w)
+
+    dw_sigma_w   = dw_fwhm_w  / np.sqrt(np.log(256))
+    dpix_sigma_w = dw_sigma_w / np.gradient(wave_w)
 
     num_wave = len(wave_w)
     # use LIL format for efficient row-wise updates
@@ -225,11 +226,11 @@ def convolve_var_width_csr(wave_w, flux_mw, fwhm_wave_kin=None, fwhm_vel_kin=Non
     for i_w in range(0, num_wave, int(num_wave/num_step)):
         mask_select_w[i_w] = True
         wave_0 = wave_w[i_w]
-        sigma_wave_0 = sigma_wave_w[i_w]
-        dist_wave_w = wave_w - wave_0
-        kernel_w = np.exp(-0.5 * (dist_wave_w / sigma_wave_0) ** 2)
+        dw_sigma_0 = dw_sigma_w[i_w]
+        dw_dist_w = wave_w - wave_0
+        kernel_w = np.exp(-0.5 * (dw_dist_w / dw_sigma_0) ** 2)
         kernel_w /= kernel_w.sum() 
-        mask_kn_w = np.abs(dist_wave_w) < (sigma_cutoff * sigma_wave_0)
+        mask_kn_w = np.abs(dw_dist_w) < (sigma_cutoff * dw_sigma_0)
         conv_matrix_ww[i_w, mask_kn_w] = kernel_w[mask_kn_w]
 
     # convert sparse matrix to dense for interpolation

@@ -17,21 +17,22 @@ from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_wid
 from ..extinct_law import ExtLaw
 
 class SSPFrame(object):
-    def __init__(self, cframe=None, v0_redshift=None, R_inst_rw=None, 
-                 filename=None, w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
-                 R_mod_ratio=None, ds_fwhm_wave=None,
+    def __init__(self, filename=None, cframe=None, v0_redshift=None, R_inst_rw=None, 
+                 w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
+                 Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
+        self.filename = filename
         self.cframe = cframe
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
-        self.filename = filename
         self.w_min = w_min
         self.w_max = w_max
         self.w_norm = w_norm
         self.dw_norm = dw_norm
-        self.R_mod_ratio = R_mod_ratio # resolution ratio of model / instrument
-        self.ds_fwhm_wave = ds_fwhm_wave # convolving width for downsampling
+        self.Rratio_mod = Rratio_mod # resolution ratio of model / instrument
+        self.dw_fwhm_dsp = dw_fwhm_dsp # model convolving width for downsampling (rest frame)
+        self.dw_pix_inst = dw_pix_inst # data sampling width (obs frame)
         self.verbose = verbose
         self.log_message = log_message
 
@@ -83,7 +84,7 @@ class SSPFrame(object):
         ###### Modify this section to use a different SSP model ######
         ssp_lib = fits.open(self.filename)
         # template resolution step of 0.1 AA, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
-        self.init_fwhm_wave = 0.1 
+        self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
         self.header = ssp_lib[0].header
         # load models
@@ -147,40 +148,40 @@ class SSPFrame(object):
         self.sfrtol_e = self.mtol_e / (self.duration_e * 1e9)
 
         # determine the required model resolution and bin size (in AA) to downsample the model
-        if self.R_mod_ratio is not None:
-            ds_R_mod_w = np.interp(orig_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.R_mod_ratio) # R_inst_rw in observed frame
-            self.ds_fwhm_wave_w = orig_wave_w / ds_R_mod_w # required resolving width in rest frame
+        if self.Rratio_mod is not None:
+            ds_R_mod_w = np.interp(orig_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw in observed frame
+            self.dw_fwhm_dsp_w = orig_wave_w / ds_R_mod_w # required resolving width in rest frame
         else:
-            if self.ds_fwhm_wave is not None:
-                self.ds_fwhm_wave_w = np.full(len(orig_wave_w), self.ds_fwhm_wave)
+            if self.dw_fwhm_dsp is not None:
+                self.dw_fwhm_dsp_w = np.full(len(orig_wave_w), self.dw_fwhm_dsp)
             else:
-                self.ds_fwhm_wave_w = None
-        if self.ds_fwhm_wave_w is not None:
-            if (self.ds_fwhm_wave_w > self.init_fwhm_wave).all(): 
+                self.dw_fwhm_dsp_w = None
+        if self.dw_fwhm_dsp_w is not None:
+            if (self.dw_fwhm_dsp_w > self.init_dw_fwhm).all(): 
                 preconvolving = True
             else:
                 preconvolving = False
-                self.ds_fwhm_wave_w = np.full(len(orig_wave_w), self.init_fwhm_wave)
-            self.ds_bin_wave = self.ds_fwhm_wave_w.min() * 0.5 # required min bin wavelength following Nyquist–Shannon sampling
-            if self.R_inst_rw is not None:
-                self.ds_bin_wave = min(self.ds_bin_wave, np.median(np.diff(self.R_inst_rw[0]))/(1+self.v0_redshift) * 0.5) # also require model bin wavelength <= 0.5 of data bin width
-            self.ds_bin_pix  = int(self.ds_bin_wave / np.median(np.diff(orig_wave_w))) # required min bin number of pixels
-            self.ds_bin_wave = self.ds_bin_pix * np.median(np.diff(orig_wave_w)) # update value
-            if self.ds_bin_pix > 1:
+                self.dw_fwhm_dsp_w = np.full(len(orig_wave_w), self.init_dw_fwhm)
+            self.dw_dsp = self.dw_fwhm_dsp_w.min() * 0.5 # required min bin wavelength following Nyquist–Shannon sampling
+            if self.dw_pix_inst is not None:
+                self.dw_dsp = min(self.dw_dsp, self.dw_pix_inst/(1+self.v0_redshift) * 0.5) # also require model bin wavelength <= 0.5 of data bin width (convert to rest frame)
+            self.dpix_dsp = int(self.dw_dsp / np.median(np.diff(orig_wave_w))) # required min bin number of pixels
+            self.dw_dsp = self.dpix_dsp * np.median(np.diff(orig_wave_w)) # update value
+            if self.dpix_dsp > 1:
                 if preconvolving:
                     if self.verbose: 
-                        print_log(f'Downsample preconvolved SSP models with bin width of {self.ds_bin_wave:.3f} AA in a min resolution of {self.ds_fwhm_wave_w.min():.3f} AA', 
+                        print_log(f'Downsample preconvolved SSP models with bin width of {self.dw_dsp:.3f} AA in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} AA', 
                                   self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # here assume the internal dispersion in the original model (e.g., in stellar atmosphere) is indepent from the measured dispersion (i.e., stellar motion) in the fitting
-                    orig_flux_ew = convolve_fix_width_fft(orig_wave_w, orig_flux_ew, self.ds_fwhm_wave_w.min())
+                    orig_flux_ew = convolve_fix_width_fft(orig_wave_w, orig_flux_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
                 else:
                     if self.verbose: 
-                        print_log(f'Downsample original SSP models with bin width of {self.ds_bin_wave:.3f} AA in a min resolution of {self.ds_fwhm_wave_w.min():.3f} AA', 
+                        print_log(f'Downsample original SSP models with bin width of {self.dw_dsp:.3f} AA in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} AA', 
                                   self.log_message)  
-                orig_wave_w = orig_wave_w[::self.ds_bin_pix]
-                orig_flux_ew = orig_flux_ew[:,::self.ds_bin_pix]
-                self.ds_fwhm_wave_w = self.ds_fwhm_wave_w[::self.ds_bin_pix]
+                orig_wave_w = orig_wave_w[::self.dpix_dsp]
+                orig_flux_ew = orig_flux_ew[:,::self.dpix_dsp]
+                self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[::self.dpix_dsp]
 
         # save the smoothed models
         self.orig_wave_w = orig_wave_w
@@ -267,36 +268,42 @@ class SSPFrame(object):
             mask_lite_ce = self.cframe.flat_to_arr(mask_lite_e)
 
         for i_comp in range(par_cp.shape[0]):
+            # build models with SFH function
             if self.sfh_names[i_comp] == 'nonparametric':
-                orig_flux_int_ew = copy(self.orig_flux_ew) # copy intrinsic models
+                if mask_lite_e is not None:
+                    orig_flux_int_ew = self.orig_flux_ew[mask_lite_ce[i_comp,:],:] # limit element number for accelarate calculation
+                else:
+                    orig_flux_int_ew = self.orig_flux_ew
             else:
                 sfh_factor_e = self.sfh_factor(i_comp, par_cp[i_comp,3:])
                 tmp_mask_e = sfh_factor_e > 0
                 tmp_ew = np.zeros_like(self.orig_flux_ew)
                 tmp_ew[tmp_mask_e,:] = self.orig_flux_ew[tmp_mask_e,:] * sfh_factor_e[tmp_mask_e,None] # scaled with sfh_factor_e
-                # tmp_ew = self.orig_flux_ew * sfh_factor_e[:,None] # scaled with sfh_factor_e
                 orig_flux_int_ew = tmp_ew.reshape(self.num_mets, self.num_ages, len(self.orig_wave_w)).sum(axis=1)
                 # sum in ages to create csp 
-            if mask_lite_e is not None:
-                orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp,:],:] # limit element number for accelarate calculation
+                if mask_lite_e is not None:
+                    orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp,:],:]
 
             # dust extinction
             orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * par_cp[i_comp,2] * ExtLaw(self.orig_wave_w))
+
             # redshift models
             z_ratio = (1 + self.v0_redshift) * (1 + par_cp[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             orig_wave_z_w = self.orig_wave_w * z_ratio
             orig_flux_dz_ew = orig_flux_d_ew / z_ratio
+
             # convolve with intrinsic and instrumental dispersion if self.R_inst_rw is not None
             if (self.R_inst_rw is not None) & (conv_nbin is not None):
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
-                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, fwhm_vel_kin=par_cp[i_comp,1], fwhm_wave_ref=self.ds_fwhm_wave_w, R_inst_w=R_inst_w, num_bins=conv_nbin)
-                # convolution in redshifted- or rest-wavelength does not change result
+                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=par_cp[i_comp,1], 
+                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_ratio, R_inst_w=R_inst_w, num_bins=conv_nbin)
             else:
-                orig_flux_dzc_ew = orig_flux_dz_ew 
-                # just copy if convlution not required, e.g., for broad-band sed fitting
+                orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
+
             # project to observed wavelength
             interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value="extrapolate")
             obs_flux_scomp_ew = interp_func(obs_wave_w)
+
             if i_comp == 0: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:

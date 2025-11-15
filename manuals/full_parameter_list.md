@@ -24,6 +24,11 @@
 - `spec_flux_scale` (float, optional) \
    Scaling ratio of the input flux (e.g., `spec_flux_scale=1e-15`) to avoid too small values of flux in the fitting. 
   `spec_flux_scale` is not mandatory and it can be determined automatically if setting `spec_flux_scale=None` (default). 
+- `keep_invalid` (bool, optional) \
+   Whether to keep the invalid wavelength range in the fitting. 
+   If `keep_invalid=True`, mock data and models will be created in the invalid range for a reference with the costs of longer running time.
+   Default is `False`. 
+
 ### Input photometric data
 - `phot_name_b` (list or numpy array of strings) \
    List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
@@ -128,10 +133,10 @@
    spectra convolved with the kernel at the two neighboring selected wavelengths. 
    A small number of `conv_nbin_max` works well for a smooth function of wavelength-dependent resolution.
    Increasing the number will slow down the fitting process significantly.
-- `R_mod_ratio` (float, optional) \
+- `Rratio_mod` (float, optional) \
    In order to save the memory usage and accelerate the running speed, 
    the model templated will be smoothed and downsampled to match the sampling and resulotion of the input data.
-   `R_mod_ratio` is the ratio of modified model resolution and data instrumental resolution (set with `spec_R_inst_w`).
+   `Rratio_mod` is the ratio of modified model resolution and data instrumental resolution (set with `spec_R_inst_w`).
    Default is 2, i.e., the model is smoothed and downsampled to have twice better resolution than the input data. 
 
 ### Auxiliary

@@ -19,19 +19,25 @@ from .auxiliary_func import print_log, center_string, convolve_var_width_fft
 
 class FitFrame(object):
     def __init__(self, 
+                 # data
                  spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
                  spec_R_inst_w=None, spec_valid_range=None, spec_flux_scale=None, 
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, 
                  phot_calib_b=None, phot_flux_unit='mJy', 
                  phot_trans_dir=None, phot_trans_rsmp=10, 
                  sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, 
+                 keep_invalid = False,
+                 # model config
                  v0_redshift=None, model_config=None, norm_wave=5500, norm_width=25, 
+                 # mock setup
                  num_mocks=0, use_multi_thread=False, num_multi_thread=-1, 
                  inst_calib_ratio=0.1, inst_calib_ratio_rev=True, inst_calib_smooth=1e4, 
+                 # fitting control
                  examine_result=True, accept_model_SN=2, 
                  accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
-                 fit_grid='linear', conv_nbin_max=5, R_mod_ratio=2, 
+                 fit_grid='linear', conv_nbin_max=5, Rratio_mod=2, 
+                 # auxiliary
                  print_step=True, plot_step=False, canvas=None, 
                  save_per_loop=False, output_filename=None, 
                  save_test=False, verbose=False): 
@@ -67,6 +73,9 @@ class FitFrame(object):
         self.sed_wave_w = np.array(sed_wave_w) if sed_wave_w is not None else None
         self.sed_wave_unit = sed_wave_unit
         self.sed_wave_num = sed_wave_num
+
+        # whether to keep invalid wavelength range; if true, mock data and models will be created in invalid range
+        self.keep_invalid = keep_invalid
 
         # set initial guess of systemic redshift, all velocity shifts are in relative to v0_redshift
         self.v0_redshift = v0_redshift
@@ -116,7 +125,7 @@ class FitFrame(object):
         # control on fitting quality: linear process, maximum of bins to perform fft convolution with variable width/resolution
         self.conv_nbin_max = conv_nbin_max
         # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument
-        self.R_mod_ratio = R_mod_ratio
+        self.Rratio_mod = Rratio_mod
 
         # whether to output intermediate results
         self.print_step = print_step # if display in stdout
@@ -145,6 +154,7 @@ class FitFrame(object):
     def init_input_data(self, verbose=True):
         print_log(center_string('Read spectral data', 80), self.log_message, verbose)
 
+        ##############################
         # mask out invalid data
         mask_valid_w  = np.isfinite(self.spec_wave_w)
         mask_valid_w &= np.isfinite(self.spec_flux_w)
@@ -174,42 +184,52 @@ class FitFrame(object):
             print_log(f"Mask out additional {num_invalid_ferr} wavelengths with non-positive spec_ferr_w.", self.log_message, verbose)
             mask_valid_w &= (self.spec_ferr_w > 0)
 
+        # save mask
+        self.mask_valid_w = mask_valid_w
+        ##############################
 
-        if self.spec_flux_scale is None: 
-            self.spec_flux_scale = 10.0**np.round(np.log10(np.median(self.spec_flux_w)))
+        mask_keep_w = copy(self.mask_valid_w)
+        if self.keep_invalid: mask_keep_w[:] = True # mock data and models will be created in invalid range
+
+        if self.spec_flux_scale is None: self.spec_flux_scale = 10.0**np.round(np.log10(np.median(self.spec_flux_w[mask_keep_w])))
+        self.spec_flux_w /= self.spec_flux_scale
+        self.spec_ferr_w /= self.spec_flux_scale
+
         # create a dictionary for spectral data
         self.spec = {}
-        self.spec['wave_w'] = self.spec_wave_w
-        self.spec['flux_w'] = self.spec_flux_w / self.spec_flux_scale
-        self.spec['ferr_w'] = self.spec_ferr_w / self.spec_flux_scale
-        self.spec['mask_valid_w'] = mask_valid_w
-        self.num_spec_wave = len(self.spec_wave_w)
+        self.spec['wave_w'] = self.spec_wave_w[mask_keep_w]
+        self.spec['flux_w'] = self.spec_flux_w[mask_keep_w]
+        self.spec['ferr_w'] = self.spec_ferr_w[mask_keep_w]
+        self.spec['mask_valid_w'] = self.mask_valid_w[mask_keep_w]
+        self.num_spec_wave = len(self.spec['wave_w'])
 
         # check spectral resoltuion
         if len(self.spec_R_inst_w) == len(self.spec_wave_w):
-            self.spec['R_inst_rw'] = np.vstack((self.spec_wave_w, self.spec_R_inst_w))
+            self.spec['R_inst_rw'] = np.vstack((self.spec['wave_w'], self.spec_R_inst_w[mask_keep_w]))
         else:
             print_log(f'[Note] A single value of spectral resolution {self.spec_R_inst_w[1]:.3f} is given at {self.spec_R_inst_w[0]:.3f}AA.', 
                       self.log_message, verbose)
             print_log(f'[Note] Assume a linear wavelength-dependency of spectral resolution in the fitting.', self.log_message, verbose)
-            lin_R_inst_w = self.spec_wave_w / self.spec_R_inst_w[0] * self.spec_R_inst_w[1]
-            self.spec['R_inst_rw'] = np.vstack((self.spec_wave_w, lin_R_inst_w))
+            lin_R_inst_w = self.spec['wave_w'] / self.spec_R_inst_w[0] * self.spec_R_inst_w[1]
+            self.spec['R_inst_rw'] = np.vstack((self.spec['wave_w'], lin_R_inst_w))
 
         # account for effective spectral sampling in fitting (all bands are considered as independent)
-        self.spec['significance_w'] = np.gradient(self.spec_wave_w) / (self.spec_wave_w/self.spec['R_inst_rw'][1,:]) # i.e., dw_data / dw_resolution
+        self.spec['significance_w'] = np.gradient(self.spec['wave_w']) / (self.spec['wave_w']/self.spec['R_inst_rw'][1,:]) # i.e., dw_pix_inst_w / dw_fwhm_inst_w
         self.spec['significance_w'][self.spec['significance_w'] > 1] = 1
 
-        # set fitting wavelength range (rest frame) with tolerance of [-1000,1000] km/s
-        vel_tol = 1000
-        self.spec_wmin = self.spec_wave_w.min() / (1+self.v0_redshift) / (1+vel_tol/299792.458) - 100
-        self.spec_wmax = self.spec_wave_w.max() / (1+self.v0_redshift) / (1-vel_tol/299792.458) + 100
+        # set fitting wavelength range (rest frame) with tolerance: voff=[-1000,1000] km/s, fwhm max = 1000 km/s
+        voff_tol = 1500; fwhm_tol = 1500
+        dw_pad_per_w = 4 * fwhm_tol/np.sqrt(np.log(256))/299792.458 # convolving kernel pad per wavelength (+/-4sigma)
+        self.spec_wmin = self.spec['wave_w'].min() / (1+self.v0_redshift) / (1+voff_tol/299792.458) * (1-dw_pad_per_w) #- 100
+        self.spec_wmax = self.spec['wave_w'].max() / (1+self.v0_redshift) / (1-voff_tol/299792.458) * (1+dw_pad_per_w) #+ 100
         self.spec_wmin = np.maximum(self.spec_wmin, 912) # set lower limit of wavelength to 912A
         print_log(f'Spectral fitting will be performed in wavelength range (rest frame, AA): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}', self.log_message, verbose)
-        print_log(f'[Note] The wavelength range is extended for a tolerance of redshift of {self.v0_redshift}+-{vel_tol/299792.458:.4f} (+-{vel_tol} km/s).', self.log_message, verbose)
+        print_log(f'[Note] The wavelength range is extended for tolerances of redshift of {self.v0_redshift}+-{voff_tol/299792.458:.4f} (+-{voff_tol} km/s) '+
+                  f'and convolution/dispersion FWHM of max {fwhm_tol} km/s.', self.log_message, verbose)
 
         # check if norm_wave is coverd in input wavelength range
         if (self.norm_wave < self.spec_wmin) | (self.norm_wave > self.spec_wmax):
-            med_wave = np.median(self.spec_wave_w[mask_valid_w]) / (1+self.v0_redshift)
+            med_wave = np.median(self.spec['wave_w'][self.spec['mask_valid_w']]) / (1+self.v0_redshift)
             med_wave = round(med_wave/100)*100
             print_log(f'[WARNING] The input normalization wavelength (rest frame, AA) {self.norm_wave} is out of the valid range, which is forced to the median valid wavelength {med_wave}.', 
                       self.log_message, verbose)
@@ -224,16 +244,23 @@ class FitFrame(object):
             self.pframe = PhotFrame(name_b=self.phot_name_b, flux_b=self.phot_flux_b, ferr_b=self.phot_ferr_b, flux_unit=self.phot_flux_unit,
                                     trans_dir=self.phot_trans_dir, trans_rsmp=self.phot_trans_rsmp, 
                                     wave_w=self.sed_wave_w, wave_unit=self.sed_wave_unit, wave_num=self.sed_wave_num)
-            # create a dictionary for converted photometric data
-            self.phot = {}
-            self.phot['wave_b'] = self.pframe.wave_b
-            self.phot['flux_b'] = self.pframe.flux_b / self.spec_flux_scale
-            self.phot['ferr_b'] = self.pframe.ferr_b / self.spec_flux_scale
-            self.phot['trans_bw'] = self.pframe.trans_bw # transmission curve matrix
-            self.num_phot_band = len(self.pframe.wave_b)
+            self.pframe.flux_b /= self.spec_flux_scale
+            self.pframe.ferr_b /= self.spec_flux_scale
 
             # set valid band range
-            self.phot['mask_valid_b'] = self.pframe.ferr_b > 0
+            self.mask_valid_b = self.pframe.ferr_b > 0
+            mask_keep_b = copy(self.mask_valid_b)
+            if self.keep_invalid: mask_keep_b[:] = True # mock data and models will be created in invalid range
+
+            # create a dictionary for converted photometric data
+            self.phot = {}
+            self.phot['wave_b'] = self.pframe.wave_b[mask_keep_b]
+            self.phot['flux_b'] = self.pframe.flux_b[mask_keep_b]
+            self.phot['ferr_b'] = self.pframe.ferr_b[mask_keep_b]
+            self.phot['trans_bw'] = self.pframe.trans_bw[mask_keep_b,:] # transmission curve matrix
+            self.phot['mask_valid_b'] = self.mask_valid_b[mask_keep_b]
+            self.num_phot_band = len(self.phot['wave_b'])
+
             # account for effective sampling in fitting, all bands are considered as independent
             self.phot['significance_b'] = np.ones(self.num_phot_band, dtype='float')
 
@@ -251,8 +278,7 @@ class FitFrame(object):
                 calib_flux_b = [self.phot['flux_b'][np.where(self.phot_name_b == name_b)[0][0]] for name_b in self.phot_calib_b]
                 calib_trans_bw = self.pframe.read_transmission(name_b=self.phot_calib_b, trans_dir=self.phot_trans_dir, wave_w=self.spec['wave_w'])[1]
                 # interplote spectrum by masking out invalid range
-                spec_flux_interp_w = np.interp(self.spec['wave_w'], self.spec['wave_w'][self.spec['mask_valid_w']], 
-                                                                    self.spec['flux_w'][self.spec['mask_valid_w']])
+                spec_flux_interp_w = np.interp(self.spec['wave_w'], self.spec['wave_w'][self.spec['mask_valid_w']], self.spec['flux_w'][self.spec['mask_valid_w']])
                 spec_calib_ratio_b = calib_flux_b / self.pframe.spec2phot(self.spec['wave_w'], spec_flux_interp_w, calib_trans_bw)
                 self.spec_calib_ratio = spec_calib_ratio_b.mean()
                 self.spec['flux_w'] *= self.spec_calib_ratio
@@ -275,47 +301,39 @@ class FitFrame(object):
                 self.full_model_type += mod + '+'
                 self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.ssp_frame import SSPFrame
-                self.model_dict[mod]['spec_mod'] = SSPFrame(cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                            filename=self.model_config[mod]['file'], w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                            R_mod_ratio=self.R_mod_ratio, log_message=self.log_message) 
+                self.model_dict[mod]['spec_mod'] = SSPFrame(filename=self.model_config[mod]['file'], 
+                                                            cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
+                                                            w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                            Rratio_mod=self.Rratio_mod, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
+                                                            log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = SSPFrame(cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
-                                                               filename=self.model_config[mod]['file'], w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                               ds_fwhm_wave=4000/100, verbose=False) # convolving with R=100 at rest 4000AA
+                    self.model_dict[mod]['sed_mod'] = SSPFrame(filename=self.model_config[mod]['file'], 
+                                                               cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
+                                                               w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                               dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
+                                                               verbose=False) 
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-        ###############################
-        mod = 'line'
-        if np.isin([mod, 'el'], [*self.model_config]).any(): # also allow 'el' in model_config to be compatible with old version 
-            if self.model_config[mod]['enable']:
-                print_log(center_string('Initialize line models', 80), self.log_message)
-                self.full_model_type += mod + '+'
-                self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
-                from .model_frames.line_frame import LineFrame
-                self.model_dict[mod]['spec_mod'] = LineFrame(cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                             rest_wave_w=self.spec['wave_w']/(1+self.v0_redshift), mask_valid_w=self.spec['mask_valid_w'], 
-                                                             use_pyneb=self.model_config[mod]['use_pyneb'], log_message=self.log_message) 
-                self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e7)
-                if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy, only fit lines in spectral wavelength range
-                    self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
-                self.model_dict['el'] = self.model_dict[mod] # also allow 'el' in model_config to be compatible with old version 
         ###############################
         mod = 'agn'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
-                print_log(center_string('Initialize AGN continuum models', 80), self.log_message)
+                print_log(center_string('Initialize AGN UV/optical continuum models', 80), self.log_message)
                 self.full_model_type += mod + '+'
                 self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.agn_frame import AGNFrame
-                self.model_dict[mod]['spec_mod'] = AGNFrame(cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                            filename=self.model_config[mod]['file'], w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                            R_mod_ratio=self.R_mod_ratio, log_message=self.log_message) 
+                self.model_dict[mod]['spec_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
+                                                            cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
+                                                            w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                            Rratio_mod=self.Rratio_mod, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
+                                                            log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = AGNFrame(cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
-                                                               filename=self.model_config[mod]['file'], w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                               ds_fwhm_wave=4000/100, verbose=False) # convolving with R=100 at rest 4000AA
+                    self.model_dict[mod]['sed_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
+                                                               cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
+                                                               w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                               dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
+                                                               verbose=False) 
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
         ###############################
         mod = 'torus'
@@ -325,12 +343,31 @@ class FitFrame(object):
                 self.full_model_type += mod + '+'
                 self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.torus_frame import TorusFrame
-                self.model_dict[mod]['spec_mod'] = TorusFrame(cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, 
-                                                              filename=self.model_config[mod]['file'], flux_scale=self.spec_flux_scale, log_message=self.log_message) 
+                self.model_dict[mod]['spec_mod'] = TorusFrame(filename=self.model_config[mod]['file'], 
+                                                              cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, 
+                                                              flux_scale=self.spec_flux_scale, 
+                                                              log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 1e4) & (self.spec_wmin < 1e6)
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e6)
+        ###############################
+        mod = 'line'
+        if np.isin([mod, 'el'], [*self.model_config]).any(): # also allow 'el' in model_config to be compatible with old version 
+            if self.model_config[mod]['enable']:
+                print_log(center_string('Initialize line models', 80), self.log_message)
+                self.full_model_type += mod + '+'
+                self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
+                from .model_frames.line_frame import LineFrame
+                self.model_dict[mod]['spec_mod'] = LineFrame(use_pyneb=self.model_config[mod]['use_pyneb'], 
+                                                             cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
+                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']], 
+                                                             log_message=self.log_message) 
+                self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5) # set range from Lyman break to 10 micron
+                if self.have_phot:
+                    self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy, only fit lines in spectral wavelength range
+                    self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
+                self.model_dict['el'] = self.model_dict[mod] # also allow 'el' in model_config to be compatible with old version 
         ###############################
         
         if self.full_model_type[-1] == '+': self.full_model_type = self.full_model_type[:-1]
@@ -493,7 +530,7 @@ class FitFrame(object):
         accept_chi_sq = copy(self.accept_chi_sq)
         if self.num_loops > 1:
             if (best_chi_sq_l[1:] > 0).sum() > 0:
-                accept_chi_sq = best_chi_sq_l[1:][best_chi_sq_l[1:] > 0].min() * 1.5 # update using the finished fitting of mock data
+                accept_chi_sq = min(accept_chi_sq, best_chi_sq_l[1:][best_chi_sq_l[1:] > 0].min() * 1.5) # update using the finished fitting of mock data
         self.fit_quality_l = (best_chi_sq_l > 0) & (best_chi_sq_l < accept_chi_sq)
         success_count = self.fit_quality_l.sum()
 
@@ -514,12 +551,12 @@ class FitFrame(object):
         return success_count
 
     def create_mock_data(self, i_loop=None, ret_phot=False, chi_sq=None):
+        # copy data
         spec_wave_w, spec_flux_w, spec_ferr_w = self.spec['wave_w'], self.spec['flux_w'], self.spec['ferr_w']
         mask_valid_w = self.spec['mask_valid_w']
         if ret_phot:
             phot_wave_b, phot_flux_b, phot_ferr_b = self.phot['wave_b'], self.phot['flux_b'], self.phot['ferr_b']
             mask_valid_b = self.phot['mask_valid_b']
-            # specphot_wave_w = np.hstack((spec_wave_w, phot_wave_b))
             specphot_flux_w = np.hstack((spec_flux_w, phot_flux_b))
             specphot_ferr_w = np.hstack((spec_ferr_w, phot_ferr_b))
             specphot_mask_w = np.hstack((mask_valid_w, mask_valid_b))
@@ -548,15 +585,15 @@ class FitFrame(object):
                 # create smoothed spectrum
                 if ~np.isin('joint_fit_1', [*self.output_s]):
                     # if not fit yet
-                    spec_flux_smoothed_w = convolve_var_width_fft(spec_wave_w[mask_valid_w], spec_flux_w[mask_valid_w], fwhm_vel_kin=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
+                    spec_flux_smoothed_w = convolve_var_width_fft(spec_wave_w[mask_valid_w], spec_flux_w[mask_valid_w], dv_fwhm_obj=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
                     spec_flux_smoothed_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_flux_smoothed_w)
                 else:
                     # use joint_fit_1 fitting result to avoid cutting of continuum at edges
                     spec_flux_smoothed_w = spec_flux_w * 0
                     cont_spec_fmod_w = self.output_s['joint_fit_1']['ret_dict_l'][i_loop]['cont_spec_fmod_w']
-                    spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, cont_spec_fmod_w, fwhm_vel_kin=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=True)
+                    spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, cont_spec_fmod_w, dv_fwhm_obj=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=True)
                     line_spec_fmod_w = self.output_s['joint_fit_1']['ret_dict_l'][i_loop]['line_spec_fmod_w']
-                    spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, line_spec_fmod_w, fwhm_vel_kin=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
+                    spec_flux_smoothed_w += convolve_var_width_fft(spec_wave_w, line_spec_fmod_w, dv_fwhm_obj=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
                 specphot_flux_smoothed_w = np.hstack((spec_flux_smoothed_w, phot_flux_b))
                 specphot_reverr_w = np.sqrt(specphot_ferr_w**2 + specphot_flux_smoothed_w**2 * self.inst_calib_ratio**2)
         ####################
@@ -1034,12 +1071,20 @@ class FitFrame(object):
 
     def single_loop_fit(self, i_loop):
 
-        spec_wave_w, spec_flux_w, spec_ferr_w = self.spec['wave_w'], self.spec['flux_w'], self.spec['ferr_w']
-        mask_valid_w, mask_noline_w = self.spec['mask_valid_w'], self.spec['mask_noline_w']
+        # copy data
+        spec_wave_w = self.spec['wave_w']
+        # spec_flux_w = self.spec['flux_w']
+        spec_ferr_w = self.spec['ferr_w']
+        mask_valid_w = self.spec['mask_valid_w']
+        mask_noline_w = self.spec['mask_noline_w']
         if self.have_phot:
-            phot_wave_b, phot_flux_b, phot_ferr_b = self.phot['wave_b'], self.phot['flux_b'], self.phot['ferr_b']
+            # phot_wave_b = self.phot['wave_b']
+            # phot_flux_b = self.phot['flux_b']
+            # phot_ferr_b = self.phot['ferr_b']
             mask_valid_b = self.phot['mask_valid_b']
-            sed_wave_w = self.sed['wave_w']
+            # specphot_flux_w = np.hstack((spec_flux_w, phot_flux_b))
+            # specphot_ferr_w = np.hstack((spec_ferr_w, phot_ferr_b))
+            specphot_mask_w = np.hstack((mask_valid_w, mask_valid_b))
 
         print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} starts', 80), self.log_message)
         self.time_loop = time.time()
@@ -1258,9 +1303,6 @@ class FitFrame(object):
         ######################## 3rd fit cycle #########################
         # simultaneous spectrum+SED fitting
         if self.have_phot:
-            specphot_flux_w = np.hstack((spec_flux_w, phot_flux_b))
-            specphot_ferr_w = np.hstack((spec_ferr_w, phot_ferr_b))
-            specphot_mask_w = np.hstack((mask_valid_w, mask_valid_b))
             # re-create mock spectrum and SED 
             if i_loop == 0: 
                 print_log(center_string(f'Perform simultaneous spectrum+SED fitting with original data', 80), self.log_message, self.print_step)
@@ -1589,17 +1631,21 @@ class FitFrame(object):
         tmp_z = (1+self.v0_redshift)
         rest_wave_w = self.spec['wave_w']/tmp_z
         mask_spec_w = mask_w[:self.num_spec_wave]
-        ax1.plot(rest_wave_w, self.spec['flux_w'], c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
+        # ax1.plot(rest_wave_w, self.spec['flux_w'], c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
+        ax1.plot(self.spec_wave_w/tmp_z, self.spec_flux_w, c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
         ax1.plot(rest_wave_w[mask_spec_w], flux_w[:self.num_spec_wave][mask_spec_w], c='C0', label='Data used for fitting (spec)')
         ax1.plot(rest_wave_w, model_w[:self.num_spec_wave], c='C1', label='Best-fit model (spec)')
-        ax2.fill_between(rest_wave_w, -ferr_w[:self.num_spec_wave], ferr_w[:self.num_spec_wave], color='C5', alpha=0.2, label=r'1$\sigma$ error')
         ax2.plot(rest_wave_w[mask_spec_w], (flux_w-model_w)[:self.num_spec_wave][mask_spec_w], c='C2', alpha=0.6, label='Residuals (spec)')
-        ax1.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
+        # ax2.fill_between(rest_wave_w, -ferr_w[:self.num_spec_wave], ferr_w[:self.num_spec_wave], color='C5', alpha=0.2, label=r'1$\sigma$ error')
+        ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec_ferr_w[:len(self.spec_wave_w)], self.spec_ferr_w[:len(self.spec_wave_w)], color='C5', alpha=0.2, label=r'1$\sigma$ error')
+        # ax1.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
+        #                  hatch='////', fc='None', ec='C5', alpha=0.25)
+        ax1.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
-        ax2.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
+        ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
-        ax1.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+50)
-        ax2.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+50)
+        ax1.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+100)
+        ax2.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+100)
         if fit_phot:
             rest_wave_b = self.phot['wave_b']/tmp_z
             mask_phot_b = mask_w[-self.num_phot_band:]

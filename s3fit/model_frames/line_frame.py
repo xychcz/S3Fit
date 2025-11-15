@@ -12,16 +12,17 @@ from ..auxiliary_func import print_log
 from ..extinct_law import ExtLaw
 
 class LineFrame(object):
-    def __init__(self, cframe=None, v0_redshift=0, R_inst_rw=None, 
-                 rest_wave_w=None, mask_valid_w=None, use_pyneb=False, 
+    def __init__(self, use_pyneb=False, cframe=None, v0_redshift=0, R_inst_rw=None, 
+                 w_min=None, w_max=None, mask_valid_rw=None, 
                  verbose=True, log_message=[]):
 
+        self.use_pyneb = use_pyneb
         self.cframe = cframe
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
-        self.rest_wave_w = rest_wave_w
-        self.mask_valid_w = mask_valid_w
-        self.use_pyneb = use_pyneb
+        self.w_min = w_min
+        self.w_max = w_max
+        self.mask_valid_rw = mask_valid_rw
         self.verbose = verbose
         self.log_message = log_message
 
@@ -504,8 +505,8 @@ class LineFrame(object):
         # update self.linename_n, self.linelist_full, and self.linelist_default and the other corresponding linelists
 
         # only keep covered lines
-        mask_valid_n  = self.linerest_n > (self.rest_wave_w.min()-50)
-        mask_valid_n &= self.linerest_n < (self.rest_wave_w.max()+50)
+        mask_valid_n  = self.linerest_n > self.w_min
+        mask_valid_n &= self.linerest_n < self.w_max
         self.linename_n = self.linename_n[mask_valid_n]
         self.linerest_n = self.linerest_n[mask_valid_n]
         self.lineratio_n = self.lineratio_n[mask_valid_n]
@@ -603,17 +604,16 @@ class LineFrame(object):
         self.num_lines = len(self.linename_n)
 
         self.mask_valid_cn = np.zeros((self.num_comps, self.num_lines), dtype='bool')
-        # check minimum coverage        
-        for i_comp in range(self.num_comps):
-            for i_line in range(self.num_lines):
-                voff_w = (self.rest_wave_w/self.linerest_n[i_line] -1) * 299792.458
-                mask_line_w  = voff_w > self.cframe.min_cp[i_comp,0]
-                mask_line_w &= voff_w < self.cframe.max_cp[i_comp,0]
-                if mask_line_w.sum() > 0: 
-                    self.mask_valid_cn[i_comp, i_line] = True
-                    if self.mask_valid_w is not None:
-                        if (mask_line_w & self.mask_valid_w).sum() / mask_line_w.sum() < 0.1: # minimum valid coverage fraction
-                            self.mask_valid_cn[i_comp, i_line] = False
+        # check minimum coverage
+        if self.mask_valid_rw is not None:
+            rest_wave_w = self.mask_valid_rw[0] / (1+self.v0_redshift)
+            for i_comp in range(self.num_comps):
+                for i_line in range(self.num_lines):
+                    voff_w = (rest_wave_w/self.linerest_n[i_line]-1) * 299792.458
+                    mask_line_w  = voff_w > (self.cframe.min_cp[i_comp,0] - self.cframe.max_cp[i_comp,1]) # (voff_min - fhwm_max)
+                    mask_line_w &= voff_w < (self.cframe.max_cp[i_comp,0] + self.cframe.max_cp[i_comp,1]) # (voff_max + fhwm_max)
+                    if mask_line_w.sum() >= 3: # at least 3 points in valid wavelength range
+                        self.mask_valid_cn[i_comp,i_line] = (mask_line_w & self.mask_valid_rw[1]).sum() / mask_line_w.sum() >= 0.1 # at least 10% coverage fraction
         # only keep lines if they are specified 
         for i_comp in range(self.num_comps):
             self.mask_valid_cn[i_comp] &= np.isin(self.linename_n, self.cframe.info_c[i_comp]['linelist'])

@@ -15,13 +15,13 @@ from scipy.interpolate import RegularGridInterpolator
 from ..auxiliary_func import print_log
 
 class TorusFrame(object): 
-    def __init__(self, cframe=None, v0_redshift=None, 
-                 filename=None, w_min=None, w_max=None, lum_norm=None, flux_scale=None, 
+    def __init__(self, filename=None, cframe=None, v0_redshift=None, 
+                 w_min=None, w_max=None, lum_norm=None, flux_scale=None, 
                  verbose=True, log_message=[]): 
 
+        self.filename = filename        
         self.cframe = cframe 
         self.v0_redshift = v0_redshift        
-        self.filename = filename        
         self.w_min = w_min # currently not used
         self.w_max = w_max # currently not used
         self.flux_scale = flux_scale
@@ -29,13 +29,16 @@ class TorusFrame(object):
         self.verbose = verbose
         self.log_message = log_message
                 
-        self.read_skirtor()
-
         self.num_comps = self.cframe.num_comps
         self.num_coeffs = self.cframe.num_comps # one independent element per component since disc and torus are tied
 
         # currently do not consider negative SED 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
+
+        self.read_skirtor()
+
+        if self.verbose:
+            print_log(f"SKIRTor torus model components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
         
     def read_skirtor(self): 
         # https://sites.google.com/site/skirtorus/sed-library

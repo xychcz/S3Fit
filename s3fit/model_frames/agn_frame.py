@@ -17,21 +17,22 @@ from ..auxiliary_func import print_log, convolve_var_width_fft
 from ..extinct_law import ExtLaw
 
 class AGNFrame(object):
-    def __init__(self, cframe=None, v0_redshift=None, R_inst_rw=None, 
-                 filename=None, w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
-                 R_mod_ratio=None, ds_fwhm_wave=None,
+    def __init__(self, filename=None, cframe=None, v0_redshift=None, R_inst_rw=None, 
+                 w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
+                 Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
+        self.filename = filename
         self.cframe = cframe
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw        
-        self.filename = filename
         self.w_min = w_min
         self.w_max = w_max
         self.w_norm = w_norm
         self.dw_norm = dw_norm
-        self.R_mod_ratio = R_mod_ratio # resolution ratio of model / instrument
-        self.ds_fwhm_wave = ds_fwhm_wave # convolving width for downsampling
+        self.Rratio_mod = Rratio_mod # resolution ratio of model / instrument
+        self.dw_fwhm_dsp = dw_fwhm_dsp # model convolving width for downsampling (rest frame)
+        self.dw_pix_inst = dw_pix_inst # data sampling width (obs frame)
         self.verbose = verbose
         self.log_message = log_message
 
@@ -46,11 +47,6 @@ class AGNFrame(object):
         orig_wave_logbin = 0.05
         orig_wave_num = int(np.round(np.log10(w_max/w_min) / orig_wave_logbin))
         self.orig_wave_w = np.logspace(np.log10(w_min), np.log10(w_max), num=orig_wave_num)
-                
-        # # create log grid wavelength (rest) to project intrinsic template and then perform convolution
-        # linw_wave = np.linspace(w_min, w_max, num=10)
-        # resolution = R_inst_rw * 5 # select a high resampling density
-        # self.logw_wave = convert_linw_to_logw(linw_wave, linw_wave, resolution=resolution)[0]
 
         if np.isin('iron', [self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]):
             self.read_iron()
@@ -91,7 +87,7 @@ class AGNFrame(object):
         iron_lib = fits.open(self.filename)
         iron_wave_w = iron_lib[0].data[0] # AA, in rest frame
         iron_flux_w = iron_lib[0].data[1] # erg/s/cm2/AA
-        iron_fwhm_wave_w = iron_wave_w * 1100 / 299792.458
+        iron_dw_fwhm_w = iron_wave_w * 1100 / 299792.458
 
         # normalize models at given wavelength
         mask_norm_w = (iron_wave_w > 2200) & (iron_wave_w < 4000)
@@ -102,51 +98,51 @@ class AGNFrame(object):
         self.iron_flux_opt_uv_ratio = flux_norm_opt / flux_norm_uv
 
         # determine the required model resolution and bin size (in AA) to downsample the model
-        if self.R_mod_ratio is not None:
-            ds_R_mod_w = np.interp(iron_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.R_mod_ratio) # R_inst_rw in observed frame
-            self.ds_fwhm_wave_w = iron_wave_w / ds_R_mod_w # required resolving width in rest frame
+        if self.Rratio_mod is not None:
+            ds_R_mod_w = np.interp(iron_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw in observed frame
+            self.dw_fwhm_dsp_w = iron_wave_w / ds_R_mod_w # required resolving width in rest frame
         else:
-            if self.ds_fwhm_wave is not None:
-                self.ds_fwhm_wave_w = np.full(len(iron_wave_w), self.ds_fwhm_wave)
+            if self.dw_fwhm_dsp is not None:
+                self.dw_fwhm_dsp_w = np.full(len(iron_wave_w), self.dw_fwhm_dsp)
             else:
-                self.ds_fwhm_wave_w = None
-        if self.ds_fwhm_wave_w is not None:
-            if (self.ds_fwhm_wave_w > iron_fwhm_wave_w).all(): 
+                self.dw_fwhm_dsp_w = None
+        if self.dw_fwhm_dsp_w is not None:
+            if (self.dw_fwhm_dsp_w > iron_dw_fwhm_w).all(): 
                 preconvolving = True
             else:
                 preconvolving = False
-                self.ds_fwhm_wave_w = iron_fwhm_wave_w
-            self.ds_bin_wave = self.ds_fwhm_wave_w.min() * 0.5 # required min bin wavelength following Nyquist–Shannon sampling
-            if self.R_inst_rw is not None:
-                self.ds_bin_wave = min(self.ds_bin_wave, np.median(np.diff(self.R_inst_rw[0]))/(1+self.v0_redshift) * 0.5) # also require model bin wavelength <= 0.5 of data bin width
-            self.ds_bin_pix  = int(self.ds_bin_wave / np.median(np.diff(iron_wave_w))) # required min bin number of pixels
-            self.ds_bin_wave = self.ds_bin_pix * np.median(np.diff(iron_wave_w)) # update value
-            if self.ds_bin_pix > 1:
+                self.dw_fwhm_dsp_w = iron_dw_fwhm_w
+            self.dw_dsp = self.dw_fwhm_dsp_w.min() * 0.5 # required min bin wavelength following Nyquist–Shannon sampling
+            if self.dw_pix_inst is not None:
+                self.dw_dsp = min(self.dw_dsp, self.dw_pix_inst/(1+self.v0_redshift) * 0.5) # also require model bin wavelength <= 0.5 of data bin width (convert to rest frame)
+            self.dpix_dsp = int(self.dw_dsp / np.median(np.diff(iron_wave_w))) # required min bin number of pixels
+            self.dw_dsp = self.dpix_dsp * np.median(np.diff(iron_wave_w)) # update value
+            if self.dpix_dsp > 1:
                 if preconvolving:
                     if self.verbose: 
-                        print_log(f'Downsample preconvolved AGN iron pesudo-continuum with bin width of {self.ds_bin_wave:.3f} AA in a min resolution of {self.ds_fwhm_wave_w.min():.3f} AA', 
+                        print_log(f'Downsample preconvolved AGN iron pesudo-continuum with bin width of {self.dw_dsp:.3f} AA in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} AA', 
                                   self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
-                    # set fwhm_wave_ref as the dispersion in the original model
-                    iron_flux_w = convolve_var_width_fft(iron_wave_w, iron_flux_w, fwhm_wave_kin=self.ds_fwhm_wave_w, fwhm_wave_ref=iron_fwhm_wave_w, num_bins=10, reset_edge=True)
+                    # set dw_fwhm_ref as the dispersion in the original model
+                    iron_flux_w = convolve_var_width_fft(iron_wave_w, iron_flux_w, dw_fwhm_obj=self.dw_fwhm_dsp_w, dw_fwhm_ref=iron_dw_fwhm_w, num_bins=10, reset_edge=True)
                 else:
                     if self.verbose: 
-                        print_log(f'Downsample original AGN iron pesudo-continuum with bin width of {self.ds_bin_wave:.3f} AA in a min resolution of {self.ds_fwhm_wave_w.min():.3f} AA', 
+                        print_log(f'Downsample original AGN iron pesudo-continuum with bin width of {self.dw_dsp:.3f} AA in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} AA', 
                                   self.log_message)  
-                iron_wave_w = iron_wave_w[::self.ds_bin_pix]
-                iron_flux_w = iron_flux_w[::self.ds_bin_pix]
-                self.ds_fwhm_wave_w = self.ds_fwhm_wave_w[::self.ds_bin_pix]
+                iron_wave_w = iron_wave_w[::self.dpix_dsp]
+                iron_flux_w = iron_flux_w[::self.dpix_dsp]
+                self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[::self.dpix_dsp]
 
         # select model spectra in given wavelength range
         mask_select_w = (iron_wave_w >= self.w_min) & (iron_wave_w <= self.w_max)
         iron_wave_w = iron_wave_w[mask_select_w]
         iron_flux_w = iron_flux_w[mask_select_w]
-        self.ds_fwhm_wave_w = self.ds_fwhm_wave_w[mask_select_w]
+        self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[mask_select_w]
 
         self.orig_wave_w = np.hstack((self.orig_wave_w, iron_wave_w))
         self.orig_wave_w = np.sort(self.orig_wave_w)
         self.iron_flux_w = np.interp(self.orig_wave_w, iron_wave_w, iron_flux_w, left=0, right=0)
-        self.ds_fwhm_wave_w = np.interp(self.orig_wave_w, iron_wave_w, self.ds_fwhm_wave_w)
+        self.dw_fwhm_dsp_w = np.interp(self.orig_wave_w, iron_wave_w, self.dw_fwhm_dsp_w)
 
     def iron_func(self):
         return self.iron_flux_w # no special parameter needed
@@ -200,28 +196,30 @@ class AGNFrame(object):
                 bac = self.bac_func(self.orig_wave_w, logtem=par_cp[i_comp,3], logtau=par_cp[i_comp,4])
                 orig_flux_int_ew = bac[None,:] # convert to (1,w) format
 
+            # limit element number for accelarate calculation
             if mask_lite_e is not None:
-                orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp,:],:] # limit element number for accelarate calculation
+                orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp,:],:] 
 
             # dust extinction
             orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * par_cp[i_comp,2] * ExtLaw(self.orig_wave_w))
+
             # redshift models
             z_ratio = (1 + self.v0_redshift) * (1 + par_cp[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             orig_wave_z_w = self.orig_wave_w * z_ratio
             orig_flux_dz_ew = orig_flux_d_ew / z_ratio
-            # convolve with intrinsic and instrumental dispersion if R_inst_rw is not None 
-            # skip for powerlaw
+
+            # convolve with intrinsic and instrumental dispersion if self.R_inst_rw is not None; skip for powerlaw
             if (self.R_inst_rw is not None) & (conv_nbin is not None) & ~np.isin('powerlaw', self.cframe.info_c[i_comp]['mod_used']):
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
-                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, fwhm_vel_kin=par_cp[i_comp,1], fwhm_wave_ref=self.ds_fwhm_wave_w, R_inst_w=R_inst_w, num_bins=conv_nbin)
-                # convolution in redshifted- or rest-wavelength does not change result
+                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=par_cp[i_comp,1], 
+                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_ratio, R_inst_w=R_inst_w, num_bins=conv_nbin)
             else:
-                orig_flux_dzc_ew = orig_flux_dz_ew 
-                # just copy if convlution not required, e.g., for broad-band sed fitting
+                orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
 
             # project to observed wavelength
             interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value="extrapolate")
             obs_flux_scomp_ew = interp_func(obs_wave_w)
+
             if i_comp == 0: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
