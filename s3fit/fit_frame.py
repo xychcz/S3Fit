@@ -137,7 +137,7 @@ class FitFrame(object):
         self.verbose = verbose 
 
         arg_list = list(inspect.signature(self.__init__).parameters.values())
-        self.input_args = {arg.name: getattr(self,arg.name,None) for arg in arg_list if arg.name != 'self'}
+        self.input_args = {arg.name: copy(getattr(self,arg.name,None)) for arg in arg_list if arg.name != 'self'}
         # FitFrame class can be copied as FF_1 = FitFrame(**FF_0.input_args)
 
         # initialize input formats
@@ -192,8 +192,8 @@ class FitFrame(object):
         if self.keep_invalid: mask_keep_w[:] = True # mock data and models will be created in invalid range
 
         if self.spec_flux_scale is None: self.spec_flux_scale = 10.0**np.round(np.log10(np.median(self.spec_flux_w[mask_keep_w])))
-        self.spec_flux_w /= self.spec_flux_scale
-        self.spec_ferr_w /= self.spec_flux_scale
+        self.spec_flux_w = self.input_args['spec_flux_w'] / self.spec_flux_scale # use input_args to avoid iterative changing of values
+        self.spec_ferr_w = self.input_args['spec_ferr_w'] / self.spec_flux_scale # use input_args to avoid iterative changing of values
 
         # create a dictionary for spectral data
         self.spec = {}
@@ -283,6 +283,8 @@ class FitFrame(object):
                 self.spec_calib_ratio = spec_calib_ratio_b.mean()
                 self.spec['flux_w'] *= self.spec_calib_ratio
                 self.spec['ferr_w'] *= self.spec_calib_ratio
+                self.spec_flux_w *= self.spec_calib_ratio
+                self.spec_ferr_w *= self.spec_calib_ratio
                 print_log(f'[Note] The input spectrum is calibrated with photometric fluxes in the bands: {self.phot_calib_b}.', self.log_message, verbose)
                 print_log(f'[Note] The calibration ratio for spectrum is {self.spec_calib_ratio}.', self.log_message, verbose)
 
@@ -1086,7 +1088,7 @@ class FitFrame(object):
             # specphot_ferr_w = np.hstack((spec_ferr_w, phot_ferr_b))
             specphot_mask_w = np.hstack((mask_valid_w, mask_valid_b))
 
-        print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} starts', 80), self.log_message)
+        print_log(center_string(f'Loop {i_loop+1}/{self.num_loops} starts ' + ('(original data)' if i_loop == 0 else '(mock data)'), 80), self.log_message)
         self.time_loop = time.time()
 
         if i_loop == 0: 
@@ -1459,13 +1461,14 @@ class FitFrame(object):
         if not self.input_initialized: 
             print_log(f'\n[Note] Re-initialize input data before extracting results.', self.log_message, display=False)
             self.init_input_data(verbose=False) # reset input if data is modified (e.g., in extract_results)
+
         spec_wave_w = self.spec['wave_w']
         if self.have_phot: 
             if num_sed_wave is not None:
-                self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
                 self.sed['wave_running_w'] = copy(self.sed['wave_w'])
                 self.sed['wave_w'] = np.logspace(np.log10(self.sed['wave_w'].min()), 
                                                  np.log10(self.sed['wave_w'].max()), num=num_sed_wave)
+                self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
             sed_wave_w = self.sed['wave_w']
             phot_trans_bw = self.pframe.read_transmission(name_b=self.phot_name_b, trans_dir=self.phot_trans_dir, wave_w=sed_wave_w)[1]
 
@@ -1580,12 +1583,12 @@ class FitFrame(object):
                         output_mc[mod][comp]['sed_lw']  *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,sed_wave_w)
                     if np.isin('phot_lb', [*output_mc[mod][comp]]): 
                         output_mc[mod][comp]['phot_lb'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
-            self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
             self.spec['flux_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
             self.spec['ferr_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
             if self.have_phot:
                 self.phot['flux_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
                 self.phot['ferr_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
+            self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
 
         # calculate average spectra
         for mod in rev_model_type.split('+'): 
