@@ -21,7 +21,8 @@ class PhotFrame(object):
         self.ferr_b = copy(ferr_b) 
         self.flux_unit = flux_unit
 
-        self.trans_dir = trans_dir
+        self.trans_dir = copy(trans_dir)
+        if self.trans_dir[-1] != '/': self.trans_dir += '/'
         self.trans_rsmp = trans_rsmp
 
         self.wave_w = copy(wave_w)
