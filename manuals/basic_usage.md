@@ -178,7 +178,7 @@ set it to any value with `'fix'` to save a free parameter.
 > ```python
 > FF.model_dict['ssp']['spec_mod'].reconstruct_sfh()
 > ```
-> Please read the [Jupyter Notebook](../example/example_galaxy.ipynb) for an example case. 
+> Please read the [Jupyter Notebook](../examples/example_galaxy.ipynb) for an example case. 
 
 #### 2.2 Emission lines
 
@@ -336,7 +336,7 @@ You can choose to list figures in each step (left) or show them dynamically in a
   <img src="https://github.com/user-attachments/assets/ae283b48-4097-4c47-901c-34c8c100e69b" width="48%" />
 </p>
 
-Please read the [Jupyter Notebook](../example/example_galaxy.ipynb) for examples of actual fitting. 
+Please read the [Jupyter Notebook](../examples/example_galaxy.ipynb) for examples of actual fitting. 
 The notebook also exhibits 
 the method to save the fitting results to a file and reload them from the file, 
 and 

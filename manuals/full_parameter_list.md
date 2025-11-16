@@ -149,7 +149,7 @@
    Default is `False`. 
 - `canvas` (tuple, optional) \
    Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically.
-   Please read the [Jupyter Notebook example](../example/example_galaxy.ipynb) in the [example directory](../example) for a reference of the usage. 
+   Please read the [Jupyter Notebook example](../examples/example_galaxy.ipynb) in the [example directory](../examples) for a reference of the usage. 
 - `verbose` (bool, optional) \
    Whether or not to print the running information of the Linear and Non-linear Least-square solvers. Default is `False`.
 - `save_per_loop` (bool, optional) and `output_filename` (string, optional)\

@@ -36,7 +36,7 @@ Please find guides in [manuals](https://github.com/xychcz/S3Fit/blob/main/manual
 for [basic](https://github.com/xychcz/S3Fit/blob/main/manuals/basic_usage.md) 
 and [advanced](https://github.com/xychcz/S3Fit/blob/main/manuals/advanced_usage.md) usages of this code. 
 An example of the usage of S<sup>3</sup>Fit is provided in the 
-[example](https://github.com/xychcz/S3Fit/blob/main/example/example_galaxy.ipynb). 
+[example](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb). 
 
 ## Installation
 
