@@ -22,7 +22,6 @@ class PhotFrame(object):
         self.flux_unit = flux_unit
 
         self.trans_dir = copy(trans_dir)
-        if self.trans_dir[-1] != '/': self.trans_dir += '/'
         self.trans_rsmp = trans_rsmp
 
         self.wave_w = copy(wave_w)
@@ -42,6 +41,8 @@ class PhotFrame(object):
             self.ferr_b /= self.rFnuFlam_b # convert to erg/s/cm2/AA
         
     def read_transmission(self, name_b=None, trans_dir=None, trans_rsmp=None, wave_w=None, wave_num=None):        
+        if trans_dir[-1] != '/': trans_dir += '/'
+
         if name_b is None:
             file_list = np.array(os.listdir(trans_dir))
             file_list = file_list[np.array([f[-4:] for f in file_list]) == '.dat']
