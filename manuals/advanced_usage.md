@@ -9,6 +9,7 @@ The transmission curve supported by S<sup>3</sup>Fit needs to have
 two columns, wavelengths (in angstrom) and transmission values.
 Save the curve with a filename of `Bandname.dat` and put it in the directory set in `phot_trans_dir`, 
 and then the new band can be used in S<sup>3</sup>Fit. 
+You may download the transmission curve files in [this page](https://svo2.cab.inta-csic.es/svo/theory/fps3/index.php?mode=browse).
 
 ## 2. Switch extinction laws
 
