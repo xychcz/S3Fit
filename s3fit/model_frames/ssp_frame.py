@@ -39,19 +39,20 @@ class SSPFrame(object):
         # load popstar library
         self.read_ssp_library()
 
+        self.num_comps = self.cframe.num_comps
         # read SFH setup from input config file
         self.sfh_names = np.array([d['sfh_name'] for d in self.cframe.info_c])
-        self.num_comps = self.cframe.num_comps
-        if self.num_comps == 1:
-            if self.sfh_names[0] == 'nonparametric':
-                self.num_coeffs = self.num_mets * self.num_ages
-            else:
-                self.num_coeffs = self.num_mets
-        else:
-            if np.sum(self.sfh_names == 'nonparametric') == 0:
-                self.num_coeffs = self.num_mets * self.num_comps
-            else:
+        if self.num_comps > 1:
+            if np.sum(self.sfh_names == 'nonparametric') >= 1:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
+
+        self.num_coeffs_c = np.zeros(self.num_comps, dtype='int')
+        for i_comp in range(self.num_comps):
+            if self.sfh_names[i_comp] == 'nonparametric':
+                self.num_coeffs_c[i_comp] = self.num_mets * self.num_ages
+            else:
+                self.num_coeffs_c[i_comp] = self.num_mets 
+        self.num_coeffs = self.num_coeffs_c.sum()
 
         # currently do not consider negative spectra 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
@@ -308,6 +309,7 @@ class SSPFrame(object):
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
                 obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+
         return obs_flux_mcomp_ew
     
     def mask_ssp_allowed(self, i_comp=0, csp=False):
@@ -402,7 +404,7 @@ class SSPFrame(object):
         comp_c = self.cframe.comp_c
         num_comps = self.cframe.num_comps
         num_pars_per_comp = self.cframe.num_pars_per_comp
-        num_coeffs_per_comp = int(self.num_coeffs / num_comps)
+        num_coeffs_per_comp = self.num_coeffs_c[0] # components share the same num_coeffs
 
         # list the properties to be output
         val_names  = ['voff', 'fwhm', 'AV'] # basic fitting parameters
@@ -602,8 +604,6 @@ class SSPFrame(object):
         if output_c is None: output_c = self.output_c
         comp_c = self.cframe.comp_c
         num_comps = self.cframe.num_comps
-        # num_pars_per_comp = self.cframe.num_pars_per_comp
-        num_coeffs_per_comp = int(self.num_coeffs / num_comps)
 
         # par_p   = output_c[comp_c[i_comp]]['par_lp'][i_loop]
         # coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]

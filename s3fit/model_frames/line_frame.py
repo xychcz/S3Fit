@@ -738,6 +738,7 @@ class LineFrame(object):
         self.mask_free_cn  = np.zeros((self.num_comps, self.num_lines), dtype='bool')
         for i_comp in range(self.num_comps):
             self.mask_free_cn[i_comp] = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict])
+        self.num_coeffs_c = self.mask_free_cn.sum(axis=1)
         self.num_coeffs = self.mask_free_cn.sum()
         
         # set component name and enable mask for each free line; _e denotes free or coeffs

@@ -33,7 +33,7 @@ class FitFrame(object):
                  num_mocks=0, use_multi_thread=False, num_multi_thread=-1, 
                  inst_calib_ratio=0.1, inst_calib_ratio_rev=True, inst_calib_smooth=1e4, 
                  # fitting control
-                 examine_result=True, accept_model_SN=2, 
+                 examine_result=True, accept_model_SN=2, accept_absorption_SN=None, 
                  accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
                  fit_grid='linear', conv_nbin_max=5, Rratio_mod=2, 
@@ -103,6 +103,7 @@ class FitFrame(object):
         # control on fitting quality: fitting steps
         self.examine_result = examine_result 
         self.accept_model_SN = accept_model_SN
+        self.accept_absorption_SN = accept_absorption_SN if accept_absorption_SN is not None else accept_model_SN
         if self.examine_result: 
             print_log(f"All continuum models and line components with peak S/N < {self.accept_model_SN} (set with 'accept_model_SN') will be automatically disabled in examination.", self.log_message)
         else:
@@ -1154,9 +1155,9 @@ class FitFrame(object):
             line_disabled_comps = [line_mod.cframe.comp_c[i_comp] for i_comp in range(line_mod.num_comps) if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption']
             if len(line_disabled_comps) > 0:
                 mask_abs_w = mask_valid_w & (line_fit_init['line_spec_fmod_w'] < 0)
-                line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.accept_model_SN)
+                line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.accept_absorption_SN)
                 if not line_abs_examine:
-                    print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.accept_model_SN} (set by accept_model_SN).', 
+                    print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.accept_absorption_SN} (set by accept_absorption_SN).',
                               self.log_message, self.print_step)                 
                     # fix the parameters of disabled components (to reduce number of free parameters)
                     for i_comp in range(line_mod.num_comps):
@@ -1453,9 +1454,9 @@ class FitFrame(object):
         if (step == 'spec+SED'):  step = 'joint_fit_3'
         if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
 
-        best_chi_sq_l   = self.output_s[step]['chi_sq_l']
-        best_par_lp     = self.output_s[step]['par_lp']
-        best_coeff_le   = self.output_s[step]['coeff_le']
+        best_chi_sq_l   = copy(self.output_s[step]['chi_sq_l'])
+        best_par_lp     = copy(self.output_s[step]['par_lp'])
+        best_coeff_le   = copy(self.output_s[step]['coeff_le'])
         best_ret_dict_l = self.output_s[step]['ret_dict_l']
 
         if not self.input_initialized: 
@@ -1537,17 +1538,12 @@ class FitFrame(object):
         for mod in rev_model_type.split('+'): 
             comp_c = self.model_dict[mod]['cframe'].comp_c
             num_comps = self.model_dict[mod]['cframe'].num_comps
-            num_coeffs = self.model_dict[mod]['spec_mod'].num_coeffs
+            num_coeffs_c = self.model_dict[mod]['spec_mod'].num_coeffs_c
             fp0, fp1, fe0, fe1 = self.search_model_index(mod, self.full_model_type)
             i_e0 = 0; i_e1 = 0
             for i_comp in range(num_comps):
-                if mod == 'line':
-                    i_e0 += 0 if i_comp == 0 else self.model_dict[mod]['spec_mod'].mask_free_cn[i_comp-1].sum()
-                    i_e1 += self.model_dict[mod]['spec_mod'].mask_free_cn[i_comp].sum()
-                else:
-                    i_e0 += 0 if i_comp == 0 else int(num_coeffs / num_comps)
-                    i_e1 += int(num_coeffs / num_comps)
-
+                i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
+                i_e1 += num_coeffs_c[i_comp]
                 for i_loop in range(self.num_loops): 
                     spec_fmod_ew = self.model_dict[mod]['spec_func'](spec_wave_w, best_par_lp[i_loop, fp0:fp1], conv_nbin=self.conv_nbin_max)
                     spec_fmod_w  = best_coeff_le[i_loop, fe0:fe1][i_e0:i_e1] @ spec_fmod_ew[i_e0:i_e1]

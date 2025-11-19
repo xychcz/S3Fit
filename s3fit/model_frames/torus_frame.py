@@ -30,7 +30,8 @@ class TorusFrame(object):
         self.log_message = log_message
                 
         self.num_comps = self.cframe.num_comps
-        self.num_coeffs = self.cframe.num_comps # one independent element per component since disc and torus are tied
+        self.num_coeffs_c = np.ones(self.num_comps, dtype='int') # one independent element per component since disc and torus are tied
+        self.num_coeffs = self.num_coeffs_c.sum()
 
         # currently do not consider negative SED 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
@@ -205,7 +206,7 @@ class TorusFrame(object):
         comp_c = self.cframe.comp_c
         num_comps = self.cframe.num_comps
         num_pars_per_comp = self.cframe.num_pars_per_comp
-        num_coeffs_per_comp = int(self.num_coeffs / num_comps)
+        num_coeffs_per_comp = self.num_coeffs_c[0] # components share the same num_coeffs
 
         # list the properties to be output
         val_names  = ['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] # basic fitting parameters

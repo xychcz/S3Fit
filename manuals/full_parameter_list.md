@@ -99,6 +99,11 @@
    An additional fitting step will be performed with the updated model configuration 
    (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)).
    If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
+-  `accept_absorption_SN` (float, optional) \
+   Acceptable minimum peak S/N of absorption line component(s). 
+   Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled.
+   The default value is the same as `accept_model_SN`.
+   Note that the examinations of absorption lines is always performed even though `examine_result=False`.
 - `accept_chi_sq` (float, optional) \
    The accepted $\chi^2$ in the initial and intermediate fitting steps. Default is `3`.
    The accepted $\chi^2$ in the final fitting step will be dynamically chosen with $\chi^2$ of the progenitor steps. 
