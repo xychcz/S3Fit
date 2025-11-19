@@ -1641,12 +1641,15 @@ class FitFrame(object):
         ax2.plot(rest_wave_w[mask_spec_w], (flux_w-model_w)[:self.num_spec_wave][mask_spec_w], c='C2', alpha=0.6, label='Residuals (spec)')
         # ax2.fill_between(rest_wave_w, -ferr_w[:self.num_spec_wave], ferr_w[:self.num_spec_wave], color='C5', alpha=0.2, label=r'1$\sigma$ error')
         ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec_ferr_w[:len(self.spec_wave_w)], self.spec_ferr_w[:len(self.spec_wave_w)], color='C5', alpha=0.2, label=r'1$\sigma$ error')
-        # ax1.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
-        #                  hatch='////', fc='None', ec='C5', alpha=0.25)
-        ax1.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
+        ax1.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
-        ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
+        ax2.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
+        if not self.keep_invalid:
+            ax1.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
+                             hatch='////', fc='None', ec='C5', alpha=0.25)
+            ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
+                             hatch='////', fc='None', ec='C5', alpha=0.25)
         ax1.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+100)
         ax2.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+100)
         if fit_phot:

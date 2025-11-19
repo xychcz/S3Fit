@@ -566,10 +566,10 @@ class SSPFrame(object):
                         msg += f' +/- {tmp_values_vl[par_name].std():<8.4f}|\n'
             else:
                 print_log(f'Best-fit stellar properties of the sum of all components.', log)
-            msg += f'| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/AA) = {tmp_values_vl["flux_5500"][mask_l].mean():10.4f}'
+            msg += f'| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl["flux_5500"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["flux_5500"].std():<8.4f}|\n'
             if self.w_norm != 5500:
-                msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/AA) = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
+                msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
                 msg += f' +/- {tmp_values_vl["flux_wavenorm"].std():<8.4f}|\n'
             msg += f'| λL5500 (rest,intrinsic) (log Lsun)        = {tmp_values_vl["loglambLum_5500"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["loglambLum_5500"].std():<8.4f}|\n'
