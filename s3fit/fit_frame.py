@@ -19,14 +19,15 @@ from .auxiliary_func import print_log, center_string, convolve_var_width_fft
 
 class FitFrame(object):
     def __init__(self, 
-                 # data
+                 # spectral data
                  spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
                  spec_R_inst_w=None, spec_valid_range=None, spec_flux_scale=None, 
+                 # photometirc data
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, 
-                 phot_calib_b=None, phot_flux_unit='mJy', 
-                 phot_trans_dir=None, phot_trans_rsmp=10, 
+                 phot_trans_dir=None, phot_flux_unit='mJy', 
+                 phot_trans_rsmp=10, phot_calib_b=None, 
                  sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, 
-                 keep_invalid = False,
+                 keep_invalid=False, 
                  # model config
                  v0_redshift=None, model_config=None, norm_wave=5500, norm_width=25, 
                  # mock setup
@@ -36,7 +37,7 @@ class FitFrame(object):
                  examine_result=True, accept_model_SN=2, accept_absorption_SN=None, 
                  accept_chi_sq=3, nlfit_ntry_max=3, 
                  init_annealing=True, da_niter_max=10, perturb_scale=0.02, nllsq_ftol_ratio=0.01, 
-                 fit_grid='linear', conv_nbin_max=5, Rratio_mod=2, 
+                 fit_grid='linear', conv_nbin_max=5, model_R_ratio=2, 
                  # auxiliary
                  print_step=True, plot_step=False, canvas=None, 
                  save_per_loop=False, output_filename=None, 
@@ -84,6 +85,8 @@ class FitFrame(object):
         # set wavelength and width (in AA) used to normalize model spectra
         self.norm_wave = norm_wave
         self.norm_width = norm_width
+        # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument
+        self.model_R_ratio = model_R_ratio
 
         # number of mock data
         self.num_mocks = num_mocks
@@ -125,8 +128,6 @@ class FitFrame(object):
             print_log(f"[Note] Pure line fitting (i.e., after subtracting continuum), if enabled, is always in linear space.", self.log_message)
         # control on fitting quality: linear process, maximum of bins to perform fft convolution with variable width/resolution
         self.conv_nbin_max = conv_nbin_max
-        # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument
-        self.Rratio_mod = Rratio_mod
 
         # whether to output intermediate results
         self.print_step = print_step # if display in stdout
@@ -312,7 +313,7 @@ class FitFrame(object):
                 self.model_dict[mod]['spec_mod'] = StellarFrame(filename=self.model_config[mod]['file'], 
                                                             cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                            Rratio_mod=self.Rratio_mod, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
+                                                            Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                             log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
@@ -333,7 +334,7 @@ class FitFrame(object):
                 self.model_dict[mod]['spec_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
                                                             cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                            Rratio_mod=self.Rratio_mod, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
+                                                            Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                             log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
