@@ -4,7 +4,7 @@
 > Please do not be confused with the non-linear fitting 'parameters' of models discussed in  [fitting strategy](./fitting_strategy.md).
 
 > [!NOTE]
-> The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+> S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 ### Input spectroscopic data
 - `spec_wave_w` (list or numpy array of floats, <ins>**required**</ins>) \
@@ -12,15 +12,9 @@
 - `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats, <ins>**required**</ins>) \
    Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.
 - `spec_R_inst_w` (list or numpy array of floats, or 2-element list, <ins>**required**</ins>) \
-   Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum,
-   this is used to convolve the model spectra and estimate the intrinsic velocity width. 
-  `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
-   or given as a constant value as `spec_R_inst_w=[wave,R]` to specify the resolution `R` at the wavelength `wave` (in angstrom). 
+   Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum, this is used to convolve the model spectra and estimate the intrinsic velocity width.  `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, or given as a constant value as `spec_R_inst_w=[wave,R]` to specify the resolution `R` at the wavelength `wave` (in angstrom). 
 - `spec_valid_range` (nested list of floats, optional) \
-   Valid wavelength range.
-   For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.
-   Default is `None`, in this case the entire input spectrum (except for the wavelengths with non-positive `spec_ferr_w`)
-   will be used in the fitting. 
+   Valid wavelength range. For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`. Default is `None`, in this case the entire input spectrum (except for the wavelengths with non-positive `spec_ferr_w`) will be used in the fitting. 
 - `spec_flux_scale` (float, optional) \
    Scaling ratio of the input flux (e.g., `spec_flux_scale=1e-15`) to avoid too small values of flux in the fitting. 
   `spec_flux_scale` is not mandatory and it can be determined automatically if setting `spec_flux_scale=None` (default). 
@@ -31,26 +25,19 @@
    Default is `False`. 
 
 ### Input photometric data
-- `phot_name_b` (list or numpy array of strings) \
-   List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
-   The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
-- `phot_flux_b` and `phot_ferr_b` (list or numpy array of floats) \
-   Fluxes and measurement errors in each band.
-- `phot_trans_dir` (string) \
+- `phot_name_b` (list or numpy array of strings, required for simultaneous spectrum+SED fitting) \
+   List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`. The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
+- `phot_flux_b` and `phot_ferr_b` (list or numpy array of floats, required for simultaneous spectrum+SED fitting) \
+   Fluxes and measurement errors in each band. The unit is given in `phot_fluxunit`. 
+- `phot_trans_dir` (string, required for simultaneous spectrum+SED fitting) \
    Directory of files of the transmission curves.
 > [!TIP]
-> The above four parameters are only necessary if a simultaneous fitting of spectrum and photometric-SED is required.
+> The above four parameters are only necessary if a simultaneous fitting of spectrum and photometric-SED is performed.
 > S<sup>3</sup>Fit will run in a pure-spectral fitting mode if these parameters are set to `None` (default). 
 - `phot_fluxunit` (string, optional) \
-   Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
-   If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
+   Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`. S<sup>3</sup>Fit run with $f_\lambda$ and it can handle the conversion automatically if the input flux is in $f_\nu$. 
 - `phot_calib_b` (list or numpy array of strings, optional) \
-   List of band names of photometric data that is used for calibration of spectrum.
-   For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum,
-   set `phot_calib_b=['SDSS_rp','SDSS_ip']`
-   and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w`
-   with `phot_flux_b` in the two bands, e.g., to correct for aperture loss of the input spectrum. 
-   Set `phot_calib_b=None` (default) if the calibration is not required.  
+   List of band names of photometric data that is used for flux calibration of spectrum (e.g., to correct for aperture loss of the input spectrum). For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum, you can set `phot_calib_b=['SDSS_rp','SDSS_ip']` and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w` with `phot_flux_b` in the two bands. Set `phot_calib_b=None` (default) if the calibration is not required. 
 - `sed_wave_w` (list or numpy array of floats, optional) and `sed_waveunit` (string, optional) \
    Wavelength array and its unit of the full SED wavelength range,
    which are used to create the model spectra and convert them to fluxes in each band.
@@ -94,16 +81,10 @@
    The convolution is adopted to avoid involving artifacts into Monte Carlo mock spectra surrounding bright lines.
    Default is `10000` (km/s). Set it to `0` if you want to disable the convolution. 
 - `examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
-   If `examine_result=True` (default), the best-fit models will be examined.
-   All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled.
-   An additional fitting step will be performed with the updated model configuration 
-   (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)).
+   If `examine_result=True` (default), the best-fit models will be examined. All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled. An additional fitting step will be performed with the updated model configuration (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)). 
    If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
 -  `accept_absorption_SN` (float, optional) \
-   Acceptable minimum peak S/N of absorption line component(s). 
-   Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled.
-   The default value is the same as `accept_model_SN`.
-   Note that the examinations of absorption lines is always performed even though `examine_result=False`.
+   Acceptable minimum peak S/N of absorption line component(s). Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled. The default value is the same as `accept_model_SN`. Note that the examinations of absorption lines is always performed even though `examine_result=False`.
 - `accept_chi_sq` (float, optional) \
    The accepted $\chi^2$ in the initial and intermediate fitting steps. Default is `3`.
    The accepted $\chi^2$ in the final fitting step will be dynamically chosen with $\chi^2$ of the progenitor steps. 
@@ -128,10 +109,7 @@
    Default is `0.01`, i.e., the `ftol` parameter of `scipy.optimize.least_squares`
    will be given as 0.01*sqrt(n), where n is the number of input data in wavelength (combining both of spectroscopic and photometric data).
 - `fit_grid` (string, optional) \
-   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
-   Set `fit_grid='log'` to run the fitting in logarithmic flux grid.
-   Note that if emisison line is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`.
-   (please refer to [fitting strategy](./fitting_strategy.md) for details). 
+   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, or `fit_grid='log'` to run the fitting in logarithmic flux grid. Note that if `line` model is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`. (please refer to [fitting strategy](./fitting_strategy.md) for details). 
 - `conv_nbin_max` (int, optional) \
    Maximum bin number to perform FFT accelerated convolution of continuum model spectra with variable Gaussian kernel widths (e.g., wavelength-dependent spectral resolution).
    Default is `5`, i.e., the convolution will be performed with kernel widths at 5 evenly-spaced wavelengths.

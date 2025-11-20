@@ -3,12 +3,14 @@
 > [!NOTE]
 > S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
+> [!TIP]
+> Examples of the usage of S<sup>3</sup>Fit can be found in [example1](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb) and [example2](https://github.com/xychcz/S3Fit/blob/main/examples/example_quasar.ipynb)
 ## 1. Initialization
 As the first step, please initialize the `FitFrame`, which is the main framework of S<sup>3</sup>Fit, by providing the following input parameters. 
 ```python
 from s3fit import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_w=None, spec_valid_range=None, 
-              phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
+              phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_flux_unit='mJy', 
               v0_redshift=None, model_config=None, 
               num_mocks=0, fit_grid='linear', examine_result=True, 
               print_step=True, plot_step=False)
@@ -23,60 +25,39 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 - `spec_valid_range` (nested list of floats, optional) \
    Valid wavelength range. For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`. Default is `None`, in this case the entire input spectrum (except for the wavelengths with non-positive `spec_ferr_w`) will be used in the fitting. 
 #### 1.2 Input photometric data
-- `phot_name_b` (list or numpy array of strings) \
-   List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
-   The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
-- `phot_flux_b` and `phot_ferr_b` (list or numpy array of floats) \
-   Fluxes and measurement errors in each band.
-- `phot_trans_dir` (string) \
+- `phot_name_b` (list or numpy array of strings, required for simultaneous spectrum+SED fitting) \
+   List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`. The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
+- `phot_flux_b` and `phot_ferr_b` (list or numpy array of floats, required for simultaneous spectrum+SED fitting) \
+   Fluxes and measurement errors in each band. The unit is given in `phot_fluxunit`. 
+- `phot_trans_dir` (string, required for simultaneous spectrum+SED fitting) \
    Directory of files of the transmission curves.
 > [!TIP]
-> The above four parameters are only necessary if a simultaneous fitting of spectrum and photometric-SED is required.
+> The above four parameters are only necessary if a simultaneous fitting of spectrum and photometric-SED is performed.
 > S<sup>3</sup>Fit will run in a pure-spectral fitting mode if these parameters are set to `None` (default). 
 - `phot_fluxunit` (string, optional) \
-   Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`.
-   If the input data is in unit of 'mJy', they will be converted to 'erg/s/cm2/AA' before the fitting.
+   Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`. S<sup>3</sup>Fit run with $f_\lambda$ and it can handle the conversion automatically if the input flux is in $f_\nu$. 
 - `phot_calib_b` (list or numpy array of strings, optional) \
-   List of band names of photometric data that is used for calibration of spectrum.
-   For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum,
-   set `phot_calib_b=['SDSS_rp','SDSS_ip']`
-   and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w`
-   with `phot_flux_b` in the two bands, e.g., to correct for aperture loss of the input spectrum. 
-   Set `phot_calib_b=None` (default) if the calibration is not required. 
+   List of band names of photometric data that is used for flux calibration of spectrum (e.g., to correct for aperture loss of the input spectrum). For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum, you can set `phot_calib_b=['SDSS_rp','SDSS_ip']` and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w` with `phot_flux_b` in the two bands. Set `phot_calib_b=None` (default) if the calibration is not required. 
 #### 1.3 Model setup 
 - `v0_redshift` (float, <ins>**required**</ins>) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 - `model_config` (nested dictionary, <ins>**required**</ins>) \
-   Dictionary of model configurations.
-   Please refer to the [model configuration](#2-model-configuration) section for details. 
+   Dictionary of model configurations. Please refer to the [model configuration](#2-model-configuration) section for details. 
 #### 1.4 Control of fitting
 - `num_mocks` (int, optional) \
-   Number of the mock spectra for the Monte Carlo method.  
-   The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
+   Number of the mock spectra for the Monte Carlo method. The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
 - `fit_grid` (string, optional) \
-   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid.
-   Set `fit_grid='log'` to run the fitting in logarithmic flux grid.
-   Note that if emisison line is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`.
-   (please refer to [fitting strategy](./fitting_strategy.md) for details).
+   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, or `fit_grid='log'` to run the fitting in logarithmic flux grid. Note that if `line` model is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`. (please refer to [fitting strategy](./fitting_strategy.md) for details).
 - `examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
-   If `examine_result=True` (default), the best-fit models will be examined.
-   All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled.
-   An additional fitting step will be performed with the updated model configuration 
-   (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)).
+   If `examine_result=True` (default), the best-fit models will be examined. All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled. An additional fitting step will be performed with the updated model configuration (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)). 
    If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
 -  `accept_absorption_SN` (float, optional) \
-   Acceptable minimum peak S/N of absorption line component(s). 
-   Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled.
-   The default value is the same as `accept_model_SN`.
-   Note that the examinations of absorption lines is always performed even though `examine_result=False`.
-
+   Acceptable minimum peak S/N of absorption line component(s). Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled. The default value is the same as `accept_model_SN`. Note that the examinations of absorption lines is always performed even though `examine_result=False`.
 #### 1.5 Auxiliary
 - `print_step` (bool, optional) \
-   Whether or not to print the information each intermediate step (e.g., the examination of each model component).
-   Default is `True`.
+   Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`.
 - `plot_step` (bool, optional) \
-   Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step.
-   Default is `False`. 
+   Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. 
 > [!NOTE]
 > Please refer to the [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 

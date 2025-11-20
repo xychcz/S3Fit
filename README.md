@@ -35,8 +35,9 @@ An example of the fitting result of S<sup>3</sup>Fit is shown in the following p
 Please find guides in [manuals](https://github.com/xychcz/S3Fit/blob/main/manuals/) 
 for [basic](https://github.com/xychcz/S3Fit/blob/main/manuals/basic_usage.md) 
 and [advanced](https://github.com/xychcz/S3Fit/blob/main/manuals/advanced_usage.md) usages of this code. 
-An example of the usage of S<sup>3</sup>Fit is provided in the 
-[example](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb). 
+Examples of the usage of S<sup>3</sup>Fit are provided in 
+[example1](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb) and
+[example2](https://github.com/xychcz/S3Fit/blob/main/examples/example_quasar.ipynb)
 
 ## Installation
 
