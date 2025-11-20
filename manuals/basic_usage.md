@@ -1,11 +1,10 @@
 # Basic usage
 
 > [!NOTE]
-> The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+> S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 ## 1. Initialization
-As the first step, please initialize the `FitFrame`, which is the main class of S<sup>3</sup>Fit, 
-by providing the following input parameters. 
+As the first step, please initialize the `FitFrame`, which is the main framework of S<sup>3</sup>Fit, by providing the following input parameters. 
 ```python
 from s3fit import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_w=None, spec_valid_range=None, 
@@ -20,15 +19,9 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 - `spec_flux_w` and `spec_ferr_w` (list or numpy array of floats, <ins>**required**</ins>) \
    Fluxes and measurement errors of the input spectrum, in unit of erg s<sup>-1</sup> cm<sup>-2</sup> angstrom<sup>-1</sup>.
 - `spec_R_inst_w` (list or numpy array of floats, or 2-element list, <ins>**required**</ins>) \
-   Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum,
-   this is used to convolve the model spectra and estimate the intrinsic velocity width. 
-  `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, 
-   or given as a constant value as `spec_R_inst_w=[wave,R]` to specify the resolution `R` at the wavelength `wave` (in angstrom). 
+   Instrumental spectral resolution ($\lambda/\Delta\lambda$) of the input spectrum, this is used to convolve the model spectra and estimate the intrinsic velocity width.  `spec_R_inst_w` can be a list of variable resolutions as a function of the input wavelength `spec_wave_w`, or given as a constant value as `spec_R_inst_w=[wave,R]` to specify the resolution `R` at the wavelength `wave` (in angstrom). 
 - `spec_valid_range` (nested list of floats, optional) \
-   Valid wavelength range.
-   For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`.
-   Default is `None`, in this case the entire input spectrum (except for the wavelengths with non-positive `spec_ferr_w`)
-   will be used in the fitting. 
+   Valid wavelength range. For example, if 5000--7000 and 7500--10000 angstrom are used in fitting, set `spec_valid_range=[[5000,7000], [7500,10000]]`. Default is `None`, in this case the entire input spectrum (except for the wavelengths with non-positive `spec_ferr_w`) will be used in the fitting. 
 #### 1.2 Input photometric data
 - `phot_name_b` (list or numpy array of strings) \
    List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`.
