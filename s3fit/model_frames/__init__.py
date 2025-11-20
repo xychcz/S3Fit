@@ -3,9 +3,9 @@
 # Repository: https://github.com/xychcz/S3Fit
 # Contact: s3fit@xychen.me
 
-from .ssp_frame import SSPFrame
+from .stellar_frame import StellarFrame
 from .line_frame import LineFrame
 from .agn_frame import AGNFrame
 from .torus_frame import TorusFrame
 
-__all__ = ["SSPFrame", "LineFrame", "AGNFrame", "TorusFrame"]
+__all__ = ["StellarFrame", "LineFrame", "AGNFrame", "TorusFrame"]

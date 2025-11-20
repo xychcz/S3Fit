@@ -296,22 +296,27 @@ class FitFrame(object):
         self.full_model_type = ''
         self.model_dict = {}
 
+        # also allow 'ssp' and 'el' in model_config to be compatible with old version 
+        for mod in [*self.model_config]:
+            if mod == 'ssp': self.model_config['stellar'] = self.model_config.pop('ssp')
+            if mod == 'el' : self.model_config['line']    = self.model_config.pop('el')
+
         ###############################
-        mod = 'ssp'
+        mod = 'stellar'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
                 print_log(center_string('Initialize stellar continuum models', 80), self.log_message)
                 self.full_model_type += mod + '+'
                 self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
-                from .model_frames.ssp_frame import SSPFrame
-                self.model_dict[mod]['spec_mod'] = SSPFrame(filename=self.model_config[mod]['file'], 
+                from .model_frames.stellar_frame import StellarFrame
+                self.model_dict[mod]['spec_mod'] = StellarFrame(filename=self.model_config[mod]['file'], 
                                                             cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                             Rratio_mod=self.Rratio_mod, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                             log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = SSPFrame(filename=self.model_config[mod]['file'], 
+                    self.model_dict[mod]['sed_mod'] = StellarFrame(filename=self.model_config[mod]['file'], 
                                                                cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
@@ -356,7 +361,7 @@ class FitFrame(object):
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e6)
         ###############################
         mod = 'line'
-        if np.isin([mod, 'el'], [*self.model_config]).any(): # also allow 'el' in model_config to be compatible with old version 
+        if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']:
                 print_log(center_string('Initialize line models', 80), self.log_message)
                 self.full_model_type += mod + '+'
@@ -370,9 +375,26 @@ class FitFrame(object):
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy, only fit lines in spectral wavelength range
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-                self.model_dict['el'] = self.model_dict[mod] # also allow 'el' in model_config to be compatible with old version 
         ###############################
-        
+
+        # add short name for returning function of model spectra
+        for mod in [*self.model_dict]:
+            self.model_dict[mod]['spec_func'] = self.model_dict[mod]['spec_mod'].models_unitnorm_obsframe
+            if self.have_phot:
+                self.model_dict[mod]['sed_func'] = self.model_dict[mod]['sed_mod'].models_unitnorm_obsframe
+
+        # create non-line mask if line is enabled
+        if np.isin('line', [*self.model_dict]): 
+            line_center_n = self.model_dict['line']['spec_mod'].linerest_default * (1 + self.v0_redshift)
+            vel_win = np.array([-3000, 3000])
+            mask_line_w = np.zeros_like(self.spec['wave_w'], dtype='bool')
+            for i_line in range(len(line_center_n)):
+                line_bounds = line_center_n[i_line] * (1 + vel_win/299792.458)
+                mask_line_w |= (self.spec['wave_w'] >= line_bounds[0]) & (self.spec['wave_w'] <= line_bounds[1])
+            self.spec['mask_noline_w'] = self.spec['mask_valid_w'] & (~mask_line_w)
+        else:
+            self.spec['mask_noline_w'] = copy(self.spec['mask_valid_w'])
+
         if self.full_model_type[-1] == '+': self.full_model_type = self.full_model_type[:-1]
         print_log(center_string('Model summary', 80), self.log_message)
         print_log(f'The fitting will be performed with these models: {self.full_model_type}.', self.log_message)
@@ -386,23 +408,19 @@ class FitFrame(object):
                     print_log(f"'{mod}' model will not be enabled in the spectral fitting since the defined wavelength range "+
                               f"is not covered by the input spectrum.", self.log_message)
 
-        # add short name for returning function of model spectra
-        for mod in self.full_model_type.split('+'):
-            self.model_dict[mod]['spec_func'] = self.model_dict[mod]['spec_mod'].models_unitnorm_obsframe
-            if self.have_phot:
-                self.model_dict[mod]['sed_func'] = self.model_dict[mod]['sed_mod'].models_unitnorm_obsframe
-
-        # create non-line mask if line is enabled
-        if np.isin('line', self.full_model_type.split('+')): 
-            line_center_n = self.model_dict['line']['spec_mod'].linerest_default * (1 + self.v0_redshift)
-            vel_win = np.array([-3000, 3000])
-            mask_line_w = np.zeros_like(self.spec['wave_w'], dtype='bool')
-            for i_line in range(len(line_center_n)):
-                line_bounds = line_center_n[i_line] * (1 + vel_win/299792.458)
-                mask_line_w |= (self.spec['wave_w'] >= line_bounds[0]) & (self.spec['wave_w'] <= line_bounds[1])
-            self.spec['mask_noline_w'] = self.spec['mask_valid_w'] & (~mask_line_w)
-        else:
-            self.spec['mask_noline_w'] = copy(self.spec['mask_valid_w'])
+        # also allow 'ssp' and 'el' in model_dict to be compatible with old version 
+        for mod in [*self.model_dict]:
+            for i_comp in range(self.model_dict[mod]['cframe'].num_comps):
+                for i_par in range(self.model_dict[mod]['cframe'].num_pars_per_comp):
+                    tmp_tie = self.model_dict[mod]['cframe'].tie_cp[i_comp,i_par]
+                    if tmp_tie.split(':')[0] == 'ssp': tmp_tie = 'stellar' + tmp_tie[3:]
+                    tmp_tie = tmp_tie.replace(';ssp:', ';stellar:')
+                    if tmp_tie.split(':')[0] == 'el': tmp_tie = 'line' + tmp_tie[2:]
+                    tmp_tie = tmp_tie.replace(';el:', ';line:')
+                    self.model_dict[mod]['cframe'].tie_cp[i_comp,i_par] = tmp_tie
+        for mod in [*self.model_dict]:
+            if mod == 'stellar': self.model_dict['ssp'] = self.model_dict['stellar']
+            if mod == 'line'   : self.model_dict['el']  = self.model_dict['line']
 
     def set_par_constraints(self):
         self.num_tot_pars = 0
@@ -1113,9 +1131,9 @@ class FitFrame(object):
         print_log(f'Continuum models used in spectral fitting: {cont_type}', self.log_message, self.print_step)
         ########################################
         # obtain a rough fit of continuum with emission line wavelength ranges masked out
-        if np.isin('ssp', cont_type.split('+')): 
-            mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.print_step)
-            mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite)
+        if np.isin('stellar', cont_type.split('+')): 
+            mask_lite_stellar = self.model_dict['stellar']['spec_mod'].mask_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.print_step)
+            mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar)
         else:
             mask_lite_dict = self.update_mask_lite_dict()
         cont_fit_init = self.nonlinear_process(None, spec_fmock_w, spec_ferr_w, mask_noline_w, 
@@ -1139,9 +1157,9 @@ class FitFrame(object):
         ####################################################
         ################## 1st fit cycle ###################
         # obtain a better fit of stellar continuum after subtracting emission lines of line_fit_init
-        if np.isin('ssp', cont_type.split('+')): 
-            mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.print_step)
-            mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite)
+        if np.isin('stellar', cont_type.split('+')): 
+            mask_lite_stellar = self.model_dict['stellar']['spec_mod'].mask_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.print_step)
+            mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar)
         else:
             mask_lite_dict = self.update_mask_lite_dict()
         cont_fit_1 = self.nonlinear_process(None, (spec_fmock_w - line_fit_init['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
@@ -1163,7 +1181,7 @@ class FitFrame(object):
                     for i_comp in range(line_mod.num_comps):
                         if line_mod.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'
                     # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
-                    mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_line_lite(disabled_comps=line_disabled_comps), dict=mask_lite_dict)
+                    mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_lite_with_comps(disabled_comps=line_disabled_comps), dict=mask_lite_dict)
             # obtain a better fit of emission lines after subtracting continuum models of cont_fit_1
             # here use cont_fit_1['x0_final'] to transfer the best-fit parameters from cont_fit_1
             line_fit_1 = self.nonlinear_process(cont_fit_1['x0_final'], (spec_fmock_w - cont_fit_1['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
@@ -1207,7 +1225,7 @@ class FitFrame(object):
                 cont_type = cont_type[:-1] # remove the last '+'
                 print_log(f'#### Continuum models after examination: {cont_type}', self.log_message, self.print_step)
             else:
-                cont_type = 'ssp'
+                cont_type = 'stellar'
                 print_log(f'#### Continuum is very faint, only stellar continuum model is enabled.', self.log_message, self.print_step)
             # fix the parameters of disabled models (to reduce number of free parameters)
             for mod in joint_fit_1['model_type'].split('+'):
@@ -1223,8 +1241,8 @@ class FitFrame(object):
                 line_comps = [] 
                 for i_comp in range(line_mod.num_comps):
                     line_comp = line_mod.cframe.comp_c[i_comp]
-                    mask_line_lite = line_mod.mask_line_lite(enabled_comps=[line_comp])[joint_fit_1['mask_lite_dict']['line']]
-                    line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][me0:me1][mask_line_lite] @ line_spec_fmod_ew[mask_line_lite, :]
+                    line_comp_mask_lite_e = line_mod.mask_lite_with_comps(enabled_comps=[line_comp])[joint_fit_1['mask_lite_dict']['line']]
+                    line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][me0:me1][line_comp_mask_lite_e] @ line_spec_fmod_ew[line_comp_mask_lite_e, :]
                     line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
                     if line_comp_examine: 
                         line_comps.append(line_comp)
@@ -1240,7 +1258,7 @@ class FitFrame(object):
                 for i_comp in range(line_mod.num_comps):
                     if ~np.isin(line_mod.cframe.comp_c[i_comp], line_comps): self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'                
                 # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
-                mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_line_lite(enabled_comps=line_comps), dict=mask_lite_dict)
+                mask_lite_dict = self.update_mask_lite_dict('line', line_mod.mask_lite_with_comps(enabled_comps=line_comps), dict=mask_lite_dict)
             ########################################
             # update parameter_constraints since parameters of disabled model components are fixed
             self.set_par_constraints()
@@ -1256,21 +1274,20 @@ class FitFrame(object):
                                                  annealing=False, perturb_scale=0, 
                                                  fit_message='cont_fit_2a: spectral fitting, update continuum models', i_loop=i_loop) 
             ########################################
-            # in steps above, ssp models in a sparse grid of ages (and metalicities) are used, now update continuum fitting with all allowed ssp models
+            # in steps above, stellar models in a sparse grid of ages (and metalicities) are used, now update continuum fitting with all allowed stellar models
             # initialize parameters using best-fit of cont_fit_2a
-            if np.isin('ssp', cont_type.split('+')): 
-                sfh_name = self.model_dict['ssp']['spec_mod'].sfh_names[0]
-                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_allowed(csp=(sfh_name!='nonparametric'))
-                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+            if np.isin('stellar', cont_type.split('+')): 
+                sfh_name = self.model_dict['stellar']['spec_mod'].sfh_names[0]
+                mask_lite_stellar = self.model_dict['stellar']['spec_mod'].mask_lite_allowed(csp=(sfh_name!='nonparametric'))
+                mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
                 cont_fit_2b = self.nonlinear_process(cont_fit_2a['x0_final'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                      cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
                                                      annealing=False, perturb_scale=self.perturb_scale, 
                                                      fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
-                # create new mask_ssp_lite with new ssp_coeffs; do not use full allowed ssp models to save time
-                mp0, mp1, me0, me1 = self.search_model_index('ssp', cont_fit_2b['model_type'], cont_fit_2b['mask_lite_dict'])
-                ssp_coeff_e = cont_fit_2b['coeff_e'][me0:me1]
-                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_coeffs(ssp_coeff_e, num_mods_min=24, verbose=self.print_step)
-                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+                # create new mask_lite_stellar with new coeffs; do not use full allowed stellar model elements to save time
+                mp0, mp1, me0, me1 = self.search_model_index('stellar', cont_fit_2b['model_type'], cont_fit_2b['mask_lite_dict'])
+                mask_lite_stellar = self.model_dict['stellar']['spec_mod'].mask_lite_with_coeffs(cont_fit_2b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.print_step)
+                mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
             else:
                 cont_fit_2b = cont_fit_2a
             ########################################
@@ -1329,11 +1346,11 @@ class FitFrame(object):
                                                  fit_message='cont_fit_3a: spectrum+SED fitting, update continuum models', i_loop=i_loop) 
             # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
             ########################################
-            # update mask_lite_dict for ssp for spectrum+SED continuum fitting
-            if np.isin('ssp', cont_type.split('+')): 
-                sfh_name = self.model_dict['ssp']['spec_mod'].sfh_names[0]
-                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_allowed(csp=(sfh_name!='nonparametric'))
-                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+            # update mask_lite_dict for stellar models for spectrum+SED continuum fitting
+            if np.isin('stellar', cont_type.split('+')): 
+                sfh_name = self.model_dict['stellar']['spec_mod'].sfh_names[0]
+                mask_lite_stellar = self.model_dict['stellar']['spec_mod'].mask_lite_allowed(csp=(sfh_name!='nonparametric'))
+                mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
             # update scaled error based on chi_sq of cont_fit_3a and re-create mock data
             specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3a['chi_sq'])
             # use initial best-fit values from cont_fit_3a and subtract emission lines from joint_fit_2
@@ -1343,12 +1360,11 @@ class FitFrame(object):
                                                  annealing=False, perturb_scale=self.perturb_scale, 
                                                  fit_message='cont_fit_3b: spectrum+SED fitting, update continuum models', i_loop=i_loop)
             # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
-            if np.isin('ssp', cont_type.split('+')): 
-                # create new mask_ssp_lite with new ssp_coeffs; do not use full allowed ssp models to save time
-                mp0, mp1, me0, me1 = self.search_model_index('ssp', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_dict'])
-                ssp_coeff_e = cont_fit_3b['coeff_e'][me0:me1]
-                mask_ssp_lite = self.model_dict['ssp']['spec_mod'].mask_ssp_lite_with_coeffs(ssp_coeff_e, num_mods_min=24, verbose=self.print_step)
-                mask_lite_dict = self.update_mask_lite_dict('ssp', mask_ssp_lite, dict=mask_lite_dict)
+            if np.isin('stellar', cont_type.split('+')): 
+                # create new mask_lite_stellar with new coeffs; do not use full allowed stellar model elements to save time
+                mp0, mp1, me0, me1 = self.search_model_index('stellar', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_dict'])
+                mask_lite_stellar = self.model_dict['stellar']['spec_mod'].mask_lite_with_coeffs(cont_fit_3b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.print_step)
+                mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
             ########################################
             if np.isin('line', self.full_model_type.split('+')): 
                 # update emission line after subtracting the lastest continuum models from cont_fit_3b
@@ -1613,8 +1629,9 @@ class FitFrame(object):
                 output_mc[mod][comp_c[i_comp]]['values'] = tmp_output_c[comp_c[i_comp]]['values']
             output_mc[mod]['sum']['values'] = tmp_output_c['sum']['values']
 
-        # also allow 'el' in output_mc to be compatible with old version 
-        if np.isin('line', self.full_model_type.split('+')): self.output_mc['el'] = output_mc['line']
+        # also allow 'ssp' and 'el' in output_mc to be compatible with old version 
+        if np.isin('stellar', self.full_model_type.split('+')): self.output_mc['ssp'] = output_mc['stellar']
+        if np.isin('line',    self.full_model_type.split('+')): self.output_mc['el']  = output_mc['line']
 
         self.output_mc = output_mc
         if return_results: return output_mc

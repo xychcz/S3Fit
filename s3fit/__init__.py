@@ -11,7 +11,7 @@ from .auxiliary_func import print_log, center_string, convolve_fix_width_fft, co
 from .extinct_law import ExtLaw
 
 __all__ = ["FitFrame", "ConfigFrame", "PhotFrame", 
-           "SSPFrame", "LineFrame", "AGNFrame", "TorusFrame", 
+           "StellarFrame", "LineFrame", "AGNFrame", "TorusFrame", 
            "print_log", "center_string", "convolve_fix_width_fft", "convolve_var_width_fft", 
            "ExtLaw"
            ]

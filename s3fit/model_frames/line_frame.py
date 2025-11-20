@@ -833,7 +833,7 @@ class LineFrame(object):
 
         return obs_flux_mcomp_ew
 
-    def mask_line_lite(self, enabled_comps=None, disabled_comps=None):
+    def mask_lite_with_comps(self, enabled_comps=None, disabled_comps=None):
         if enabled_comps is not None:
             self.enabled_e = np.zeros((self.num_coeffs), dtype='bool')
             for comp in enabled_comps: self.enabled_e[self.component_e == comp] = True

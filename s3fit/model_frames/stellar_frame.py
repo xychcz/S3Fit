@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_width_fft
 from ..extinct_law import ExtLaw
 
-class SSPFrame(object):
+class StellarFrame(object):
     def __init__(self, filename=None, cframe=None, v0_redshift=None, R_inst_rw=None, 
                  w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
@@ -63,21 +63,21 @@ class SSPFrame(object):
                 print_log(f"[WARNING]: Upper bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}.", self.log_message)
             if 10.0**self.cframe.min_cp[i_comp][3] > cosmo.age(self.v0_redshift).value:
-                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min()*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
+                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
                 print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" exceeds the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}, "
-                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_ssp_allowed()].min():.3f} Gyr.", self.log_message)
-            if 10.0**self.cframe.min_cp[i_comp][3] < self.age_e[self.mask_ssp_allowed()].min():
-                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_ssp_allowed()].min()*1.0001)
+                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message)
+            if 10.0**self.cframe.min_cp[i_comp][3] < self.age_e[self.mask_lite_allowed()].min():
+                self.cframe.min_cp[i_comp][3] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001)
                 print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
-                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_ssp_allowed()].min():.3f} Gyr.", self.log_message)                
+                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message)                
         
         if self.verbose:
             print_log(f'SSP models normalization wavelength: {w_norm} +- {dw_norm}', self.log_message)
-            print_log(f'SSP models number: {self.mask_ssp_allowed().sum()} used in a total of {self.num_models}', self.log_message)
-            print_log(f'SSP models age range (Gyr): from {self.age_e[self.mask_ssp_allowed()].min():.3f} to {self.age_e[self.mask_ssp_allowed()].max():.3f}', 
+            print_log(f'SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}', self.log_message)
+            print_log(f'SSP models age range (Gyr): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}', 
                       self.log_message)
-            print_log(f'SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_ssp_allowed()])}', self.log_message) 
+            print_log(f'SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}', self.log_message) 
             print_log(f'SFH functions: {self.sfh_names} for {self.cframe.comp_c} components, respectively.', self.log_message)
 
     def read_ssp_library(self):
@@ -232,7 +232,7 @@ class SSPFrame(object):
         # Add new SFH function here. 
         ############################
 
-        sfh_func_e[~self.mask_ssp_allowed(i_comp)] = 0 # do not use ssp out of allowed range
+        sfh_func_e[~self.mask_lite_allowed(i_comp)] = 0 # do not use ssp out of allowed range
         sfh_func_e[evo_time_e < 0] = 0 # do not allow ssp older than csp_age 
         sfh_func_e /= sfh_func_e.max()
         sfh_factor_e = sfh_func_e / self.sfrtol_e
@@ -312,20 +312,24 @@ class SSPFrame(object):
 
         return obs_flux_mcomp_ew
     
-    def mask_ssp_allowed(self, i_comp=0, csp=False):
-        if not csp: # i.e. for all ssp, depends on i_comp
+    def mask_lite_allowed(self, i_comp=0, csp=False):
+        if not csp: 
+            # mask for all SSP elements, for an individual comp
             age_min, age_max = self.cframe.info_c[i_comp]['age_min'], self.cframe.info_c[i_comp]['age_max']
             age_min = self.age_e.min() if age_min is None else 10.0**age_min
             age_max = cosmo.age(self.v0_redshift).value if age_max == 'universe' else 10.0**age_max
-            mask_ssp_allowed_e = (self.age_e >= age_min) & (self.age_e <= age_max)
+            mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
             met_sel = self.cframe.info_c[i_comp]['met_sel']
             if met_sel != 'all':
                 if met_sel == 'solar':
-                    mask_ssp_allowed_e &= self.met_e == 0.02
+                    mask_lite_ssp_e &= self.met_e == 0.02
                 else:
-                    mask_ssp_allowed_e &= np.isin(self.met_e, met_sel)
-        else: # loop for all comp
-            mask_ssp_allowed_e = np.array([], dtype='bool')
+                    mask_lite_ssp_e &= np.isin(self.met_e, met_sel)
+            return mask_lite_ssp_e
+
+        else: 
+            # mask for all CSP elements, loop for all comps
+            mask_lite_csp_e = np.array([], dtype='bool')
             for i_comp in range(self.num_comps):
                 tmp_mask_e = np.ones(self.num_mets, dtype='bool') 
                 met_sel = self.cframe.info_c[i_comp]['met_sel']
@@ -334,14 +338,14 @@ class SSPFrame(object):
                         tmp_mask_e &= np.unique(self.met_e) == 0.02
                     else:
                         tmp_mask_e &= np.isin(np.unique(self.met_e), met_sel)
-                mask_ssp_allowed_e = np.hstack((mask_ssp_allowed_e, tmp_mask_e))
-        return mask_ssp_allowed_e
+                mask_lite_csp_e = np.hstack((mask_lite_csp_e, tmp_mask_e))
+            return mask_lite_csp_e
 
-    def mask_ssp_lite_with_num_mods(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
+    def mask_lite_with_num_mods(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
         if self.sfh_names[0] == 'nonparametric':
             # only used in nonparametic, single component
             ages_full, num_ages_full = np.unique(self.age_e), len(np.unique(self.age_e))
-            ages_allowed = np.unique(self.age_e[self.mask_ssp_allowed()])
+            ages_allowed = np.unique(self.age_e[self.mask_lite_allowed()])
             ages_lite = np.logspace(np.log10(ages_allowed.min()), np.log10(ages_allowed.max()), num=num_ages_lite)
             ages_lite *= 10.0**((np.random.rand(num_ages_lite)-0.5)*np.log10(ages_lite[1]/ages_lite[0]))
             # request log-even ages with random shift
@@ -350,38 +354,42 @@ class SSPFrame(object):
             ind_mets_lite = [2,1,3,0][:num_mets_lite] # Z = 0.02 (solar), 0.008, 0.05, 0.004, select with this order
             ind_ssp_lite = np.array([ind_met*num_ages_full+np.arange(num_ages_full)[ind_age] 
                                      for ind_met in ind_mets_lite for ind_age in ind_ages_lite])
-            mask_ssp_lite_e = np.zeros_like(self.age_e, dtype='bool')
-            mask_ssp_lite_e[ind_ssp_lite] = True
-            mask_ssp_lite_e &= self.mask_ssp_allowed()
-            if verbose: print_log(f'Number of used SSP models: {mask_ssp_lite_e.sum()}', self.log_message) 
-        else:
-            mask_ssp_lite_e = self.mask_ssp_allowed(csp=True)
-            if verbose: print_log(f'Number of used CSP models: {mask_ssp_lite_e.sum()}', self.log_message) 
-        return mask_ssp_lite_e
+            mask_lite_ssp_e = np.zeros_like(self.age_e, dtype='bool')
+            mask_lite_ssp_e[ind_ssp_lite] = True
+            mask_lite_ssp_e &= self.mask_lite_allowed()
+            if verbose: print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
+            return mask_lite_ssp_e
 
-    def mask_ssp_lite_with_coeffs(self, coeffs=None, mask=None, num_mods_min=32, verbose=True):
+        else:
+            mask_lite_csp_e = self.mask_lite_allowed(csp=True)
+            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message) 
+            return mask_lite_csp_e
+
+    def mask_lite_with_coeffs(self, coeffs=None, mask=None, num_mods_min=32, verbose=True):
         if self.sfh_names[0] == 'nonparametric':
             # only used in nonparametic, single component
             coeffs_full = np.zeros(self.num_models)
-            coeffs_full[mask if mask is not None else self.mask_ssp_allowed()] = coeffs
+            coeffs_full[mask if mask is not None else self.mask_lite_allowed()] = coeffs
             coeffs_sort = np.sort(coeffs_full)
             # coeffs_min = coeffs_sort[np.cumsum(coeffs_sort)/np.sum(coeffs_sort) < 0.01].max() 
             # # i.e., keep coeffs with sum > 99%
             # mask_ssp_lite = coeffs_full >= np.minimum(coeffs_min, coeffs_sort[-num_mods_min]) 
             # # keep minimum num of models
-            # mask_ssp_lite &= self.mask_ssp_allowed()
+            # mask_ssp_lite &= self.mask_lite_allowed()
             # print('Number of used SSP models:', mask_ssp_lite.sum()) #, np.unique(self.age_e[mask_ssp_lite]))
             # print('Ages with coeffs.sum > 99%:', np.unique(self.age_e[coeffs_full >= coeffs_min]))
-            mask_ssp_lite_e = coeffs_full >= coeffs_sort[-num_mods_min]
-            mask_ssp_lite_e &= self.mask_ssp_allowed()
+            mask_lite_ssp_e = coeffs_full >= coeffs_sort[-num_mods_min]
+            mask_lite_ssp_e &= self.mask_lite_allowed()
             if verbose: 
-                print_log(f'Number of used SSP models: {mask_ssp_lite_e.sum()}', self.log_message) 
+                print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
                 print_log(f'Coeffs.sum of used SSP models: {1-np.cumsum(coeffs_sort)[-num_mods_min]/np.sum(coeffs_sort)}', self.log_message) 
                 print_log(f'Ages of dominant SSP models: {np.unique(self.age_e[coeffs_full >= coeffs_sort[-5]])}', self.log_message) 
+            return mask_lite_ssp_e
+
         else:
-            mask_ssp_lite_e = self.mask_ssp_allowed(csp=True)
-            if verbose: print_log(f'Number of used CSP models: {mask_ssp_lite_e.sum()}', self.log_message)             
-        return mask_ssp_lite_e
+            mask_lite_csp_e = self.mask_lite_allowed(csp=True)
+            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message)             
+            return mask_lite_csp_e
 
     ##########################################################################
     ########################## Output functions ##############################
@@ -396,7 +404,7 @@ class SSPFrame(object):
         best_par_lp   = copy(ff.output_s[step]['par_lp'])
         best_coeff_le = copy(ff.output_s[step]['coeff_le'])
 
-        mod = 'ssp'
+        mod = 'stellar'
         fp0, fp1, fe0, fe1 = ff.search_model_index(mod, ff.full_model_type)
         spec_wave_w = ff.spec['wave_w']
         spec_flux_scale = ff.spec_flux_scale
