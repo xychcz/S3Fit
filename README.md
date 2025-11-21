@@ -50,7 +50,7 @@ The core requirement of S<sup>3</sup>Fit is the two functions `least_squares` an
 (please read the 
 [fitting strategy](https://github.com/xychcz/S3Fit/blob/main/manuals/fitting_strategy.md) for details). 
 A strong dependency of S<sup>3</sup>Fit on these repositories is not expected. 
-`joblib` is required to run fitting in multithreading. 
+`joblib` is required to run fitting in multithreading (from v2.3). 
 It is optional to run S<sup>3</sup>Fit with [PyNeb](http://research.iac.es/proyecto/PyNeb/), 
 which is used to calculate intrinsic flux ratios of emission lines:
 ```
@@ -71,8 +71,8 @@ pyneb >= 1.1.23 (optional)
 ## Future updating
 - Add ISM dust and synchrotron models (you may also add them or other models by yourself following the
   [advanced usage](https://github.com/xychcz/S3Fit/blob/main/manuals/advanced_usage.md) manual).
-- Add iron pseudo continuum templates and Balmer continuum of type-1 AGN.
-- Test support for absorption lines. 
+- Add iron pseudo continuum templates and Balmer continuum of type-1 AGN (supported in v2.3).
+- Absorption lines (supported in v2.3). 
 
 ## Citation
 If you would like to use S<sup>3</sup>Fit, please cite with the following BibTeX code:
