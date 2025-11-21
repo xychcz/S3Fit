@@ -7,7 +7,8 @@
 > This page is for S<sup>3</sup>Fit **v2.3**. S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 > [!TIP]
-> Examples of the usage of S<sup>3</sup>Fit can be found in [example1](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb) and [example2](https://github.com/xychcz/S3Fit/blob/main/examples/example_quasar.ipynb)
+> Examples of step-by-step usage of S<sup>3</sup>Fit can be found in [example1](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb) and [example2](https://github.com/xychcz/S3Fit/blob/main/examples/example_quasar.ipynb)
+
 ## 1. Initialization
 As the first step, please initialize the `FitFrame`, which is the main framework of S<sup>3</sup>Fit, by providing the following input parameters. 
 ```python
@@ -126,7 +127,7 @@ A given model type can have multiple components, e.g., `'component_0'` and `'com
 ```python
 ssp_file = 'DIRECTORY/popstar_for_s3fit.fits'
 ```
-The current version of S<sup>3</sup>Fit uses the [HR-pyPopStar][2] Single Stellar Population (SSP) model library. Please run the [converting code](../model_libraries/convert_popstar_ssp.py) to convert the original HR-pyPopStar models to the format used for S<sup>3</sup>Fit. You may also want to download an example of the converted SSP model in [this link][7] for a test.
+The current version of S<sup>3</sup>Fit uses the [HR-pyPopStar][2] Single Stellar Population (SSP) model library. HR-pyPopStar library provides stellar continuum templates for stellar ages (log Gyr) from -4.00 to 1.18, and metallicities (Z) of 0.004, 0.008, 0.02 and 0.05. Please run the [converting code](../model_libraries/convert_popstar_ssp.py) to convert the original HR-pyPopStar library to the format used for S<sup>3</sup>Fit. You may also want to download an example of the SSP model, with an initial mass function (IMF) of Kroupa (2002), in [this link][7] for a test. If you want to use HR-pyPopStar libraries with a different IMF, or use a different SSP library, please follow the guide in Section 4 of the [advanced usage](../manuals/advanced_usage.md).
 
 [2]: <https://www.fractal-es.com/PopStar/>
 [7]: https://drive.google.com/file/d/1JwdBOnl6APwFmadIX8BYLcLyFNZvnuYg/view?usp=share_link
