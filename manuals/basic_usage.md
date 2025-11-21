@@ -118,7 +118,7 @@ A given model type can have multiple components, e.g., `'component_0'` and `'com
 > There is no limit of the number of components for a given model type. The name of components (`component_x` as above) can be defined by users, e.g., 'starburst', 'old stellar population', or 'narrow lines'. 
 
 > [!NOTE]
-> Each fitting parameter can be free parameter (if `tie_xx` is `'free'`) or fixed value (if `tie_xx` is `'fix'`). If different components or different model types have the same parameter, the parameter can be tied among components or models. An example of the tying relation is given in the following [stellar continuum configuration](#2.1-stellar-continuum) with two stellar population components. 
+> Each fitting parameter can be free parameter (if `tie_xx` is `'free'`) or fixed value (if `tie_xx` is `'fix'`). If different components or different model types have the same parameter, the parameter can be tied among components or models. An example of the tying relation is given in the following [stellar continuum configuration](#21-stellar-continuum) with two stellar population components. 
 
 > [!TIP]
 > You can import a new model type into S<sup>3</sup>Fit following the guide in [advanced usage](../manuals/advanced_usage.md) (Section 6. Support new types of models). 
