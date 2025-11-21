@@ -46,7 +46,7 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
 - `v0_redshift` (float, <ins>**required**</ins>) \
    Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 - `model_config` (nested dictionary, <ins>**required**</ins>) \
-   Dictionary of model configurations. Please refer to the [model configuration](#2-model-configuration) section for details. 
+   Dictionary of model configurations. Please refer to the following [model configuration](#2-model-configuration) section for details. 
 #### 1.4 Control of fitting
 - `num_mocks` (int, optional) \
    Number of the mock spectra for the Monte Carlo method. The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
@@ -118,7 +118,7 @@ A given model type can have multiple components, e.g., `'component_0'` and `'com
 > There is no limit of the number of components for a given model type. The name of components (`component_x` as above) can be defined by users, e.g., 'starburst', 'old stellar population', or 'narrow lines'. 
 
 > [!NOTE]
-> Each fitting parameter can be free parameter (if `tie_xx` is `'free'`) or fixed value (if `tie_xx` is `'fix'`). If different components or different model types have the same parameter, the parameter can be tied among components or models. An example of the tying relation is given in the following stellar continuum configuration with two stellar population components. 
+> Each fitting parameter can be free parameter (if `tie_xx` is `'free'`) or fixed value (if `tie_xx` is `'fix'`). If different components or different model types have the same parameter, the parameter can be tied among components or models. An example of the tying relation is given in the following [stellar continuum configuration](#2.1-stellar-continuum) with two stellar population components. 
 
 > [!TIP]
 > You can import a new model type into S<sup>3</sup>Fit following the guide in [advanced usage](../manuals/advanced_usage.md) (Section 6. Support new types of models). 
@@ -219,7 +219,87 @@ The above example also shows how to tie one parameter to the others. For instanc
 > ```
 > Please read the [Jupyter Notebook](../examples/example_galaxy.ipynb) for an example case. 
 
-#### 2.2  Line model
+#### 2.2 AGN UV/optical continuum
+
+Current version of S<sup>3</sup>Fit supports a powerlaw model to account for the radiation from the AGN accretion disc. 
+The powerlaw model has a flexible spectral index in wavelength from 0.1 micron to 5 micron, 
+and is bent with a fixed spectral index of -4 in wavelength longer than 5 micron (i.e., following [SKIRTor][SKIRTor_web]). 
+Other modules of AGN central radiation in UV/optical range, e.g., iron pseudo continuum and Balmer continuum, 
+will be supported in future versions. 
+
+```python
+agn_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], # velocity shift (km/s)
+                                [0, 0, 'fix'], # velocity FWHM (km/s)
+                                [1.5, 10.0, 'free'], # extinction (AV)
+                                [-1.7, None, 'fix']], # spectral index of powerlaw
+                       'info': {'mod_used': ['powerlaw']} } }
+```
+An example of the powerlaw component is shown as above. 
+The listed parameters are 
+velocity shift (km/s, in relative to the input `v0_redshift`), velocity FWHM (km/s), extinction (AV), 
+and the spectral index of powerlaw. 
+Since the velocity shift cannot be determined with only powerlaw, it is tied with `'el:NLR:0;ssp:main:0'`, 
+which means the value is tied to the `0`-th parameter (i.e., velocity shift) of the `'NLR'` component of the `'el'` model, 
+or the `0`-th parameter of the `'main'` component of the `'ssp'` model when the `'el'` model is not available 
+(e.g., in several intermediate fitting steps with only continuum models, see [fitting strategy](../manuals/fitting_strategy.md) for details).
+Similarly, the velocity FWHM is also not applicable with only powerlaw model, 
+and thus fixed arbitrarily to save a free parameter. 
+Both of velocity shift and FWHM could be determined independently when the iron pseudo continuum model is supported. 
+
+In order to reduce the degeneracy between extinction and the spectral index, in this example the later is fixed to -1.7. 
+
+#### 2.3 AGN torus IR continuum
+
+```python
+torus_file = '../model_libraries/skirtor_for_s3fit.fits'
+```
+S<sup>3</sup>Fit uses the [SKIRTor][SKIRTor_web] AGN torus model.
+Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](../model_libraries/convert_skirtor_torus.py) 
+to create the torus models used for S<sup>3</sup>Fit. 
+Example of this library is also provided in [model libraries](../model_libraries/) for a test of S<sup>3</sup>Fit, 
+which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
+Please refer to [SKIRTor][SKIRTor_web] website for details of the model parameters. 
+
+[SKIRTor_web]: https://sites.google.com/site/skirtorus/sed-library?authuser=0
+
+An example of the configuration of torus model is given as follows:
+```python
+torus_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], # velocity shift (km/s)
+                                  [3, 11, 'free'], # optical depth at 9.7 micron 
+                                  [10, 80, 'free'], # half-opening angle (degree) of torus
+                                  [10, 30, 'free'], # ratio of outer to inner radius
+                                  [0, 90, 'free']], # inclination angle (degree) from the polar direction
+                         'info': {'mod_used': ['dust']} } } 
+```
+The listed parameters are 
+velocity shift (km/s, in relative to the input `v0_redshift`), 
+optical depth at 9.7 micron, 
+half-opening angle (degree) of the dusty torus, 
+ratio of outer to inner radius, 
+and inclination angle (degree) from the polar direction. 
+Similar to the case of AGN powerlaw component, 
+the velocity shift of the torus component is also tied to those of emission line or stellar continuum. 
+The `'mod_used'` can be set to `['dust']` to use the pure torus module, 
+or `['disc','dust']` to use both of the disc and torus modules
+(do not use `'agn'` powerlaw component in this case). 
+#### 2.4  Line model
+
+A simple example of stellar continuum configuration is as follows, which contains one line component with the name of 'narrow line':
+```python
+line_config = {'narrow line': {'pars': [[-500,  500, 'free'], # velocity shift (km/s)
+                                        [ 250,  750, 'free'], # velocity FWHM (km/s)
+                                        [   0,    5, 'free'], # extinction (AV)
+                                        [ 1.3,  4.3, 'free'], # electron density (log cm-3)
+                                        [   4, None, 'fix' ], # electron temperature (log K)
+									   ],
+                               'info': {'line_used': 'default' , # line preset, or names of lines to be used
+							            'sign'     : 'emission', # either 'emission' or 'absorption'
+										'profile'  : 'Gaussian', # line profile, can be 'Gaussian' or 'Lorentz'
+									   }
+							  }
+			  }
+```
+
 
 S<sup>3</sup>Fit supports combination of multiple line components. 
 An example of line configuration is shown as follows:
@@ -297,70 +377,6 @@ for i_line in range(el_mod.num_lines):
     print(f'The flux of {el_mod.linename_n[i_line]} is tied to {el_mod.linename_n[i_ref]} with a ratio of {el_mod.lineratio_n[i_line]:2.4f}.')
 ```
 Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add or delete line tying relations. 
-
-#### 2.3 AGN central continuum
-
-Current version of S<sup>3</sup>Fit supports a powerlaw model to account for the radiation from the AGN accretion disc. 
-The powerlaw model has a flexible spectral index in wavelength from 0.1 micron to 5 micron, 
-and is bent with a fixed spectral index of -4 in wavelength longer than 5 micron (i.e., following [SKIRTor][SKIRTor_web]). 
-Other modules of AGN central radiation in UV/optical range, e.g., iron pseudo continuum and Balmer continuum, 
-will be supported in future versions. 
-
-```python
-agn_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], # velocity shift (km/s)
-                                [0, 0, 'fix'], # velocity FWHM (km/s)
-                                [1.5, 10.0, 'free'], # extinction (AV)
-                                [-1.7, None, 'fix']], # spectral index of powerlaw
-                       'info': {'mod_used': ['powerlaw']} } }
-```
-An example of the powerlaw component is shown as above. 
-The listed parameters are 
-velocity shift (km/s, in relative to the input `v0_redshift`), velocity FWHM (km/s), extinction (AV), 
-and the spectral index of powerlaw. 
-Since the velocity shift cannot be determined with only powerlaw, it is tied with `'el:NLR:0;ssp:main:0'`, 
-which means the value is tied to the `0`-th parameter (i.e., velocity shift) of the `'NLR'` component of the `'el'` model, 
-or the `0`-th parameter of the `'main'` component of the `'ssp'` model when the `'el'` model is not available 
-(e.g., in several intermediate fitting steps with only continuum models, see [fitting strategy](../manuals/fitting_strategy.md) for details).
-Similarly, the velocity FWHM is also not applicable with only powerlaw model, 
-and thus fixed arbitrarily to save a free parameter. 
-Both of velocity shift and FWHM could be determined independently when the iron pseudo continuum model is supported. 
-
-In order to reduce the degeneracy between extinction and the spectral index, in this example the later is fixed to -1.7. 
-
-#### 2.4 AGN dusty torus
-
-```python
-torus_file = '../model_libraries/skirtor_for_s3fit.fits'
-```
-S<sup>3</sup>Fit uses the [SKIRTor][SKIRTor_web] AGN torus model.
-Please download the [SKIRTor library][SKIRTor_web] and run the [converting code](../model_libraries/convert_skirtor_torus.py) 
-to create the torus models used for S<sup>3</sup>Fit. 
-Example of this library is also provided in [model libraries](../model_libraries/) for a test of S<sup>3</sup>Fit, 
-which contains the templates with a fixed dust density gradient in radial (p = 1) and angular direction (q = 0.5). 
-Please refer to [SKIRTor][SKIRTor_web] website for details of the model parameters. 
-
-[SKIRTor_web]: https://sites.google.com/site/skirtorus/sed-library?authuser=0
-
-An example of the configuration of torus model is given as follows:
-```python
-torus_config = {'main': {'pars': [[None, None, 'el:NLR:0;ssp:main:0'], # velocity shift (km/s)
-                                  [3, 11, 'free'], # optical depth at 9.7 micron 
-                                  [10, 80, 'free'], # half-opening angle (degree) of torus
-                                  [10, 30, 'free'], # ratio of outer to inner radius
-                                  [0, 90, 'free']], # inclination angle (degree) from the polar direction
-                         'info': {'mod_used': ['dust']} } } 
-```
-The listed parameters are 
-velocity shift (km/s, in relative to the input `v0_redshift`), 
-optical depth at 9.7 micron, 
-half-opening angle (degree) of the dusty torus, 
-ratio of outer to inner radius, 
-and inclination angle (degree) from the polar direction. 
-Similar to the case of AGN powerlaw component, 
-the velocity shift of the torus component is also tied to those of emission line or stellar continuum. 
-The `'mod_used'` can be set to `['dust']` to use the pure torus module, 
-or `['disc','dust']` to use both of the disc and torus modules
-(do not use `'agn'` powerlaw component in this case). 
 
 ## 3. Run fitting
 
