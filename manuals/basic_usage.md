@@ -1,7 +1,10 @@
 # Basic usage
 
+> [!CAUTION]
+> The page is being edited for the upcoming release of S<sup>3</sup>Fit **v2.3** (already uploaded in the main repository). The updating till Section 2.1 is finished. 
+
 > [!NOTE]
-> S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+> This page is for S<sup>3</sup>Fit **v2.3**. S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 > [!TIP]
 > Examples of the usage of S<sup>3</sup>Fit can be found in [example1](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb) and [example2](https://github.com/xychcz/S3Fit/blob/main/examples/example_quasar.ipynb)
@@ -58,131 +61,186 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`.
 - `plot_step` (bool, optional) \
    Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. 
+   
 > [!NOTE]
 > Please refer to the [list](./full_parameter_list.md) to learn about all of the available parameters of S<sup>3</sup>Fit. 
 
 
 ## 2. Model configuration
-Current version of S<sup>3</sup>Fit supports stellar continuum (`'ssp'`), emission lines (`'el'`), AGN central continuum (`'agn'`), and AGN dusty torus (`'torus'`). 
-If any models are not required, set `'enable': False` or just delete the corresponding lines.
+Current version of S<sup>3</sup>Fit supports continuum model type of stellar continuum (`'stellar'`), AGN UV/optical continuum (`'agn'`), and AGN torus IR continuum (`'torus'`), as well as line model type (`'line'`). The format of the entire model configurations is a nested dictionary as follows. If any models are not required, set `'enable': False` or just delete the corresponding lines.
 ```python
-model_config = {'ssp'  : {'enable': True, 'config': ssp_config,   'file': ssp_file}, 
-                'el'   : {'enable': True, 'config': el_config,    'use_pyneb': True},
-                'agn'  : {'enable': True, 'config': agn_config}, 
-                'torus': {'enable': True, 'config': torus_config, 'file': torus_file}}
+model_config = {'stellar': {'enable': True, 'config': stellar_config, 'file': ssp_file}, 
+                'agn'    : {'enable': True, 'config': agn_config    , 'file': iron_file}, 
+                'torus'  : {'enable': True, 'config': torus_config  , 'file': torus_file}
+                'line'   : {'enable': True, 'config': line_config   , 'use_pyneb': True},
+			   }
 ```
 > [!CAUTION]
-> Note that the model names (e.g., 'ssp') are fixed in the code and please do not modify them.
+> Note that the model type names (e.g., `'stellar'` and `'agn'`) are hard-coded and please do not modify them. `'stellar'` and `'line'` models were named as, `'ssp'` and `'el'`, respectively, in S<sup>3</sup>Fit v2.2.4 and earlier versions. These old names are still supported in the current version, while they should be considered to be deprecated.
+
+Each model type has its specific `'config'` (i.e., `xxx_config` in the above `model_config`) and the path of the model template file (i.e., `xxx_file` in the `'file'` keys in the above `model_config` ). Every specific `xxx_config` share the same following format:
+```python
+
+xxx_config = {'component_0': {'pars': [[min_0, max_0, tie_0], # parameter_0
+                                       [min_0, max_0, tie_0], # parameter_0
+                                       [min_0, max_0, tie_0], # parameter_0
+                                       # ...
+                                       # ...
+									  ], 
+                              'info': {'item_0': value_0,     # infomation_0
+                                       'item_1': value_1,     # infomation_1
+                                       'item_2': value_2,     # infomation_2
+                                       # ...
+                                       # ...
+									  }
+                             }, 
+              'component_1': {'pars': [[min_0, max_0, tie_0], # parameter_0
+                                       [min_0, max_0, tie_0], # parameter_0
+                                       [min_0, max_0, tie_0], # parameter_0
+                                       # ...
+                                       # ...
+									  ], 
+                              'info': {'item_0': value_0,     # infomation_0
+                                       'item_1': value_1,     # infomation_1
+                                       'item_2': value_2,     # infomation_2
+                                       # ...
+                                       # ...
+									  }
+                             }, 
+			  # ...
+			  # ...
+			 }
+```
+A given model type can have multiple components, e.g., `'component_0'` and `'component_1'` as above, . For example, stellar continuum can have old and young population components, line model can have several narrow and broad line components. Each component has its own parameter list (`'pars'`) and constraint information (`'info'`). The difference between `'pars'` and `'info'` are, `'pars'` are fitting parameters (i.e., the non-linear parameters in [fitting strategy](./fitting_strategy.md)), e.g., line width, and thus have the value boundaries (`min_xx, max_xx`) and tying relations (`tie_xx`); while `'info'` gives fixed specifications or assumptions, e.g., which atom lines are used in the fitting. The detailed of each model type are described in following subsections. 
+
+> [!NOTE]
+> There is no limit of the number of components for a given model type. The name of components (`component_x` as above) can be defined by users, e.g., 'starburst', 'old stellar population', or 'narrow lines'. 
+
+> [!NOTE]
+> Each fitting parameter can be free parameter (if `tie_xx` is `'free'`) or fixed value (if `tie_xx` is `'fix'`). If different components or different model types have the same parameter, the parameter can be tied among components or models. An example of the tying relation is given in the following stellar continuum configuration with two stellar population components. 
 
 > [!TIP]
-> Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add a new model type. 
-
-The detailed set up of each model are described as follows. 
-
+> You can import a new model type into S<sup>3</sup>Fit following the guide in [advanced usage](../manuals/advanced_usage.md) (Section 6. Support new types of models). 
 #### 2.1 Stellar continuum
 
 ```python
 ssp_file = 'DIRECTORY/popstar_for_s3fit.fits'
 ```
-Current version of S<sup>3</sup>Fit use the [HR-pyPopStar][2] Single Stellar Population (SSP) model library. 
-Please run the [converting code](../model_libraries/convert_popstar_ssp.py) to convert the original HR-pyPopStar models to the format used for S<sup>3</sup>Fit. 
-You may also want to download an example of the converted SSP model for test in [this link][7].
+The current version of S<sup>3</sup>Fit uses the [HR-pyPopStar][2] Single Stellar Population (SSP) model library. Please run the [converting code](../model_libraries/convert_popstar_ssp.py) to convert the original HR-pyPopStar models to the format used for S<sup>3</sup>Fit. You may also want to download an example of the converted SSP model in [this link][7] for a test.
 
 [2]: <https://www.fractal-es.com/PopStar/>
 [7]: https://drive.google.com/file/d/1JwdBOnl6APwFmadIX8BYLcLyFNZvnuYg/view?usp=share_link
 
-An example of stellar continuum configuration:
+A simple example of stellar continuum configuration is as follows:
 ```python
-ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], # velocity shift (km/s)
-                                [100, 1200, 'free'], # velocity FWHM (km/s)
-                                [0, 5.0, 'free'], # extinction (AV)
-                                [0, 0.94, 'free'], # CSP age (log Gyr)
-                                [-1, 1, 'free']], # declining timescale of SFH (log Gyr)
-                       'info': {'age_min': -2.25, 'age_max': 'universe', 'met_sel': 'solar', 'sfh_name': 'exponential'} } }
+stellar_config = {'main': {'pars': [[-1000, 1000, 'free'],  # velocity shift (km/s)
+                                    [  100, 1200, 'free'],  # velocity FWHM (km/s)
+                                    [    0,  5.0, 'free'],  # extinction (AV)
+                                    [    0, 0.94, 'free'],  # CSP age (or galaxy age) (log Gyr)
+                                    [   -1,    1, 'free'],  # declining timescale of exponential SFH (log Gyr)
+								   ],
+                           'info': {'age_min' : -2.25,         # min SSP age (log Gyr)
+                                    'age_max' : 'universe',    # max SSP age, can be either given in log Gyr, or in the universe age at the given v0_redshift
+                                    'met_sel' : 'solar',       # metallicity, can be 'all', 'solar', or any combination of [0.004,0.008,0.02,0.05]
+                                    'sfh_name': 'exponential', # name of SFH function, can be 'nonparametric', 'exponential', 'delayed', 'constant', or user defined
+						           }
+                          }
+                 }
 ```
-In this example, one stellar component (e.g., one stellar population) is set up, which has the name `'main'`; the name can be set freely. 
-`'pars'` stores the setup for each parameter. 
-Five parameters are used in the example, which are (from the left)
-velocity shift (km/s, in relative to the input `v0_redshift`), velocity FWHM (km/s), extinction (AV), log age (Gyr) of the Composite Stellar Population (CSP), 
-and the log $\tau$ value (Gyr) of the Star Formation History (SFH), respectively. 
-Every parameter setup has the format `[min value, max value, tie condition]`. 
-In this example, all parameters are free parameters in fitting. 
+In this example, one stellar component (e.g., one stellar population) is set up, which has the name `'main'`; the name can be set freely. `'pars'` stores the setup for each parameter. Every parameter setup has the format `[min value, max value, tie condition]`. In this example, all parameters are free parameters in fitting. Five parameters are used in the example, which are (from the top) velocity shift (km/s, in relative to the input `v0_redshift`), velocity FWHM (km/s), extinction (AV), log age (Gyr) of the Composite Stellar Population (CSP) (i.e., the age of the galaxy), and the log $\tau$ value (Gyr) of the Star Formation History (SFH), respectively. 
 
-`'info'` lists the regulation of the stellar models. 
-`'age_min'` and `'age_max'` are the minimum and maximum stellar ages (log Gyr) of the used SSP models.
-Set `'age_min': None` if the youngest HR-pyPopStar model is used. 
-Set `'age_max': 'universe'` to use the universe age in the input `v0_redshift`. 
-`'met_sel'` limit the metallicity, which can be set to 
-`'all'` to use all metallicities in HR-pyPopStar models (Z = 0.004, 0.008, 0.02, 0.05), 
-`'solar'` to only use solar metallicity (Z = 0.002), 
-or any combination of values in a list, e.g., `[0.004,0.008]` or `[0.02,0.05]`. 
+`'info'` lists the regulation of the stellar models. `'age_min'` and `'age_max'` are the minimum and maximum stellar ages (log Gyr) of the used SSP models. Set `'age_min': None` if the youngest HR-pyPopStar model is used. Set `'age_max': 'universe'` to use the universe age in the input `v0_redshift`. `'met_sel'` limit the metallicity, which can be set to `'all'` to use all metallicities in HR-pyPopStar models (Z = 0.004, 0.008, 0.02, 0.05), or `'solar'` to only use solar metallicity (Z = 0.002), or any combination of values in a list, e.g., `[0.004,0.008]` or `[0.02,0.05]`. 
 
-`'sfh_name'` denotes the SFH used in this `'main'` component. 
-Current version of S<sup>3</sup>Fit supports the following SFH functions:
-`'nonparametric'`, `'exponential'`, `'delayed'`, `'constant'`. 
-Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add a new SFH function. 
-An example of `'nonparametric'` SFH is shown as follows:
+`'sfh_name'` denotes the SFH used in this `'main'` component. The current version of S<sup>3</sup>Fit supports the following SFH functions: `'nonparametric'`, `'exponential'`, `'delayed'`, `'constant'`. 
+An example config with `'nonparametric'` SFH is shown as follows:
 ```python
-ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free']], 
-                       'info': {'age_min': 5.5e-3, 'age_max': 'universe', 'met_sel': 'solar', 'sfh': 'nonparametric'} } }
+stellar_config = {'main': {'pars': [[-1000, 1000, 'free'], # velocity shift (km/s)
+                                    [  100, 1200, 'free'], # velocity FWHM (km/s)
+                                    [    0,  5.0, 'free'], # extinction (AV)
+					           	   ], 
+                           'info': {'age_min' : 5.5e-3,          # min SSP age (log Gyr)
+					                'age_max' : 'universe',      # max SSP age, can be either given in log Gyr, or in the universe age at the given v0_redshift
+					                'met_sel' : 'solar',         # metallicity, can be 'all', 'solar', or any combination of [0.004,0.008,0.02,0.05]
+					                'sfh_name': 'nonparametric', # name of SFH function
+					               } 
+						  } 
+			     }
 ```
-In the case with `'nonparametric'` SFH, only the first three parameters, 
-velocity shift, velocity FWHM (km/s), and extinction, are used. 
-
-S<sup>3</sup>Fit supports any combination of the SFH functions with multiple CSP components
-(except for `'nonparametric'` SFH that can be only used individually). 
-The following example shows the case with two CSP components, 
-where the `'main'` component use `'exponential'` SFH and the `'young'` component use `'constant'` SFH. 
-```python
-ssp_config = {'main': {'pars': [[-1000, 1000, 'free'], [100, 1200, 'free'], [0, 5.0, 'free'], 
-                                [0, 0.94, 'free'], [-1, 1, 'free']], 
-                       'info': {'age_min': -2.25, 'age_max': 'universe', 'met_sel': 'solar', 'sfh': 'exponential'} }, 
-              'young': {'pars': [[None, None, 'ssp:main:0'], [None, None, 'ssp:main:1'], [None, None, 'ssp:main:2'], 
-                                 [-2, -1, 'free'], [-1, -1, 'fix']], 
-                        'info': {'age_min': -2.25, 'age_max': 0, 'met_sel': 'solar', 'sfh': 'constant'} } }
-```
-> [!TIP]
-> The above example also shows how to tie one parameter to the others. 
-For instance, the velocity shift of the `'young'` component has a tie condition of `'ssp:main:0'`, 
-indicating that it is tied to the `0`-th parameter of the `'main'` component of the `'ssp'` model.
-Also note that the log $\tau$ value (the last parameter) is not used for a `'constant'` SFH, 
-set it to any value with `'fix'` to save a free parameter.
-
-> [!CAUTION]
-> Please do not directly delete unused parameters with multiple components
-> since all stellar components need to have the same number of parameters. 
+In the case with `'nonparametric'` SFH, only the first three parameters, velocity shift, velocity FWHM (km/s), and extinction, are used. The example of fitting with `'nonparametric'` SFH can be found in Section 3.4 and 7.1.2 in the [example](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb).
 
 > [!TIP]
-> The best-fit reconstructed SFH of each component can be plotted or output
-> by running
+> You can use a user custom SFH function following the guide in [advanced usage](../manuals/advanced_usage.md) (Section 3. Support new SFH functions). 
+
+S<sup>3</sup>Fit supports any combinations of the SFH functions with multiple CSP components (except for `'nonparametric'` SFH that can be only used individually). The following example shows the case with two CSP components, where the `'main'` component (an old stellar population) uses `'exponential'` SFH and the `'young'` component (a starburst) uses `'constant'` SFH. The example of fitting with the config can be found in the [example](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb).
+```python
+stellar_config = {'main' : {'pars': [[-1000, 1000, 'free'], # velocity shift (km/s)
+                                     [  100, 1200, 'free'], # velocity FWHM (km/s)
+									 [    0,  5.0, 'free'], # extinction (AV)
+									 [    0, 0.94, 'free'], # CSP age of old population (or galaxy age) (log Gyr)
+									 [   -1,    1, 'free'], # declining timescale of exponential SFH (log Gyr)
+									], 
+                            'info': {'age_min' : -2.25,         # min SSP age (log Gyr)
+							         'age_max' : 'universe',    # max SSP age, can be either given in log Gyr, or in the universe age at the given v0_redshift
+									 'met_sel' : 'solar',       # metallicity, can be 'all', 'solar', or any combination of [0.004,0.008,0.02,0.05]
+									 'sfh_name': 'exponential', # name of SFH function
+									},
+						   }, 
+                  'young': {'pars': [[None, None, 'stellar:main:0'], # velocity shift (km/s)
+				                     [None, None, 'stellar:main:1'], # velocity FWHM (km/s)
+									 [None, None, 'stellar:main:2'], # extinction (AV)
+									 [  -2,   -1, 'free'          ], # CSP age of young population (log Gyr). 'constant' SFH only has this parameter
+									], 
+                            'info': {'age_min' : -2.25,      # min SSP age (log Gyr)
+							         'age_max' : 0,          # max SSP age of young population (log Gyr)
+									 'met_sel' : 'solar',    # metallicity, can be 'all', 'solar', or any combination of [0.004,0.008,0.02,0.05]
+									 'sfh_name': 'constant', # name of SFH function
+									}
+						   }
+									
+			     }
+```
+
+The above example also shows how to tie one parameter to the others. For instance, the velocity shift of the `'young'` component has a tie condition of `'stellar:main:0'`, indicating that it is tied to the `0`th parameter of the `'main'` component of the `'stellar'` model. The same tying relation is set for the velocity FWHM and extinction of the 'young' component.
+
+> [!TIP]
+> There are several mode to set tying relation. Here we take the extinction of the `'young'` component, $A_{V\mathrm{,\ young}}$, as an example, which can be tied to the best-fit $A_{V\mathrm{,\ main}}$ with the following patterns:
+> (1) `[None, None, 'stellar:main:2']`, a hard tie, $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}$;
+> (2) `[0.5, 3, 'stellar:main:2:+']`, a float, additive tie, $A_{V\mathrm{,\ young}}$ can varies from $A_{V\mathrm{,\ main}}+0.5$ to $A_{V\mathrm{,\ main}}+3$;
+> (3) `[0.5, 3, 'stellar:main:2:x']`, a float, multiplicative tie, $A_{V\mathrm{,\ young}}$ can varies from $0.5A_{V\mathrm{,\ main}}$ to $3A_{V\mathrm{,\ main}}$; the marker `':x'` can be replaced with `':*'`;
+> (4) `[1.5, None, 'stellar:main:2:+:fix']`, an additive tie with a fixed factor,  $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}+1.5$;
+> (5) `[1.5, None, 'stellar:main:2:x:fix']`, a multiplicative tie with a fixed factor,  $A_{V\mathrm{,\ young}} = 1.5A_{V\mathrm{,\ main}}$.
+> You can also set a secondary tying relation in case the primary tied model or component is not available. For example, with `[None, None, 'line:NLR:2;stellar:main:2']`, $A_{V\mathrm{,\ young}}$ is tied to the extinction of the `'NLR'` component of the `'line'` model (i.e., the `2`nd parameter of the component) in the default case, or tied to $A_{V\mathrm{,\ main}}$ when the `line` model is not available (e.g., in the step of pure-continuum fitting). 
+
+> [!TIP]
+> The best-fit reconstructed SFH of each component can be plotted or output by running
 > ```python
-> FF.model_dict['ssp']['spec_mod'].reconstruct_sfh()
+> FF.model_dict['stellar']['spec_mod'].reconstruct_sfh()
 > ```
 > Please read the [Jupyter Notebook](../examples/example_galaxy.ipynb) for an example case. 
 
-#### 2.2 Emission lines
+#### 2.2  Line model
 
-S<sup>3</sup>Fit supports combination of multiple emission line components. 
-An example of emission line configuration is shown as follows:
+S<sup>3</sup>Fit supports combination of multiple line components. 
+An example of line configuration is shown as follows:
 ```python
 el_config = {'NLR': {'pars': [[-500, 500, 'free'], # velocity shift (km/s)
                               [ 250, 750, 'free'], # velocity FWHM (km/s)
                               [0, 5, 'free'], # extinction (AV)
                               [1.3, 4.3, 'free'], # electron density (log cm-3)
                               [4, None, 'fix']], # electron temperature (log K)
-                     'info': {'line_used': ['all']}}, 
+                     'info': {'line_used': 'default'}}, 
              'outflow_1': {'pars': [[-2000,  100, 'free'], # velocity shift (km/s)
                                     [  750, 2500, 'free'], # velocity FWHM (km/s)
                                     [0, 5, 'free'], # extinction (AV)
                                     [1.3, 4.3, 'free'], # electron density (log cm-3)
                                     [4, None, 'fix']], # electron temperature (log K)
-                           'info': {'line_used': ['all']}}, 
+                           'info': {'line_used': ['[O III]:4960', '[O III]:5008', '[N II]:6550', 'Ha', '[N II]:6585'] }},
              'outflow_2': {'pars': [[-3000, -2000, 'free'], # velocity shift (km/s)
                                     [  750,  2500, 'free'], # velocity FWHM (km/s)
                                     [0, None, 'fix'], # extinction (AV)
                                     [2, None, 'fix'], # electron density (log cm-3)
                                     [4, None, 'fix']], # electron temperature (log K)
-                           'info': {'line_used': ['[O III]:4960', '[O III]:5008', '[N II]:6550', 'Ha', '[N II]:6585'] }},
+                           'info': {'line_used':  }},
              'BLR': {'pars': [[ -500,  500, 'free'], # velocity shift (km/s)
                               [  750, 9900, 'free'], # velocity FWHM (km/s)
                               [0, None, 'fix'], # extinction (AV)

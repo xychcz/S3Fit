@@ -1,7 +1,7 @@
 # Advanced usage
 
 > [!NOTE]
-> The code is actively under development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+> S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 ## 1. Support new band filters
 

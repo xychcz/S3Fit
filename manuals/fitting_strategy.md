@@ -4,7 +4,7 @@
 > The page is being edited. 
 
 The full fitting pipeline of S<sup>3</sup>Fit is shown in the following flowchart. 
-<p align="center"> <img src="./Flowcharts.png" width="1200">
+<p align="center"> <img src="./figures/Flowcharts.png" width="1200">
 
 The core processes of S<sup>3</sup>Fit are <ins>**Create model spectra**</ins> and <ins>**Fit models to data**</ins> in the flowchart. 
 The code separate the values related to the normalization factors of models (i.e., flux or luminosity of each model component)

@@ -83,7 +83,8 @@ class AGNFrame(object):
         # curvature <= 0: broken two-side powerlaw
         # curvature > 0: smoothed bending powerlaw. larger curvature --> smoother break (5: very smooth; 0.1: very sharp)
         if curvature is None: curvature = 0
-        if alpha_lambda1 > alpha_lambda2: curvature = 0 # smoothing does not work in this case
+        if alpha_lambda2 is not None:
+            if alpha_lambda1 > alpha_lambda2: curvature = 0 # smoothing does not work in this case
 
         pl = self.simple_powerlaw(wavelength, wave_turn, flux_trun, alpha_lambda1)
 

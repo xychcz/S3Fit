@@ -1,10 +1,11 @@
 # List of all parameters of S<sup>3</sup>Fit
+
 > [!NOTE]
 > 'Parameters' here means the input arguments of `FitFrame` (the main framework of S<sup>3</sup>Fit).
 > Please do not be confused with the non-linear fitting 'parameters' of models discussed in  [fitting strategy](./fitting_strategy.md).
 
 > [!NOTE]
-> S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
+> This page is for S<sup>3</sup>Fit **v2.3**. S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 ### Input spectroscopic data
 - `spec_wave_w` (list or numpy array of floats, <ins>**required**</ins>) \
@@ -67,13 +68,17 @@
    Number of the mock spectra for the Monte Carlo method.  The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
 - `use_multi_thread` (bool, optional) and `num_multi_thread` (int, optional) \
    If `use_multi_thread=True` (default `False`), S<sup>3</sup>Fit with run the fitting for mock data in multithreading with threads number specified by `num_multi_thread` (default `-1`, i.e., using all available system threads). 
-
-### Control of fitting quality
+   
+### Basic fitting control
+- `fit_grid` (string, optional) \
+   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, or `fit_grid='log'` to run the fitting in logarithmic flux grid. Note that if `line` model is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`. (please refer to [fitting strategy](./fitting_strategy.md) for details). 
 - `examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
    If `examine_result=True` (default), the best-fit models will be examined. All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled. An additional fitting step will be performed with the updated model configuration (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)). 
    If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
 -  `accept_absorption_SN` (float, optional) \
    Acceptable minimum peak S/N of absorption line component(s). Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled. The default value is the same as `accept_model_SN`. Note that the examinations of absorption lines is always performed even though `examine_result=False`.
+   
+### Detailed fitting quality control
 - `accept_chi_sq` (float, optional) \
    The accepted $\chi_\nu^2$ in the initial and intermediate fitting steps. Default is `3`. The accepted $\chi_\nu^2$ in the final fitting step will be dynamically chosen with $\chi_\nu^2$ of the progenitor steps. 
 - `nlfit_ntry_max` (int, optional) \
@@ -85,9 +90,7 @@
 - `perturb_scale` (float, optional) \
    Perturbation scaling factor for the transferred parameters.  Default is `0.02`, i.e., an array of Gaussian noise with the sigma of 2% of the boundaries of parameters will be added to the transferred parameters (please refer to [fitting strategy](./fitting_strategy.md) for details). 
 - `nllsq_ftol_ratio` (float, optional) \
-   The factor to control the termination condition of the Non-linear Least-square optimazation (i.e., `scipy.optimize.least_squares`).  Default is `0.01`, i.e., the `ftol` parameter of `scipy.optimize.least_squares` will be given as 0.01$\sqrt{n}$, where n is the number of input data in wavelength (combining both of spectroscopic and photometric data).
-- `fit_grid` (string, optional) \
-   Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, or `fit_grid='log'` to run the fitting in logarithmic flux grid. Note that if `line` model is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`. (please refer to [fitting strategy](./fitting_strategy.md) for details). 
+   The factor to control the termination condition of the Non-linear Least-square optimization (i.e., `scipy.optimize.least_squares`).  Default is `0.01`, i.e., the `ftol` parameter of `scipy.optimize.least_squares` will be given as 0.01$\sqrt{n}$, where n is the number of input data in wavelength (combining both of spectroscopic and photometric data).
 - `conv_nbin_max` (int, optional) \
    Maximum bin number to perform FFT accelerated convolution of continuum model spectra with variable Gaussian kernel widths (e.g., wavelength-dependent spectral resolution).
    Default is `5`, i.e., the convolution will be performed with kernel widths at 5 evenly-spaced wavelengths. The convolved spectrum at wavelengths between the 5 selected wavelengths will be interpolated linearly using the spectra convolved with the kernel at the two neighboring selected wavelengths.  A small number of `conv_nbin_max` works well for a smooth function of wavelength-dependent resolution. Increasing the number will slow down the fitting process significantly.
