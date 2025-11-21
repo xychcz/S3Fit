@@ -1,7 +1,7 @@
 # Basic usage
 
 > [!CAUTION]
-> The page is being edited for the upcoming release of S<sup>3</sup>Fit **v2.3** (already uploaded in the main repository). The updating till Section 2.1 is finished. 
+> The page is being edited for the upcoming release of S<sup>3</sup>Fit **v2.3** (already uploaded in the main repository). The updating till Section 2.1 (included) is finished. 
 
 > [!NOTE]
 > This page is for S<sup>3</sup>Fit **v2.3**. S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
