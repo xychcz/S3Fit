@@ -203,12 +203,12 @@ stellar_config = {'main' : {'pars': [[-1000, 1000, 'free'], # velocity shift (km
 The above example also shows how to tie one parameter to the others. For instance, the velocity shift of the `'young'` component has a tie condition of `'stellar:main:0'`, indicating that it is tied to the `0`th parameter of the `'main'` component of the `'stellar'` model. The same tying relation is set for the velocity FWHM and extinction of the 'young' component.
 
 > [!TIP]
-> There are several mode to set tying relation. Here we take the extinction of the `'young'` component, $A_{V\mathrm{,\ young}}$, as an example, which can be tied to the best-fit $A_{V\mathrm{,\ main}}$ with the following patterns:
-> (1) `[None, None, 'stellar:main:2']`, a hard tie, $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}$;
-> (2) `[0.5, 3, 'stellar:main:2:+']`, a float, additive tie, $A_{V\mathrm{,\ young}}$ can varies from $A_{V\mathrm{,\ main}}+0.5$ to $A_{V\mathrm{,\ main}}+3$;
-> (3) `[0.5, 3, 'stellar:main:2:x']`, a float, multiplicative tie, $A_{V\mathrm{,\ young}}$ can varies from $0.5A_{V\mathrm{,\ main}}$ to $3A_{V\mathrm{,\ main}}$; the marker `':x'` can be replaced with `':*'`;
-> (4) `[1.5, None, 'stellar:main:2:+:fix']`, an additive tie with a fixed factor,  $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}+1.5$;
-> (5) `[1.5, None, 'stellar:main:2:x:fix']`, a multiplicative tie with a fixed factor,  $A_{V\mathrm{,\ young}} = 1.5A_{V\mathrm{,\ main}}$.
+> There are several mode to set tying relation. Here we take the extinction of the `'young'` component, $A_{V\mathrm{,\ young}}$, as an example, which can be tied to the best-fit $A_{V\mathrm{,\ main}}$ with the following patterns: \
+> (1) `[None, None, 'stellar:main:2']`, a hard tie, $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}$; \
+> (2) `[0.5, 3, 'stellar:main:2:+']`, a float, additive tie, $A_{V\mathrm{,\ young}}$ can varies from $A_{V\mathrm{,\ main}}+0.5$ to $A_{V\mathrm{,\ main}}+3$; \
+> (3) `[0.5, 3, 'stellar:main:2:x']`, a float, multiplicative tie, $A_{V\mathrm{,\ young}}$ can varies from $0.5A_{V\mathrm{,\ main}}$ to $3A_{V\mathrm{,\ main}}$; the marker `':x'` can be replaced with `':*'`; \
+> (4) `[1.5, None, 'stellar:main:2:+:fix']`, an additive tie with a fixed factor,  $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}+1.5$; \
+> (5) `[1.5, None, 'stellar:main:2:x:fix']`, a multiplicative tie with a fixed factor,  $A_{V\mathrm{,\ young}} = 1.5A_{V\mathrm{,\ main}}$. \
 > You can also set a secondary tying relation in case the primary tied model or component is not available. For example, with `[None, None, 'line:NLR:2;stellar:main:2']`, $A_{V\mathrm{,\ young}}$ is tied to the extinction of the `'NLR'` component of the `'line'` model (i.e., the `2`nd parameter of the component) in the default case, or tied to $A_{V\mathrm{,\ main}}$ when the `line` model is not available (e.g., in the step of pure-continuum fitting). 
 
 > [!TIP]
