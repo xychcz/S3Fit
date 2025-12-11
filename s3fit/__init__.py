@@ -15,3 +15,9 @@ __all__ = ["FitFrame", "ConfigFrame", "PhotFrame",
            "print_log", "center_string", "convolve_fix_width_fft", "convolve_var_width_fft", 
            "ExtLaw"
            ]
+
+from importlib.metadata import version, PackageNotFoundError
+try:
+    __version__ = version("your-package-name")
+except PackageNotFoundError:
+    __version__ = "0.0.0+local"

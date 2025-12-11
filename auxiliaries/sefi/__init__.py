@@ -7,7 +7,7 @@
 from s3fit import * 
 
 # # Reflect s3fit's version, if available
-# try:
-#     from s3fit import __version__ as __version__
-# except Exception:
-#     __version__ = "0.0.0"
+try:
+    from s3fit import __version__ as __version__
+except Exception:
+    __version__ = "0.0.0+local"
