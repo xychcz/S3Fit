@@ -1,0 +1,8 @@
+scipy>=1.12.0
+numpy>=1.26.4
+astropy>=6.0.0
+joblib>=1.5.2
+matplotlib>=3.9.1
+
+[pyneb]
+pyneb>=1.1.23

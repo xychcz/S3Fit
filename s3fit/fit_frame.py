@@ -12,6 +12,12 @@ from scipy.signal import savgol_filter
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 
+from importlib.metadata import version, PackageNotFoundError
+try:
+    __version__ = version("s3fit")
+except PackageNotFoundError:
+    __version__ = "2.3.0+local"
+
 from .config_frame import ConfigFrame
 from .phot_frame import PhotFrame
 # from .model_frames import *
@@ -52,7 +58,7 @@ class FitFrame(object):
         # use a list to save message in stdout
         self.log_message = []
         print_log(center_string('S3Fit starts', 80), self.log_message)
-        print_log(f"You are now using S3Fit v2.3.", self.log_message)
+        print_log(f"You are now using S3Fit v{__version__}.", self.log_message)
 
         print_log(center_string('Initialize FitFrame', 80), self.log_message)
         # save spectral data and related properties

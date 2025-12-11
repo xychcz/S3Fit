@@ -18,6 +18,6 @@ __all__ = ["FitFrame", "ConfigFrame", "PhotFrame",
 
 from importlib.metadata import version, PackageNotFoundError
 try:
-    __version__ = version("your-package-name")
+    __version__ = version("s3fit")
 except PackageNotFoundError:
     __version__ = "0.0.0+local"
