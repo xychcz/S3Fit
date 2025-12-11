@@ -5,10 +5,10 @@ requires = ["setuptools>=61", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-include-package-data = false
+include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["s3fit"]
+include = ["s3fit", "s3fit.model_frames"]
 
 [tool.setuptools_scm]
 version_scheme = "release-branch-semver"
