@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "s3fit"
-version = "2.3"
-description = "S3Fit: a Simultaneous Spectrum and photometric-SED Fitting code for observation of galaxies"
+name = "sefi"
+version = "2.2.4"
+description = "Alias package for S3Fit (Simultaneous Spectrum and photometric-SED Fitting code for observation of galaxies)"
 authors = [
     { name = "Xiaoyang Chen", email = "s3fit@xychen.me" }
 ]
 license = "GPL-3.0-or-later"
-readme = "README.md"
+readme = "../README.md"
 keywords = ["spectral fitting", "SED fitting", "galaxy", "astronomy"]
 
 classifiers = [
@@ -27,11 +27,7 @@ classifiers = [
 
 requires-python = ">= 3.10"
 dependencies = [
-  "scipy>=1.12.0",
-  "numpy>=1.26.4",
-  "astropy>=6.0.0",
-  "joblib>=1.5.2", 
-  "matplotlib>=3.9.1"
+  "s3fit>=2.2.4",
 ]
 
 [project.optional-dependencies]
