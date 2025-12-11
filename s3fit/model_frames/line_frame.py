@@ -8,7 +8,7 @@ np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliary_func import print_log
+from ..auxiliary_func import print_log, convolve_fix_width_fft
 from ..extinct_law import ExtLaw
 
 class LineFrame(object):
@@ -362,7 +362,6 @@ class LineFrame(object):
                                           'He I:7067', '[Ar III]:7138', '[O II]:7322', '[O II]:7333', '[Ni III]:7892', 'O I:8449', '[S III]:9071', 'Fe II:9206', '[S III]:9533', 
                                           'Pa8', 'Pad', 'He I:10833', 'Pag', 'O I:11290', '[P II]:11886', '[Fe II]:12570', 'Pab', '[Fe II]:13209', '[Si X]:14305', '[Fe II]:16440', 
                                           'Paa', 'Brd', '[Si VI]:19650', 'He I:20587', 'Brg', 'Brb'])
-        self.linerest_default = self.linerest_n[np.isin(self.linename_n, self.linelist_default)] # used for continuum masking
         
     def initialize_pyneb(self):
         if self.verbose: 
@@ -610,8 +609,11 @@ class LineFrame(object):
             for i_comp in range(self.num_comps):
                 for i_line in range(self.num_lines):
                     voff_w = (rest_wave_w/self.linerest_n[i_line]-1) * 299792.458
-                    mask_line_w  = voff_w > (self.cframe.min_cp[i_comp,0] - self.cframe.max_cp[i_comp,1]) # (voff_min - fhwm_max)
-                    mask_line_w &= voff_w < (self.cframe.max_cp[i_comp,0] + self.cframe.max_cp[i_comp,1]) # (voff_max + fhwm_max)
+                    voff_min = self.cframe.min_cp[i_comp,0] if ~np.isnan(self.cframe.min_cp[i_comp,0]) else np.nanmin(self.cframe.min_cp[:,0]) # check exceptions for tied pars
+                    voff_max = self.cframe.max_cp[i_comp,0] if ~np.isnan(self.cframe.max_cp[i_comp,0]) else np.nanmax(self.cframe.max_cp[:,0])
+                    fwhm_max = self.cframe.max_cp[i_comp,1] if ~np.isnan(self.cframe.max_cp[i_comp,1]) else np.nanmax(self.cframe.max_cp[:,1])
+                    mask_line_w  = voff_w > (voff_min - fwhm_max) 
+                    mask_line_w &= voff_w < (voff_max + fwhm_max) 
                     if mask_line_w.sum() >= 3: # at least 3 points in valid wavelength range
                         self.mask_valid_cn[i_comp,i_line] = (mask_line_w & self.mask_valid_rw[1]).sum() / mask_line_w.sum() >= 0.1 # at least 10% coverage fraction
         # only keep lines if they are specified 
@@ -698,7 +700,7 @@ class LineFrame(object):
                             if ratio is None:
                                 tmp = self.lineratio_n[i_tied] / self.lineratio_n[i_ref] * 1.0 # to avoid overwrite in following updating
                                 if self.verbose:
-                                    print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100 cm-3 and temperature of 1e4 K.", self.log_message)
+                                    print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100 cm-3 and temperature of 10000 K.", self.log_message)
                             else:
                                 if isinstance(ratio, list): raise ValueError((f"Please input a single ratio for {tied_name}, not a list."))
                                 tmp = ratio * 1.0 # force to input value
@@ -777,16 +779,20 @@ class LineFrame(object):
             local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
         fwhm_inst = 1 / local_R_inst * lamb_c_obs
 
-        fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
-
         if np.isin(profile, ['gaussian', 'Gaussian']):
+            fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
             sigma_tot = fwhm_tot / np.sqrt(np.log(256))
-            model = np.exp(-0.5 * ((obs_wave_w-mu)/sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
+            model = np.exp(-0.5 * ((obs_wave_w-mu) / sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
+        elif np.isin(profile, ['lorentzian', 'Lorentzian']):
+            gamma_line = fwhm_line / 2
+            model = 1 / (1 + ((obs_wave_w-mu) / gamma_line)**2) / (gamma_line * np.pi)
+            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
+        elif np.isin(profile, ['exponential', 'Exponential', 'laplace', 'Laplace']):
+            b_line = fwhm_line / np.log(4)
+            model = np.exp(-np.abs(obs_wave_w-mu) / b_line) / (b_line * 2)
+            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
         else:
-            if np.isin(profile, ['lorentz', 'Lorentz']):
-                model = 1 / (1 + ((obs_wave_w-mu) / (fwhm_tot/2))**2) / np.pi
-            else:
-                raise ValueError((f"Please specify either a Gaussian or a Lorentz line profile."))
+            raise ValueError((f"Please specify one of the line profiles: Gaussian, Lorentzian, or Exponential."))
 
         # if model.sum() <= 0: model[0] = 1e-10 # avoid error from full zero output in case line is not covered
         if sign == 'absorption': model *= -1 # set negative profile for absorption line

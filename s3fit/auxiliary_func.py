@@ -81,15 +81,13 @@ def convolve_spec_logw(logw_wave, logw_flux, conv_sigma, axis=0):
     logw_fcon = fftconvolve(logw_flux, kernel, mode='same', axes=axis)
     return logw_fcon
 
-def convolve_fix_width_fft(wave_w, flux_mw, dw_fwhm=None, dpix_sigma=None, reset_edge=True, ret_kernel_pad=False):
+def convolve_fix_width_fft(wave_w, flux_mw, dw_fwhm=None, dpix_sigma=None, reset_edge=True):
     
     if dw_fwhm is not None:
         dw_sigma   = dw_fwhm  / np.sqrt(np.log(256))
         dpix_sigma = dw_sigma / np.median(np.gradient(wave_w))
     
     kernel = gaussian_kernel_1d(dpix_sigma)
-
-    # if ret_kernel_pad: return np.median(dw_sigma_w) * 4 # default kernel width of +/-4sigma
 
     if len(flux_mw.shape) == 1: 
         conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
@@ -120,7 +118,7 @@ def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=None,
                            dw_fwhm_obj=None, dv_fwhm_obj=None, 
                            dw_fwhm_ref=None, dv_fwhm_ref=None, R_ref=None, 
                            dw_fwhm_func=None, 
-                           num_bins=10, reset_edge=True, ret_kernel_pad=False):
+                           num_bins=10, reset_edge=True):
 
     if dw_fwhm_func is not None: 
         if callable(dw_fwhm_func): 
@@ -146,8 +144,6 @@ def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=None,
 
     dw_sigma_w   = dw_fwhm_w  / np.sqrt(np.log(256))
     dpix_sigma_w = dw_sigma_w / np.gradient(wave_w)
-
-    # if ret_kernel_pad: return dw_sigma_w.max() * 4 # default kernel width of +/-4sigma
 
     if num_bins == 1:
         return convolve_fix_width_fft(wave_w, flux_mw, dpix_sigma=np.median(dpix_sigma_w), reset_edge=reset_edge)

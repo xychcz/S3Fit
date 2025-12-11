@@ -9,8 +9,7 @@ from copy import deepcopy as copy
 from astropy.io import fits
 import astropy.units as u
 import astropy.constants as const
-from astropy.cosmology import WMAP9 as cosmo
-# from astropy.modeling.models import BlackBody
+from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 
 from ..auxiliary_func import print_log, convolve_var_width_fft

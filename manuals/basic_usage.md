@@ -7,7 +7,7 @@
 > This page is for S<sup>3</sup>Fit **v2.3**. S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
 
 > [!TIP]
-> Examples of step-by-step usage of S<sup>3</sup>Fit can be found in [example1](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb) and [example2](https://github.com/xychcz/S3Fit/blob/main/examples/example_quasar.ipynb)
+> Examples of step-by-step usage of S<sup>3</sup>Fit, including configuration, running, and result visualization, can be found in [example1](https://github.com/xychcz/S3Fit/blob/main/examples/example_galaxy.ipynb) and [example2](https://github.com/xychcz/S3Fit/blob/main/examples/example_quasar.ipynb)
 
 ## 1. Initialization
 As the first step, please initialize the `FitFrame`, which is the main framework of S<sup>3</sup>Fit, by providing the following input parameters. 
@@ -138,7 +138,7 @@ stellar_config = {'main': {'pars': [[-1000, 1000, 'free'],  # velocity shift (km
                                     [  100, 1200, 'free'],  # velocity FWHM (km/s)
                                     [    0,  5.0, 'free'],  # extinction (AV)
                                     [    0, 0.94, 'free'],  # CSP age (or galaxy age) (log Gyr)
-                                    [   -1,    1, 'free'],  # declining timescale of exponential SFH (log Gyr)
+                                    [   -1,    1, 'free'],  # declining timescale of exponential or delayed SFH (log Gyr)
 								   ],
                            'info': {'age_min' : -2.25,         # min SSP age (log Gyr)
                                     'age_max' : 'universe',    # max SSP age, can be either given in log Gyr, or in the universe age at the given v0_redshift
@@ -178,7 +178,7 @@ stellar_config = {'main' : {'pars': [[-1000, 1000, 'free'], # velocity shift (km
                                      [  100, 1200, 'free'], # velocity FWHM (km/s)
 									 [    0,  5.0, 'free'], # extinction (AV)
 									 [    0, 0.94, 'free'], # CSP age of old population (or galaxy age) (log Gyr)
-									 [   -1,    1, 'free'], # declining timescale of exponential SFH (log Gyr)
+									 [   -1,    1, 'free'], # declining timescale of exponential or delayed SFH (log Gyr)
 									], 
                             'info': {'age_min' : -2.25,         # min SSP age (log Gyr)
 							         'age_max' : 'universe',    # max SSP age, can be either given in log Gyr, or in the universe age at the given v0_redshift
@@ -204,20 +204,20 @@ stellar_config = {'main' : {'pars': [[-1000, 1000, 'free'], # velocity shift (km
 The above example also shows how to tie one parameter to the others. For instance, the velocity shift of the `'young'` component has a tie condition of `'stellar:main:0'`, indicating that it is tied to the `0`th parameter of the `'main'` component of the `'stellar'` model. The same tying relation is set for the velocity FWHM and extinction of the 'young' component.
 
 > [!TIP]
-> There are several mode to set tying relation. Here we take the extinction of the `'young'` component, $A_{V\mathrm{,\ young}}$, as an example, which can be tied to the best-fit $A_{V\mathrm{,\ main}}$ with the following patterns: \
+> There are several mode to set tying relation. Here we take the extinction of the `'young'` component, $A_{V\mathrm{,\ young}}$, as an example, which can be tied to the best-fit $A_{V\mathrm{,\ main}}$ (i.e., the `2`nd parameter of the component) with the following patterns: \
 > (1) `[None, None, 'stellar:main:2']`, a hard tie, $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}$; \
 > (2) `[0.5, 3, 'stellar:main:2:+']`, a float, additive tie, $A_{V\mathrm{,\ young}}$ can varies from $A_{V\mathrm{,\ main}}+0.5$ to $A_{V\mathrm{,\ main}}+3$; \
 > (3) `[0.5, 3, 'stellar:main:2:x']`, a float, multiplicative tie, $A_{V\mathrm{,\ young}}$ can varies from $0.5A_{V\mathrm{,\ main}}$ to $3A_{V\mathrm{,\ main}}$; the marker `':x'` can be replaced with `':*'`; \
 > (4) `[1.5, None, 'stellar:main:2:+:fix']`, an additive tie with a fixed factor,  $A_{V\mathrm{,\ young}} = A_{V\mathrm{,\ main}}+1.5$; \
 > (5) `[1.5, None, 'stellar:main:2:x:fix']`, a multiplicative tie with a fixed factor,  $A_{V\mathrm{,\ young}} = 1.5A_{V\mathrm{,\ main}}$. \
-> You can also set a secondary tying relation in case the primary tied model or component is not available. For example, with `[None, None, 'line:NLR:2;stellar:main:2']`, $A_{V\mathrm{,\ young}}$ is tied to the extinction of the `'NLR'` component of the `'line'` model (i.e., the `2`nd parameter of the component) in the default case, or tied to $A_{V\mathrm{,\ main}}$ when the `line` model is not available (e.g., in the step of pure-continuum fitting). 
+> You can also set a secondary tying relation in case the primary tied model or component is not available. For example, with `[None, None, 'line:NLR:2;stellar:main:2']`, $A_{V\mathrm{,\ young}}$ is tied to the extinction of the `'NLR'` component of the `'line'` model in the default case, or tied to $A_{V\mathrm{,\ main}}$ when the `line` model is not available (e.g., in the step of pure-continuum fitting). 
 
 > [!TIP]
 > The best-fit reconstructed SFH of each component can be plotted or output by running
 > ```python
-> FF.model_dict['stellar']['spec_mod'].reconstruct_sfh()
+> FF.stellar.reconstruct_sfh()
 > ```
-> Please read the [Jupyter Notebook](../examples/example_galaxy.ipynb) for an example case. 
+> Please read the [Jupyter Notebook](../examples/example_galaxy.ipynb) (Section 7.1.1 and 7.1.2) for an example case. 
 
 #### 2.2 AGN UV/optical continuum
 
@@ -292,54 +292,25 @@ line_config = {'narrow line': {'pars': [[-500,  500, 'free'], # velocity shift (
                                         [ 1.3,  4.3, 'free'], # electron density (log cm-3)
                                         [   4, None, 'fix' ], # electron temperature (log K)
 									   ],
-                               'info': {'line_used': 'default' , # line preset, or names of lines to be used
-							            'sign'     : 'emission', # either 'emission' or 'absorption'
-										'profile'  : 'Gaussian', # line profile, can be 'Gaussian' or 'Lorentz'
+                               'info': {'line_used' : 'default' , # line preset, or names of lines to be used
+							            'H_hi_order': False,      # if use high-order Hydrogen lines (transition high-level from 11 to 40)
+							            'sign'      : 'emission', # either 'emission' or 'absorption'
+										'profile'   : 'Gaussian', # line profile, can be 'Gaussian' or 'Lorentz'
 									   }
 							  }
 			  }
 ```
 
+line multi gaussian each line determined by linear and non-linear parameters ()
+grouped to multi components share the same non-linear parameters properties 
+same constrains in info 
 
-S<sup>3</sup>Fit supports combination of multiple line components. 
-An example of line configuration is shown as follows:
-```python
-el_config = {'NLR': {'pars': [[-500, 500, 'free'], # velocity shift (km/s)
-                              [ 250, 750, 'free'], # velocity FWHM (km/s)
-                              [0, 5, 'free'], # extinction (AV)
-                              [1.3, 4.3, 'free'], # electron density (log cm-3)
-                              [4, None, 'fix']], # electron temperature (log K)
-                     'info': {'line_used': 'default'}}, 
-             'outflow_1': {'pars': [[-2000,  100, 'free'], # velocity shift (km/s)
-                                    [  750, 2500, 'free'], # velocity FWHM (km/s)
-                                    [0, 5, 'free'], # extinction (AV)
-                                    [1.3, 4.3, 'free'], # electron density (log cm-3)
-                                    [4, None, 'fix']], # electron temperature (log K)
-                           'info': {'line_used': ['[O III]:4960', '[O III]:5008', '[N II]:6550', 'Ha', '[N II]:6585'] }},
-             'outflow_2': {'pars': [[-3000, -2000, 'free'], # velocity shift (km/s)
-                                    [  750,  2500, 'free'], # velocity FWHM (km/s)
-                                    [0, None, 'fix'], # extinction (AV)
-                                    [2, None, 'fix'], # electron density (log cm-3)
-                                    [4, None, 'fix']], # electron temperature (log K)
-                           'info': {'line_used':  }},
-             'BLR': {'pars': [[ -500,  500, 'free'], # velocity shift (km/s)
-                              [  750, 9900, 'free'], # velocity FWHM (km/s)
-                              [0, None, 'fix'], # extinction (AV)
-                              [9, None, 'fix'], # electron density (log cm-3)
-                              [4, None, 'fix']], # electron temperature (log K)
-                     'info': {'line_used': ['Ha'] }} }
-```
-In this example, four components are used:
-narrow lines (`'NLR'`), the primary outflow component (`'outflow_1'`), 
-the secondary outflow component (`'outflow_2'`, which is faster than `'outflow_1'`), 
-and broad lines from AGN Broad-Line-Region (`'BLR'`). 
-`'NLR'` and `'outflow_1'` have `'info': {'line_used': ['all']}`, 
-which means all available emission lines are used.
-For `'outflow_2'` and `'BLR'`, only the emission lines with names specified in `'line_used'` are used. 
-> [!TIP]
-> Please run `FF.model_dict['el']['spec_mod'].linename_n` and `FF.model_dict['el']['spec_mod'].linerest_n`
-to learn about the names and rest wavelengths (in vacuum) of the available emission lines. 
-Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add new emission lines. 
+pars
+kins gas motion in relative to systemic redshift (v0), nebular condition e.g.,
+line width, center wavelength
+flux ratios of different lines density, extinction
+in turn, reduce fitting degeneracy of neighboring lines
+in 2.4.2
 
 For a given emission line component (e.g., `'NLR'`), every line shares the same parameter values. 
 In the current version of S<sup>3</sup>Fit, there are five parameters for each component (from the left):
@@ -349,12 +320,98 @@ The extinction, electron density and temperature are included to calculated the 
 line transitions, for which the line fitting is affected by other factors, 
 such as the effect of absorption of stellar continuum on Hydrogen emission lines, 
 and the blurring of neighboring line doublets (e.g., broad components of [OIII]4960 and [OIII]5008 doublets). 
+
+info
+which lines for the component
+names (elements, ions) 
+different method to specify lines, presets, names of line, elements, spectrum notation 
+in 2.4.1
+sign
+profile
+
+S<sup>3</sup>Fit supports combination of multiple line components. Just an example not recommendation 
+An example of line configuration is shown as follows:
+You can leave blank for default `'info'`, i.e., `'line_used':'default'` (), `'H_hi_order':False` (), `'sign':'emission'` (), `'profile':'Gaussian'` ().
+```python
+line_config = {'narrow'    : {'pars': [[ -500,   500, 'free'], # velocity shift (km/s)
+                                       [  250,  2500, 'free'], # velocity FWHM (km/s)
+                                       [    0,     5, 'free'], # extinction (AV)
+                                       [  1.3,   4.3, 'free'], # electron density (log cm-3)
+                                       [    4,  None, 'fix' ], # electron temperature (log K)
+                                      ],
+                              'info': {} # use all default setups 
+                             }, 
+               'AGN BLR'   : {'pars': [[ -500,   500, 'free'], # velocity shift (km/s)
+                                       [  750, 15000, 'free'], # velocity FWHM (km/s)
+                                       [    0,     5, 'free'], # extinction (AV)
+                                       [    9,  None, 'fix' ], 
+                                       [    4,  None, 'fix' ],
+                                      ], 
+                              'info': {'line_used' : 'BLR',    # use 'BLR' line preset for the component
+                                       'H_hi_order': True,     # enable high-order Balmer lines for the component
+                                      }
+                             }, 
+               'outflow_1' : {'pars': [[-2000,   100, 'free'], # velocity shift (km/s)
+                                       [  750,  2500, 'free'], # velocity FWHM (km/s)
+                                       [    0,     5, 'free'], # extinction (AV)
+                                       [  1.3,   4.3, 'free'], 
+                                       [    4,  None, 'fix' ],
+                                      ], 
+                              'info': {} # use all default setups 
+                             }, 
+               'outflow_2' : {'pars': [[-3000, -2000, 'free'], # velocity shift (km/s)
+                                       [  750,  2500, 'free'], # velocity FWHM (km/s)
+                                       [    0,  None, 'fix' ], 
+                                       [    2,  None, 'fix' ], 
+                                       [    4,  None, 'fix' ],
+                                      ], 
+                              'info': {'line_used': ['[O III]:4960', '[O III]:5008', '[N II]:6550', 'Ha', '[N II]:6585']}
+                             }, 
+               'absorption': {'pars': [[-2000,   100, 'free'], # velocity shift (km/s)
+                                       [  750,  4000, 'free'], # velocity FWHM (km/s)
+                                       [    0,     5, 'free'], # extinction (AV)
+                                       [  1.3,   4.3, 'free'], 
+                                       [    4,  None, 'fix' ],
+                                      ], 
+                              'info': {'sign'     : 'absorption', # set the component to be absorption (default is 'emission')
+                                       'profile'  : 'Lorentz',    # use Lorentz profile (default is 'Gaussian')
+                                      }
+                             }, 
+              }
+```
+In this example, four components are used:
+narrow lines (`'NLR'`), the primary outflow component (`'outflow_1'`), 
+the secondary outflow component (`'outflow_2'`, which is faster than `'outflow_1'`), 
+and broad lines from AGN Broad-Line-Region (`'BLR'`). 
+`'NLR'` and `'outflow_1'` have `'info': {'line_used': ['all']}`, 
+which means all available emission lines are used.
+For `'outflow_2'` and `'BLR'`, only the emission lines with names specified in `'line_used'` are used. 
+
 > [!TIP]
 > In the above example, the extinction for `'outflow_2'` and `'BLR'` is set to a arbitrarily fixed value `[0, None, 'fix']`
 > since only Hα is used among Balmer lines for those components.
 > The electron density is also fixed to typical values,
 > i.e., 10<sup>2</sup> cm<sup>-3</sup> for outflow and 10<sup>9</sup> cm<sup>-3</sup> for AGN BLR,
 > since the flux ratios of used lines are not sensitive to electron density. 
+
+##### 2.4.1 Line names and presets
+
+> [!TIP]
+> Please run `FF.model_dict['el']['spec_mod'].linename_n` and `FF.model_dict['el']['spec_mod'].linerest_n`
+to learn about the names and rest wavelengths (in vacuum) of the available emission lines. 
+Please read guide in [advanced usage](../manuals/advanced_usage.md) if you want to add new emission lines. 
+
+> [!NOTE]
+> In order to utilize PyNeb to identify line transitions and to calculate the emissivities,
+> please use a naming format of `'Element Notation:Wavelength'` for permitted lines
+> or `'[Element Notation]:Wavelength'` for forbidden lines.
+> Wavelength can be given in angstrom or micron, e.g., `'H I:12820'` or `'H I:1.28um'` for Paschen $\beta$.
+> For Hydrogen recombination lines, you can also use short names, e.g., `'Pab'` for Paschen $\beta$.
+> The prefixes of short names of Lyman, Balmer, Paschen, and Brackett series are
+> `'Ly'`, `'H'`, `'Pa'`, and `'Br'`, respectively.
+> The suffixes of line transitions can be given as `'a'` ($\alpha$), `'b'` ($\beta$), `'g'` ($\gamma$), `'d'` ($\delta$),
+> and upper levels of transitions (e.g., `'H7'` for the transition from n=7 to n=2). 
+##### 2.4.2 Tying of different lines
 
 If `model_config['el']['use_pyneb']` is set to `True`, 
 S<sup>3</sup>Fit can use [PyNeb](http://research.iac.es/proyecto/PyNeb/) 
