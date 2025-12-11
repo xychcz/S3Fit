@@ -11,8 +11,10 @@ include-package-data = true
 include = ["s3fit", "s3fit.model_frames"]
 
 [tool.setuptools_scm]
-version_scheme = "release-branch-semver"
+# version_scheme = "release-branch-semver"
+version_scheme = "no-guess-dev"
 local_scheme = "node-and-date"
+tag_regex = '^v?(?P<version>\d+\.\d+\.\d+)$'
 
 [project]
 name = "s3fit"

@@ -12,16 +12,27 @@ from scipy.signal import savgol_filter
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 
-from importlib.metadata import version, PackageNotFoundError
-try:
-    __version__ = version("s3fit")
-except PackageNotFoundError:
-    __version__ = "2.3.0+local"
-
 from .config_frame import ConfigFrame
 from .phot_frame import PhotFrame
 # from .model_frames import *
 from .auxiliary_func import print_log, center_string, convolve_var_width_fft
+
+from pathlib import Path
+from importlib.metadata import version as pkg_version, PackageNotFoundError
+
+# check if the fit_frame.py file is in the pip installed directory
+# def check_if_installed(file: str) -> bool:
+#     p = Path(file).resolve()
+#     markers = ["site-packages", "dist-packages"] # typical installation roots
+#     return any(m in p.parts for m in markers)
+# if check_if_installed(__file__):
+if any(m in Path(__file__).resolve().parts for m in ["site-packages", "dist-packages"]):
+    try:
+        __version__ = pkg_version("s3fit") # use the installed distribution's version
+    except PackageNotFoundError:
+        __version__ = "0.0.0+unknown" # installed in a weird way or metadata missing
+else:
+    __version__ = "2.3.0+local" # manually specified local version
 
 class FitFrame(object):
     def __init__(self, 
