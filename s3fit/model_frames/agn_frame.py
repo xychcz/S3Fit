@@ -67,6 +67,21 @@ class AGNFrame(object):
         if np.isin(iron_names, [self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).any(): 
             self.read_iron()
 
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cp[0]) == 0:
+            for i_comp in range(self.num_comps):
+                if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :4] = ['voff', 'fwhm', 'Av', 'alpha_lambda']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda': 3}
+                if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :6] = ['voff', 'fwhm', 'Av', 'alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda1': 3, 'alpha_lambda2': 4, 'wave_turn': 5, 'curvature': 6}
+                if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :5] = ['voff', 'fwhm', 'Av', 'log_e_tem', 'log_tau_be']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_tem': 3, 'log_tau_be': 4}
+                if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :3] = ['voff', 'fwhm', 'Av']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2}
 
         if self.verbose:
             print_log(f"AGN UV/optical continuum components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
@@ -127,6 +142,29 @@ class AGNFrame(object):
             pl[mask_w] = self.simple_powerlaw(wavelength[mask_w], wave_short2, pl_short2, alpha_short2)
 
         return pl
+
+    def bac_func(self, wavelength, log_e_tem=4.0, log_tau_be=1.0, wave_norm=3000):
+        # parameters: electron temperature (K), optical depth at balmer edge (3646)
+        # normalize at rest 3000 AA
+
+        # Planck function for the given electron temperature
+        C1 = 1.1910429723971885e27   # 2 h c^2 * 1e40 * 1e3
+        C2 = 1.4387768775039336e8    # hc/k * 1e10
+        tmp = C2 / (wavelength * 10.0**log_e_tem)
+        planck_flux_w = C1 / wavelength**5 / np.expm1(tmp) # in erg/s/cm2/AA/sr
+        
+        # calculate the optical depth at each wavelength
+        # τ_λ = τ_BE * (λ_BE / λ)^3  (as in Grandi 1982)
+        # the exponent can vary depending on the specific model
+        balmer_edge = 3646.0
+        optical_depth = 10.0**log_tau_be * (balmer_edge / wavelength)**3
+
+        # calculate the Balmer continuum flux
+        bac_flux_w = planck_flux_w * (1 - np.exp(-optical_depth))
+        bac_flux_w /= np.interp(wave_norm, wavelength, bac_flux_w)
+        bac_flux_w[wavelength >= balmer_edge] = 0
+
+        return bac_flux_w
 
     def read_iron(self):
         # combined I Zw 1 Fe II (+ UV Fe III) template, convolving to fwhm = 1100 km/s
@@ -213,36 +251,10 @@ class AGNFrame(object):
         else:
             return self.iron_flux_w 
 
-    def bac_func(self, wavelength, logtem=4.0, logtau=1.0, wave_norm=3000):
-        # parameters: electron temperature (K), optical depth at balmer edge (3646)
-        # normalize at rest 3000 AA
-
-        # Planck function for the given electron temperature
-        C1 = 1.1910429723971885e27   # 2 h c^2 * 1e40 * 1e3
-        C2 = 1.4387768775039336e8    # hc/k * 1e10
-        tmp = C2 / (wavelength * 10.0**logtem)
-        planck_flux_w = C1 / wavelength**5 / np.expm1(tmp) # in erg/s/cm2/AA/sr
-        # planck_func = BlackBody(temperature=10.0**logtem * u.K, scale=1*u.erg/(u.s*u.cm**2*u.AA*u.sr))
-        # planck_flux_w = planck_func(wavelength * u.AA).value 
-        
-        # calculate the optical depth at each wavelength
-        # τ_λ = τ_BE * (λ_BE / λ)^3  (as in Grandi 1982)
-        # the exponent can vary depending on the specific model
-        balmer_edge = 3646.0
-        optical_depth = 10.0**logtau * (balmer_edge / wavelength)**3
-
-        # calculate the Balmer continuum flux
-        bac_flux_w = planck_flux_w * (1 - np.exp(-optical_depth))
-        bac_flux_w /= np.interp(wave_norm, wavelength, bac_flux_w)
-        bac_flux_w[wavelength >= balmer_edge] = 0
-
-        return bac_flux_w
-
     ##############################
 
     def models_unitnorm_obsframe(self, obs_wave_w, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
         # comp can be: 'powerlaw', 'bending-powerlaw', 'iron', 'bac'
-        # par: voff, fwhm, AV (general); alpha_lambda (pl); logtem, logtau (bac)
         if if_pars_flat: 
             par_cp = self.cframe.flat_to_arr(input_pars)
         else:
@@ -251,11 +263,21 @@ class AGNFrame(object):
         for i_comp in range(par_cp.shape[0]):
             # read and append intrinsic templates in rest frame
             if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                pl = self.powerlaw_func(self.orig_wave_w, wave_norm=self.w_norm, alpha_lambda1=par_cp[i_comp,3], alpha_lambda2=None, curvature=None, bending=False)
+                alpha_lambda = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['alpha_lambda']]
+                pl = self.powerlaw_func(self.orig_wave_w, wave_norm=self.w_norm, alpha_lambda1=alpha_lambda, alpha_lambda2=None, curvature=None, bending=False)
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
             if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                pl = self.powerlaw_func(self.orig_wave_w, wave_norm=par_cp[i_comp,5], alpha_lambda1=par_cp[i_comp,3], alpha_lambda2=par_cp[i_comp,4], curvature=par_cp[i_comp,6], bending=True)
+                alpha_lambda1 = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['alpha_lambda1']]
+                alpha_lambda2 = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['alpha_lambda2']]
+                wave_turn     = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['wave_turn']]
+                curvature     = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['curvature']]
+                pl = self.powerlaw_func(self.orig_wave_w, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, bending=True)
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
+            if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                log_e_tem  = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['log_e_tem']]
+                log_tau_be = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['log_tau_be']]
+                bac = self.bac_func(self.orig_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be)
+                orig_flux_int_ew = bac[None,:] # convert to (1,w) format
             if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
                 if self.cframe.info_c[i_comp]['segment']:
                     iron = self.iron_func(segment=True)
@@ -263,22 +285,22 @@ class AGNFrame(object):
                 else:
                     iron = self.iron_func(segment=False)
                     orig_flux_int_ew = iron[None,:] # convert to (1,w) format
-            if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                bac = self.bac_func(self.orig_wave_w, logtem=par_cp[i_comp,3], logtau=par_cp[i_comp,4])
-                orig_flux_int_ew = bac[None,:] # convert to (1,w) format
 
             # dust extinction
-            orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * par_cp[i_comp,2] * ExtLaw(self.orig_wave_w))
+            Av = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['Av']]
+            orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * Av * ExtLaw(self.orig_wave_w))
 
             # redshift models
-            z_ratio = (1 + self.v0_redshift) * (1 + par_cp[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)
+            voff = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['voff']]
+            z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             orig_wave_z_w = self.orig_wave_w * z_ratio
             orig_flux_dz_ew = orig_flux_d_ew / z_ratio
 
             # convolve with intrinsic and instrumental dispersion if self.R_inst_rw is not None; only for iron
             if (self.R_inst_rw is not None) & (conv_nbin is not None) & np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                fwhm = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['fwhm']]
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
-                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=par_cp[i_comp,1], 
+                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=fwhm, 
                                                           dw_fwhm_ref=self.dw_fwhm_dsp_w*z_ratio, R_inst_w=R_inst_w, num_bins=conv_nbin)
             else:
                 orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
@@ -316,12 +338,10 @@ class AGNFrame(object):
         spec_flux_scale = ff.spec_flux_scale
         num_loops = ff.num_loops
         comp_c = self.cframe.comp_c
+        par_name_cp = self.cframe.par_name_cp
         num_comps = self.cframe.num_comps
-        num_pars_per_comp = self.cframe.num_pars_per_comp
+        num_pars_per_comp = self.cframe.num_pars_c_max
         num_coeffs_c = self.num_coeffs_c
-
-        # list the properties to be output
-        val_names  = ['voff', 'fwhm', 'AV'] # basic fitting parameters
 
         # format of results
         # output_c['comp']['par_lp'][i_l,i_p]: parameters
@@ -337,13 +357,13 @@ class AGNFrame(object):
             output_c[comp_c[i_comp]]['coeff_le'] = best_coeff_le[:, fe0:fe1][:, i_e0:i_e1]
             output_c[comp_c[i_comp]]['values'] = {}
             if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():       
-                comp_val_names = val_names + ['alpha_lambda', 'flux_3000', 'flux_5100', 'flux_wavenorm', 'loglambLum_3000', 'loglambLum_5100', 'loglambLum_wavenorm']
+                comp_val_names = par_name_cp[i_comp].tolist() + ['flux_3000', 'flux_5100', 'flux_wavenorm', 'log_lambLum_3000', 'log_lambLum_5100', 'log_lambLum_wavenorm']
             if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():       
-                comp_val_names = val_names + ['alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature', 'flux_3000', 'flux_5100', 'flux_wavenorm', 'loglambLum_3000', 'loglambLum_5100']
-            if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():      
-                comp_val_names = val_names + ['flux_3000', 'flux_5100', 'flux_wavenorm', 'logLum_uv', 'logLum_opt']
+                comp_val_names = par_name_cp[i_comp].tolist() + ['flux_3000', 'flux_5100', 'flux_wavenorm', 'log_lambLum_3000', 'log_lambLum_5100']
             if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                comp_val_names = val_names + ['logtem', 'logtau', 'flux_3000', 'flux_5100', 'flux_wavenorm', 'logLum_int']
+                comp_val_names = par_name_cp[i_comp].tolist() + ['flux_3000', 'flux_5100', 'flux_wavenorm', 'log_Lum_int']
+            if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():      
+                comp_val_names = par_name_cp[i_comp].tolist() + ['flux_3000', 'flux_5100', 'flux_wavenorm', 'log_Lum_uv', 'log_Lum_opt']
             for val_name in comp_val_names:
                 output_c[comp_c[i_comp]]['values'][val_name] = np.zeros(num_loops, dtype='float')
         output_c['sum'] = {}
@@ -358,7 +378,9 @@ class AGNFrame(object):
             for i_loop in range(num_loops):
                 par_p   = output_c[comp_c[i_comp]]['par_lp'][i_loop]
                 coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]
-                rev_redshift = (1+par_p[0]/299792.458)*(1+self.v0_redshift)-1
+
+                voff = par_p[self.cframe.par_index_cp[i_comp]['voff']]
+                rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
 
                 tmp_spec_w = ff.output_mc[mod][comp_c[i_comp]]['spec_lw'][i_loop, :]
                 mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 3000) < 25 # for observed flux at rest 3000 AA 
@@ -376,18 +398,21 @@ class AGNFrame(object):
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
                 unitconv = 4*np.pi*dist_lum**2 * spec_flux_scale # convert intrinsic flux to Lum in erg/s
                 if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    alpha_lambda = par_p[self.cframe.par_index_cp[i_comp]['alpha_lambda']]
                     lambLum_wavenorm = coeff_e[0] * unitconv / const.L_sun.to('erg/s').value * self.w_norm # in Lsun
-                    lambLum_3000 = lambLum_wavenorm * (3000/self.w_norm) ** (1+par_p[3])
-                    lambLum_5100 = lambLum_wavenorm * (5100/self.w_norm) ** (1+par_p[3])
-                    output_c[comp_c[i_comp]]['values']['loglambLum_3000'][i_loop] = np.log10(lambLum_3000)
-                    output_c[comp_c[i_comp]]['values']['loglambLum_5100'][i_loop] = np.log10(lambLum_5100)
-                    output_c[comp_c[i_comp]]['values']['loglambLum_wavenorm'][i_loop] = np.log10(lambLum_wavenorm)
+                    lambLum_3000 = lambLum_wavenorm * (3000/self.w_norm) ** (1+alpha_lambda)
+                    lambLum_5100 = lambLum_wavenorm * (5100/self.w_norm) ** (1+alpha_lambda)
+                    output_c[comp_c[i_comp]]['values']['log_lambLum_3000'][i_loop] = np.log10(lambLum_3000)
+                    output_c[comp_c[i_comp]]['values']['log_lambLum_5100'][i_loop] = np.log10(lambLum_5100)
+                    output_c[comp_c[i_comp]]['values']['log_lambLum_wavenorm'][i_loop] = np.log10(lambLum_wavenorm)
                 if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    alpha_lambda1, alpha_lambda2, wave_turn = par_p[3], par_p[4], par_p[5]
+                    alpha_lambda1 = par_p[self.cframe.par_index_cp[i_comp]['alpha_lambda1']]
+                    alpha_lambda2 = par_p[self.cframe.par_index_cp[i_comp]['alpha_lambda2']]
+                    wave_turn     = par_p[self.cframe.par_index_cp[i_comp]['wave_turn']]
                     lambLum_waveturn = coeff_e[0] * unitconv / const.L_sun.to('erg/s').value * wave_turn # in Lsun
                     for wave in [3000,5100]:
                         lambLum_wave = lambLum_waveturn * (wave/wave_turn) ** (1+(alpha_lambda1 if wave <= wave_turn else alpha_lambda2))
-                        output_c[comp_c[i_comp]]['values']['loglambLum_'+str(wave)][i_loop] = np.log10(lambLum_wave)
+                        output_c[comp_c[i_comp]]['values']['log_lambLum_'+str(wave)][i_loop] = np.log10(lambLum_wave)
                 if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
                     if self.cframe.info_c[i_comp]['segment']:
                         coeff_uv  = (coeff_e[1:4] * self.iron_flux_norm_e[1:4])[coeff_e[1:4] > 0].sum()
@@ -395,12 +420,14 @@ class AGNFrame(object):
                     else:
                         coeff_uv  = coeff_e[0]
                         coeff_opt = coeff_e[0] * self.iron_flux_opt_uv_ratio
-                    output_c[comp_c[i_comp]]['values']['logLum_uv' ][i_loop] = np.log10(coeff_uv  * unitconv)
-                    output_c[comp_c[i_comp]]['values']['logLum_opt'][i_loop] = np.log10(coeff_opt * unitconv)
+                    output_c[comp_c[i_comp]]['values']['log_Lum_uv' ][i_loop] = np.log10(coeff_uv  * unitconv)
+                    output_c[comp_c[i_comp]]['values']['log_Lum_opt'][i_loop] = np.log10(coeff_opt * unitconv)
                 if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    log_e_tem  = par_p[self.cframe.par_index_cp[i_comp]['log_e_tem']]
+                    log_tau_be = par_p[self.cframe.par_index_cp[i_comp]['log_tau_be']]
                     tmp_wave_w = np.linspace(912.0, 3646.0, 10000)
-                    tmp_bac_w = self.bac_func(tmp_wave_w, logtem=par_p[3], logtau=par_p[4]) # full bac spectrum with unit flux normalized at rest 3000 AA
-                    output_c[comp_c[i_comp]]['values']['logLum_int'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_bac_w, x=tmp_wave_w))
+                    tmp_bac_w = self.bac_func(tmp_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be) # full bac spectrum with unit flux normalized at rest 3000 AA
+                    output_c[comp_c[i_comp]]['values']['log_Lum_int'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_bac_w, x=tmp_wave_w))
                     
         self.output_c = output_c # save to model frame
         self.num_loops = num_loops # for print_results
@@ -431,18 +458,18 @@ class AGNFrame(object):
                     msg += f' +/- {tmp_values_vl["fwhm"].std():<8.4f}|\n'
                 else:
                     print_log(f'[Note] velocity shift (i.e., redshift) and FWHM are tied following the input model_config.', log)
-                msg += f'| Extinction (AV)                                     = {tmp_values_vl["AV"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["AV"].std():<8.4f}|\n'
+                msg += f'| Extinction (Av)                                     = {tmp_values_vl["Av"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["Av"].std():<8.4f}|\n'
                 if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
                     msg += f'| Powerlaw α_λ                                        = {tmp_values_vl["alpha_lambda"][mask_l].mean():10.4f}'
                     msg += f' +/- {tmp_values_vl["alpha_lambda"].std():<8.4f}|\n'  
-                    msg += f'| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_3000"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["loglambLum_3000"].std():<8.4f}|\n'
-                    msg += f'| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_5100"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["loglambLum_5100"].std():<8.4f}|\n'
+                    msg += f'| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_3000"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_lambLum_3000"].std():<8.4f}|\n'
+                    msg += f'| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_5100"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_lambLum_5100"].std():<8.4f}|\n'
                     if ~np.isin(self.w_norm, [3000,5100]):
-                        msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_wavenorm"][mask_l].mean():10.4f}'
-                        msg += f' +/- {tmp_values_vl["loglambLum_wavenorm"].std():<8.4f}|\n'
+                        msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_wavenorm"][mask_l].mean():10.4f}'
+                        msg += f' +/- {tmp_values_vl["log_lambLum_wavenorm"].std():<8.4f}|\n'
                 if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
                     msg += f'| Powerlaw α1_λ (<= turning wavelength)               = {tmp_values_vl["alpha_lambda1"][mask_l].mean():10.4f}'
                     msg += f' +/- {tmp_values_vl["alpha_lambda1"].std():<8.4f}|\n'  
@@ -452,24 +479,24 @@ class AGNFrame(object):
                     msg += f' +/- {tmp_values_vl["wave_turn"].std():<8.4f}|\n'  
                     msg += f'| Curvature                                           = {tmp_values_vl["curvature"][mask_l].mean():10.4f}'
                     msg += f' +/- {tmp_values_vl["curvature"].std():<8.4f}|\n' 
-                    msg += f'| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_3000"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["loglambLum_3000"].std():<8.4f}|\n'
-                    msg += f'| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["loglambLum_5100"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["loglambLum_5100"].std():<8.4f}|\n'
-                if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    msg += f'| Fe II integrated Lum in 2150-4000 Å (log erg/s/cm2) = {tmp_values_vl["logLum_uv"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["logLum_uv"].std():<8.4f}|\n'
-                    msg += f'| Fe II integrated Lum in 4000-5600 Å (log erg/s/cm2) = {tmp_values_vl["logLum_opt"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["logLum_opt"].std():<8.4f}|\n'
+                    msg += f'| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_3000"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_lambLum_3000"].std():<8.4f}|\n'
+                    msg += f'| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_5100"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_lambLum_5100"].std():<8.4f}|\n'
                 if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    msg += f'| Balmer continuum e- temperature (log K)             = {tmp_values_vl["logtem"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["logtem"].std():<8.4f}|\n'       
-                    msg += f'| Balmer continuum optical depth at 3646 Å (log τ)    = {tmp_values_vl["logtau"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["logtem"].std():<8.4f}|\n'
-                    msg += f'| Balmer continuum integrated Lum (log erg/s/cm2)     = {tmp_values_vl["logLum_int"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["logLum_int"].std():<8.4f}|\n'
+                    msg += f'| Balmer continuum e- temperature (log K)             = {tmp_values_vl["log_e_tem"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_e_tem"].std():<8.4f}|\n'       
+                    msg += f'| Balmer continuum optical depth at 3646 Å (log τ)    = {tmp_values_vl["log_tau_be"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_tau_be"].std():<8.4f}|\n'
+                    msg += f'| Balmer continuum integrated Lum (log erg/s/cm2)     = {tmp_values_vl["log_Lum_int"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_Lum_int"].std():<8.4f}|\n'
+                if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    msg += f'| Fe II integrated Lum in 2150-4000 Å (log erg/s/cm2) = {tmp_values_vl["log_Lum_uv"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_Lum_uv"].std():<8.4f}|\n'
+                    msg += f'| Fe II integrated Lum in 4000-5600 Å (log erg/s/cm2) = {tmp_values_vl["log_Lum_opt"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_Lum_opt"].std():<8.4f}|\n'
             else:
-                print_log(f'Best-fit stellar properties of the sum of all components.', log)
+                print_log(f'Best-fit AGN properties of the sum of all components.', log)
             msg += f'| F3000 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl["flux_3000"][mask_l].mean():10.4f}'
             msg += f' +/- {tmp_values_vl["flux_3000"].std():<8.4f}|\n'
             msg += f'| F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl["flux_5100"][mask_l].mean():10.4f}'

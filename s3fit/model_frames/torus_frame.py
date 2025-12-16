@@ -38,6 +38,11 @@ class TorusFrame(object):
 
         self.read_skirtor()
 
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cp[0]) == 0:
+            self.cframe.par_name_cp = np.array([['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] for i_comp in range(self.num_comps)])
+            self.cframe.par_index_cp = [{'voff': 0, 'opt_depth_9.7': 1, 'opening_angle': 2, 'radii_ratio': 3, 'inclination': 4} for i_comp in range(self.num_comps)]
+
         if self.verbose:
             print_log(f"SKIRTor torus model components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
         
@@ -104,7 +109,7 @@ class TorusFrame(object):
         fun_eb = RegularGridInterpolator(ini_pars, eb, method='linear', bounds_error=False)
 
         self.skirtor = {'tau':tau, 'oa':oa, 'rratio':rrat, 'incl':incl, 
-                        'wave':wave, 'logwave':np.log10(wave), 
+                        'wave':wave, 'log_wave':np.log10(wave), 
                         'disc':disc, 'fun_logdisc':fun_logdisc, 
                         'torus':torus, 'fun_logtorus':fun_logtorus, 
                         'mass':mass, 'fun_mass':fun_mass, 
@@ -128,10 +133,14 @@ class TorusFrame(object):
             par_cp = copy(input_pars)
 
         for i_comp in range(par_cp.shape[0]):
-            tau, oa, rratio, incl = par_cp[i_comp,:][1:5]
+            voff   = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['voff']]
+            tau    = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['opt_depth_9.7']]
+            oa     = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['opening_angle']]
+            rratio = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['radii_ratio']]
+            incl   = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['inclination']]
             
             # interpolate model for given pars in initial wavelength (rest)
-            ini_logwave = self.skirtor['logwave'].copy()
+            ini_logwave = self.skirtor['log_wave'].copy()
             fun_logdisc = self.skirtor['fun_logdisc']
             fun_logtorus = self.skirtor['fun_logtorus']
             gen_pars = np.array([[tau, oa, rratio, incl, w] for w in ini_logwave]) # gen: generated
@@ -142,7 +151,7 @@ class TorusFrame(object):
 
             # redshifted to obs-frame
             ret_logwave = np.log10(wavelength) # in AA
-            z_ratio = (1 + self.v0_redshift) * (1 + par_cp[i_comp,0]/299792.458) # (1+z) = (1+zv0) * (1+v/c)            
+            z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)            
             ini_logwave += np.log10(z_ratio)
             if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']):
                 gen_logdisc -= np.log10(z_ratio)
@@ -204,13 +213,13 @@ class TorusFrame(object):
         fp0, fp1, fe0, fe1 = ff.search_model_index(mod, ff.full_model_type)
         num_loops = ff.num_loops
         comp_c = self.cframe.comp_c
+        par_name_cp = self.cframe.par_name_cp
         num_comps = self.cframe.num_comps
-        num_pars_per_comp = self.cframe.num_pars_per_comp
+        num_pars_per_comp = self.cframe.num_pars_c_max
         num_coeffs_per_comp = self.num_coeffs_c[0] # components share the same num_coeffs
 
         # list the properties to be output
-        val_names  = ['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] # basic fitting parameters
-        val_names += ['loglum']
+        val_names = ['log_lum']
 
         # format of results
         # output_c['comp']['par_lp'][i_l,i_p]: parameters
@@ -222,7 +231,7 @@ class TorusFrame(object):
             output_c[comp_c[i_comp]]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['values'] = {}
-            for val_name in val_names:
+            for val_name in par_name_cp[i_comp].tolist() + val_names:
                 output_c[comp_c[i_comp]]['values'][val_name] = np.zeros(num_loops, dtype='float')
         output_c['sum'] = {}
         output_c['sum']['values'] = {} # only init values for sum of all comp
@@ -231,13 +240,13 @@ class TorusFrame(object):
 
         for i_comp in range(num_comps): 
             for i_par in range(num_pars_per_comp):
-                output_c[comp_c[i_comp]]['values'][val_names[i_par]] = output_c[comp_c[i_comp]]['par_lp'][:, i_par]
+                output_c[comp_c[i_comp]]['values'][par_name_cp[i_comp,i_par]] = output_c[comp_c[i_comp]]['par_lp'][:, i_par]
             for i_loop in range(num_loops):
-                # par_p   = output_c[comp_c[i_comp]]['par_lp'][i_loop]
+                # par_p = output_c[comp_c[i_comp]]['par_lp'][i_loop]
                 coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]
-                output_c[comp_c[i_comp]]['values']['loglum'][i_loop] = np.log10(coeff_e[0]*self.lum_norm)
-                output_c['sum']['values']['loglum'][i_loop] = coeff_e[0]*self.lum_norm
-        output_c['sum']['values']['loglum'] = np.log10(output_c['sum']['values']['loglum'])
+                output_c[comp_c[i_comp]]['values']['log_lum'][i_loop] = np.log10(coeff_e[0]*self.lum_norm)
+                output_c['sum']['values']['log_lum'][i_loop] = coeff_e[0]*self.lum_norm
+        output_c['sum']['values']['log_lum'] = np.log10(output_c['sum']['values']['log_lum'])
 
         self.output_c = output_c # save to model frame
         self.num_loops = num_loops # for print_results
@@ -274,8 +283,8 @@ class TorusFrame(object):
                 msg += f' +/- {tmp_values_vl["inclination"].std():<8.4f}|\n'
             else:
                 print_log(f'Best-fit stellar properties of the sum of all components.', log)
-            msg += f'| log Lum of torus (Lsun) = {tmp_values_vl["loglum"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["loglum"].std():<8.4f}|'
+            msg += f'| log Lum of torus (Lsun) = {tmp_values_vl["log_lum"][mask_l].mean():10.4f}'
+            msg += f' +/- {tmp_values_vl["log_lum"].std():<8.4f}|'
             bar = '=' * len(msg.split('|\n')[-1])
             print_log(bar, log)
             print_log(msg, log)

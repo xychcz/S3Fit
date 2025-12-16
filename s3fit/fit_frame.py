@@ -14,25 +14,21 @@ import matplotlib.pyplot as plt
 
 from .config_frame import ConfigFrame
 from .phot_frame import PhotFrame
-# from .model_frames import *
 from .auxiliary_func import print_log, center_string, convolve_var_width_fft
 
 from pathlib import Path
 from importlib.metadata import version as pkg_version, PackageNotFoundError
-
 # check if the fit_frame.py file is in the pip installed directory
-# def check_if_installed(file: str) -> bool:
-#     p = Path(file).resolve()
-#     markers = ["site-packages", "dist-packages"] # typical installation roots
-#     return any(m in p.parts for m in markers)
-# if check_if_installed(__file__):
 if any(m in Path(__file__).resolve().parts for m in ["site-packages", "dist-packages"]):
     try:
         __version__ = pkg_version("s3fit") # use the installed distribution's version
     except PackageNotFoundError:
         __version__ = "0.0.0+unknown" # installed in a weird way or metadata missing
 else:
-    __version__ = "2.3.0+local" # manually specified local version
+    ##################################
+    # manually specified local version
+    __version__ = "2.3.0+local" 
+    ##################################
 
 class FitFrame(object):
     def __init__(self, 
@@ -440,23 +436,20 @@ class FitFrame(object):
         # also allow 'ssp' and 'el' in model_dict to be compatible with old version 
         for mod in [*self.model_dict]:
             for i_comp in range(self.model_dict[mod]['cframe'].num_comps):
-                for i_par in range(self.model_dict[mod]['cframe'].num_pars_per_comp):
-                    tmp_tie = self.model_dict[mod]['cframe'].tie_cp[i_comp,i_par]
+                for i_par in range(self.model_dict[mod]['cframe'].num_pars_c_max):
+                    tmp_tie = self.model_dict[mod]['cframe'].par_tie_cp[i_comp,i_par]
                     if tmp_tie.split(':')[0] == 'ssp': tmp_tie = 'stellar' + tmp_tie[3:]
                     tmp_tie = tmp_tie.replace(';ssp:', ';stellar:')
                     if tmp_tie.split(':')[0] == 'el': tmp_tie = 'line' + tmp_tie[2:]
                     tmp_tie = tmp_tie.replace(';el:', ';line:')
-                    self.model_dict[mod]['cframe'].tie_cp[i_comp,i_par] = tmp_tie
+                    self.model_dict[mod]['cframe'].par_tie_cp[i_comp,i_par] = tmp_tie
         for mod in [*self.model_dict]:
             if mod == 'stellar': self.model_dict['ssp'] = self.model_dict['stellar']
             if mod == 'line'   : self.model_dict['el']  = self.model_dict['line']
 
     def set_par_constraints(self):
-        self.num_tot_pars = 0
+        self.num_tot_pars   = 0
         self.num_tot_coeffs = 0
-        # self.tie_p = np.array([])
-        # self.bound_min_p = np.array([])
-        # self.bound_max_p = np.array([])
         for mod in self.full_model_type.split('+'):
             self.model_dict[mod]['num_pars'] = self.model_dict[mod]['cframe'].num_pars
             self.model_dict[mod]['num_coeffs'] = self.model_dict[mod]['spec_mod'].num_coeffs
@@ -464,17 +457,16 @@ class FitFrame(object):
             self.num_tot_coeffs += self.model_dict[mod]['num_coeffs']
 
         # update bounds to match requirement of fitting fucntion, to avoid making conflict in non linear process
-        self.tie_p, self.bound_min_p, self.bound_max_p = self.update_tied_pars(model_type=self.full_model_type)
-        self.bound_width_p = self.bound_max_p - self.bound_min_p
+        self.par_tie_p, self.par_min_p, self.par_max_p = self.update_tied_pars(model_type=self.full_model_type)
 
     def init_output_results(self):
         self.num_loops = self.num_mocks+1
         # format to save fitting quality, chi_sq, parameters, and coefficients (normalization factors) of final best-fits    
         self.output_s = {}
         self.output_s['empty_step'] = {}
-        self.output_s['empty_step']['chi_sq_l'] = np.zeros(self.num_loops, dtype='float')
-        self.output_s['empty_step']['par_lp']   = np.zeros((self.num_loops, self.num_tot_pars), dtype='float')
-        self.output_s['empty_step']['coeff_le'] = np.zeros((self.num_loops, self.num_tot_coeffs),dtype='float')
+        self.output_s['empty_step']['chi_sq_l']   = np.zeros( self.num_loops, dtype='float')
+        self.output_s['empty_step']['par_lp']     = np.zeros((self.num_loops, self.num_tot_pars  ), dtype='float')
+        self.output_s['empty_step']['coeff_le']   = np.zeros((self.num_loops, self.num_tot_coeffs), dtype='float')
         self.output_s['empty_step']['ret_dict_l'] = [{} for i in range(self.num_loops)]
 
     def save_to_file(self, file):
@@ -506,53 +498,56 @@ class FitFrame(object):
         else:
             for mod in self.full_model_type.split('+'): model_nums[mod]['coeff'] = mask_lite_dict[mod].sum()
 
-        index_start_x = 0; index_start_coeff = 0
+        index_start_par = 0; index_start_coeff = 0
         for precomp in rev_model_type.split(sel_mods)[0].split('+'):
             if precomp == '': continue
-            index_start_x += model_nums[precomp]['par']
+            index_start_par   += model_nums[precomp]['par']
             index_start_coeff += model_nums[precomp]['coeff']
-        index_end_x = index_start_x + 0
+        index_end_par   = index_start_par   + 0
         index_end_coeff = index_start_coeff + 0
         if len(sel_mods.split('+')) == 1:
-            index_end_x += model_nums[sel_mods]['par']
+            index_end_par   += model_nums[sel_mods]['par']
             index_end_coeff += model_nums[sel_mods]['coeff']
         else:
             for singlecomp in sel_mods.split('+'):
-                index_end_x += model_nums[singlecomp]['par']
+                index_end_par   += model_nums[singlecomp]['par']
                 index_end_coeff += model_nums[singlecomp]['coeff']            
-        return index_start_x, index_end_x, index_start_coeff, index_end_coeff
+        return index_start_par, index_end_par, index_start_coeff, index_end_coeff
 
-    def update_tied_pars(self, model_type=None, par_p=None):
+    def update_tied_pars(self, model_type=None, input_par_p=None):
+        par_p = copy(input_par_p) # avoid changing input_par_p to make confilicts with the outer non-linear process
+
         tie_p = np.array([])
-        bound_min_p = np.array([])
-        bound_max_p = np.array([])
+        min_p = np.array([])
+        max_p = np.array([])
         for mod in model_type.split('+'):
-            tie_p = np.hstack((tie_p, self.model_dict[mod]['cframe'].tie_cp.flatten()))
-            bound_min_p = np.hstack((bound_min_p, self.model_dict[mod]['cframe'].min_cp.flatten()))
-            bound_max_p = np.hstack((bound_max_p, self.model_dict[mod]['cframe'].max_cp.flatten()))
+            tie_p = np.hstack((tie_p, self.model_dict[mod]['cframe'].par_tie_cp.flatten()))
+            min_p = np.hstack((min_p, self.model_dict[mod]['cframe'].par_min_cp.flatten()))
+            max_p = np.hstack((max_p, self.model_dict[mod]['cframe'].par_max_cp.flatten()))
 
         n_freepars = 0
         for i_p in range(len(tie_p)):
+            if tie_p[i_p] == 'None': continue
             if tie_p[i_p] == 'free': 
                 if par_p is not None:
-                    par_p[i_p] = max(par_p[i_p], bound_min_p[i_p]) # re-check if x matches bounds
-                    par_p[i_p] = min(par_p[i_p], bound_max_p[i_p])
+                    par_p[i_p] = max(par_p[i_p], min_p[i_p]) # re-check if x matches bounds
+                    par_p[i_p] = min(par_p[i_p], max_p[i_p])
                     n_freepars += 1
             elif tie_p[i_p] == 'fix': 
                 if par_p is not None:
-                    par_p[i_p] = bound_min_p[i_p] * 1.0 # avoid changing bound_min
+                    par_p[i_p] = min_p[i_p] * 1.0 # avoid changing min_p
                 else:
-                    bound_max_p[i_p] = bound_min_p[i_p] + 0.01 # actually not used, the value will be forced to bound_min_p
+                    max_p[i_p] = min_p[i_p] + 0.01 # avoid conflict of bounds in least_squares; actually not used
             else:
                 for single_tie in tie_p[i_p].split(';'):
                     if len(single_tie.split(':')) == 3:
-                        ref_mod, ref_comp, ref_i_par_in_comp = single_tie.split(':')
+                        ref_mod, ref_comp, ref_par = single_tie.split(':')
                         tie_sign, tie_fix = None, False
                     elif len(single_tie.split(':')) == 4:
-                        ref_mod, ref_comp, ref_i_par_in_comp, tie_sign = single_tie.split(':')
+                        ref_mod, ref_comp, ref_par, tie_sign = single_tie.split(':')
                         tie_fix = False
                     elif len(single_tie.split(':')) == 5:
-                        ref_mod, ref_comp, ref_i_par_in_comp, tie_sign, tie_fix = single_tie.split(':')
+                        ref_mod, ref_comp, ref_par, tie_sign, tie_fix = single_tie.split(':')
                         tie_fix = True if tie_fix == 'fix' else False
                     else:
                         raise ValueError((f"The format of the tying relation {single_tie} is wrong."))
@@ -560,13 +555,22 @@ class FitFrame(object):
                     if np.isin(ref_mod, model_type.split('+')):
                         mp0, mp1 = self.search_model_index(ref_mod, model_type)[0:2]
 
-                        ref_num_pars_per_comp = self.model_dict[ref_mod]['cframe'].num_pars_per_comp
                         ref_i_comp = np.where(np.array(self.model_dict[ref_mod]['cframe'].comp_c) == ref_comp)[0]
                         if len(ref_i_comp) == 1:
                             ref_i_comp = ref_i_comp[0]
                         else:
-                            raise ValueError((f"The reference component: {ref_comp} is not-available/not-unique in {self.model_dict[ref_mod]['cframe'].comp_c}"))
-                        ref_i_par_in_mod = ref_num_pars_per_comp*ref_i_comp + int(ref_i_par_in_comp)
+                            raise ValueError((f"The reference component, {ref_comp}, is not-available/not-unique in {self.model_dict[ref_mod]['cframe'].comp_c}"))
+
+                        if ref_par.isascii() and ref_par.isdigit(): 
+                            ref_i_par_in_comp = int(ref_par) # use par index in tying relation
+                        else: 
+                            ref_par_index_cp = self.model_dict[ref_mod]['cframe'].par_index_cp[ref_i_comp]
+                            if np.isin(ref_par, [*ref_par_index_cp]):
+                                ref_i_par_in_comp = self.model_dict[ref_mod]['cframe'].par_index_cp[ref_i_comp][ref_par]
+                            else:
+                                raise ValueError((f"The reference par, {ref_par}, is not available in the parameter list, {[*ref_par_index_cp]}, of the reference component, {ref_mod}:{ref_comp}."))
+
+                        ref_i_par_in_mod = ref_i_par_in_comp + ref_i_comp * self.model_dict[ref_mod]['cframe'].num_pars_c_max
 
                         if par_p is not None:
                             ref_value = par_p[mp0:mp1][ref_i_par_in_mod]
@@ -574,13 +578,13 @@ class FitFrame(object):
                                 par_p[i_p] = ref_value
                             elif tie_sign == '+':
                                 if tie_fix: 
-                                    par_p[i_p] = bound_min_p[i_p] + ref_value
+                                    par_p[i_p] = min_p[i_p] + ref_value
                                 else:
                                     par_p[i_p] += ref_value
                                     n_freepars += 1
                             elif (tie_sign == 'x') | (tie_sign == '*'):
                                 if tie_fix: 
-                                    par_p[i_p] = bound_min_p[i_p] * ref_value
+                                    par_p[i_p] = min_p[i_p] * ref_value
                                 else:
                                     par_p[i_p] *= ref_value
                                     n_freepars += 1
@@ -588,24 +592,16 @@ class FitFrame(object):
                                 raise ValueError((f"The sign '{tie_sign}' of the tying relation {single_tie} is wrong."))
                             break # only select the 1st effective tie relation
                         else:
-                            ref_bound_min = bound_min_p[mp0:mp1][ref_i_par_in_mod]
-                            ref_bound_max = bound_max_p[mp0:mp1][ref_i_par_in_mod]
+                            ref_par_min = min_p[mp0:mp1][ref_i_par_in_mod]
+                            ref_par_max = max_p[mp0:mp1][ref_i_par_in_mod]
                             if tie_sign is None:
                                 # copy bounds to replace the input None bounds. 
                                 # non-linear process use these values to generate new par_p but the par_p transfered to linear process will be replaced abouve
-                                bound_min_p[i_p] = ref_bound_min
-                                bound_max_p[i_p] = ref_bound_max
-                                # if np.isnan(bound_min_p[i_p]):
-                                #     # for the 1st tying relation
-                                #     bound_min_p[i_p] = ref_bound_min
-                                #     bound_max_p[i_p] = ref_bound_max
-                                # else: 
-                                #     # for loop of > 2nd tying relations, to avoid making conflict in non linear process
-                                #     bound_min_p[i_p] = min(bound_min_p[i_p], ref_bound_min)
-                                #     bound_max_p[i_p] = max(bound_max_p[i_p], ref_bound_max)
+                                min_p[i_p] = ref_par_min
+                                max_p[i_p] = ref_par_max
                             elif tie_fix:
-                                # copy bounds to replace the input None bound_max. 
-                                bound_max_p[i_p] = bound_min_p[i_p] + 0.01 # actually not used, the value will be forced to bound_min_p
+                                # copy bounds to replace the input None par_max. 
+                                max_p[i_p] = min_p[i_p] + 0.01 # avoid conflict of bounds in least_squares; actually not used
                     else:
                         if par_p is None:
                             raise ValueError((f"The reference model {ref_mod} is not provided in tying relation {single_tie}."))
@@ -613,7 +609,7 @@ class FitFrame(object):
         if par_p is not None: 
             return par_p, n_freepars
         else:
-            return tie_p, bound_min_p, bound_max_p
+            return tie_p, min_p, max_p
 
     def update_mask_lite_dict(self, model_name=None, mask_lite=None, dict=None):
         if dict is None:
@@ -828,7 +824,7 @@ class FitFrame(object):
 
         return coeff_e, ret_model_w, chi_w
 
-    def linear_process(self, x, flux_w, ferr_w, mask_w, model_type, mask_lite_dict, 
+    def linear_process(self, input_par_p, flux_w, ferr_w, mask_w, model_type, mask_lite_dict, 
                        fit_phot=False, fit_grid='linear', conv_nbin=None, ret_par_coeff=False):
         # for a give set of parameters, return models and residuals
         # the residuals are used to solve non-linear least-square fit
@@ -839,7 +835,7 @@ class FitFrame(object):
             if np.isin(mod, model_type.split('+')): rev_model_type += mod+'+'
         rev_model_type = rev_model_type[:-1] 
 
-        par_p, n_freepars = self.update_tied_pars(model_type=rev_model_type, par_p=copy(x)) # avoid changing input x to make confilicts with the outer non-linear process
+        par_p, n_freepars = self.update_tied_pars(model_type=rev_model_type, input_par_p=input_par_p)
 
         spec_wave_w = self.spec['wave_w']
         if fit_phot: sed_wave_w = self.sed['wave_w']
@@ -865,11 +861,6 @@ class FitFrame(object):
                 self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':par_p[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
                 raise ValueError((f"Negative value detected in returned spectra of '{mod}' model with x = {par_p[mp0:mp1]}"
                                  +f", position (m,w) = {np.where(spec_fmod_positive_ew < 0)}."))
-            # if (spec_fmod_positive_ew.sum(axis=1) <= 0).any(): 
-            #     self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':par_p[mp0:mp1], 'mask':mask_lite_dict[mod], 'conv_nbin':conv_nbin} # output for check
-            #     raise ValueError((f"Zero or negative integrated flux detected in returned spectra of '{mod}' model with x = {par_p[mp0:mp1]}"
-            #                      +f", position (m) = {np.where(spec_fmod_positive_ew.sum(axis=1) <= 0)}."))
-            ####
             fit_model_ew = spec_fmod_ew if (fit_model_ew is None) else np.vstack((fit_model_ew, spec_fmod_ew))
         n_elements = fit_model_ew.shape[0]
 
@@ -933,11 +924,11 @@ class FitFrame(object):
         for i_x in range(num_xs):  # loop over x
             x_forward = x.copy(); x_backward = x.copy()
             x_step = max(alpha * abs(x[i_x]), epsilon)
-            x_forward[i_x] += x_step
+            x_forward[i_x]  += x_step
             x_backward[i_x] -= x_step
-            f_forward_w = function(x_forward, *args)
+            f_forward_w  = function(x_forward , *args)
             f_backward_w = function(x_backward, *args)
-            # Compute central difference
+            # compute central difference
             Jac_wx[:, i_x] = (f_forward_w - f_backward_w) / (2 * x_step)
             # if self.save_test: 
             #     self.log_test_jacs.append((i_x, x, x_forward, x_backward, f_forward_w, f_backward_w, Jac_wx))
@@ -959,7 +950,7 @@ class FitFrame(object):
 
         return Jac_wx
 
-    def nonlinear_process(self, x0_input, flux_w, ferr_w, mask_w, 
+    def nonlinear_process(self, input_par_p, flux_w, ferr_w, mask_w, 
                           model_type, mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
                           accept_chi_sq=None, nlfit_ntry_max=None, 
                           annealing=False, da_niter_max=None, perturb_scale=None, nllsq_ftol_ratio=None, 
@@ -970,7 +961,7 @@ class FitFrame(object):
                   self.log_message, self.print_step)
         self.time_step = time.time()
 
-        if x0_input is None: x0_input = np.random.uniform(self.bound_min_p, self.bound_max_p) # create random parameters
+        if input_par_p is None: input_par_p = np.random.uniform(self.par_min_p, self.par_max_p) # create random parameters
         if accept_chi_sq is None: accept_chi_sq = self.accept_chi_sq
         if nlfit_ntry_max is None: nlfit_ntry_max = self.nlfit_ntry_max
         if da_niter_max is None: da_niter_max = self.da_niter_max
@@ -987,14 +978,14 @@ class FitFrame(object):
         ret_dict['fit_grid_actual'] = copy(fit_grid)
 
         if self.save_test: 
-            self.log_test_args = (x0_input, args)
+            self.log_test_args = (input_par_p, args)
             self.log_test_jacs = [] # to trace steps in jacobian
             self.log_test_ret_dict = ret_dict
 
-        mask_x = np.zeros_like(self.bound_min_p, dtype='bool') 
+        mask_p = np.zeros_like(self.par_min_p, dtype='bool') 
         for mod in model_type.split('+'):
             fp0, fp1 = self.search_model_index(mod, self.full_model_type)[0:2]
-            mask_x[fp0:fp1] = True
+            mask_p[fp0:fp1] = True
         
         ##############################################################
         # main fitting cycles
@@ -1002,20 +993,20 @@ class FitFrame(object):
         achieved_chi_sq, achieved_ls_solution = 1e4, None
         for i_fit in range(nlfit_ntry_max):
             try:
-                x0 = copy(x0_input) # avoid modify the transferred x0_input
+                init_par_p = copy(input_par_p) # avoid modify the transferred input_par_p
                 if annealing: 
                     print_log(f'Perform Dual Annealing optimazation for a rough global search.', self.log_message, self.print_step)
                     # create randomly initialized parameters used in this step
-                    # although x0 is not mandatory for dual_annealing, random x0 can enable it to explore from different starting
-                    x0_new = np.random.uniform(self.bound_min_p, self.bound_max_p)
-                    x0[mask_x] = x0_new[mask_x] # update x0 used in this step
+                    # although x0=init_par_p is not mandatory for dual_annealing, random x0 can enable it to explore from different starting
+                    rand_par_p = np.random.uniform(self.par_min_p, self.par_max_p)
+                    init_par_p[mask_p] = rand_par_p[mask_p] # update init_par_p used in this step
 
                     # use dual_annealing with a few iteration for a rough solution of global minima
                     # calling func of dual_annealing should return a scalar; 
                     da_solution = dual_annealing(lambda x, *args: 0.5*(self.linear_process(x, *args)**2).sum(),
-                                                 list(zip(self.bound_min_p[mask_x], self.bound_max_p[mask_x])), 
-                                                 args=args, x0=x0[mask_x], no_local_search=True, initial_temp=1e4, visit=1.5, maxiter=da_niter_max)
-                    x0[mask_x] = da_solution.x # update x0 used in this step
+                                                 list(zip(self.par_min_p[mask_p], self.par_max_p[mask_p])), 
+                                                 args=args, x0=init_par_p[mask_p], no_local_search=True, initial_temp=1e4, visit=1.5, maxiter=da_niter_max)
+                    init_par_p[mask_p] = da_solution.x # update init_par_p used in this step
 
                     if self.plot_step: 
                         par_p, coeff_e, model_w, chi_sq = self.linear_process(da_solution.x, *args, ret_par_coeff=True)
@@ -1027,19 +1018,19 @@ class FitFrame(object):
                     if (perturb_scale > 0) & ((i_fit+1) < nlfit_ntry_max):
                         # do not perturb in the last try of nlfit
                         # pertrub transferred parameters by appending scatters from scaled bound range
-                        x0_new = x0_input + np.random.normal(scale=self.bound_width_p * perturb_scale)
-                        x0_new = np.maximum(x0_new, self.bound_min_p)
-                        x0_new = np.minimum(x0_new, self.bound_max_p)
-                        x0[mask_x] = x0_new[mask_x] # update x0 used in this step 
+                        rand_par_p = input_par_p + np.random.normal(scale=(self.par_max_p - self.par_min_p) * perturb_scale)
+                        rand_par_p = np.maximum(rand_par_p, self.par_min_p)
+                        rand_par_p = np.minimum(rand_par_p, self.par_max_p)
+                        init_par_p[mask_p] = rand_par_p[mask_p] # update init_par_p used in this step 
                         print_log(f'Perturb transferred parameters with scatters of {perturb_scale*100}% of parameter ranges.', 
                                   self.log_message, self.print_step)
                     else:
                         print_log(f'Do not perturb transferred parameters from the former step.', self.log_message, self.print_step)
-                ret_dict['x0_actual'] = copy(x0) # save the updated x0
+                ret_dict['init_par_p'] = copy(init_par_p) # save the updated init_par_p
 
                 print_log(f'Perform Non-linear Least-square optimazation for fine tuning.', self.log_message, self.print_step)
                 ls_solution = least_squares(fun=self.linear_process, args=args,
-                                            x0=x0[mask_x], bounds=(self.bound_min_p[mask_x], self.bound_max_p[mask_x]), 
+                                            x0=init_par_p[mask_p], bounds=(self.par_min_p[mask_p], self.par_max_p[mask_p]), 
                                             x_scale='jac', jac=lambda x, *args: self.jac_matrix(self.linear_process, x, args=args), 
                                             ftol=nllsq_ftol_ratio/np.sqrt(len(flux_w)), max_nfev=10000, verbose=verbose) 
                                             # A chi-square distribution has mean of N and standard deviation of sqrt(2N).
@@ -1134,12 +1125,12 @@ class FitFrame(object):
                 else:
                     ret_dict['cont_specphot_fmod_w'] += np.hstack((spec_fmod_w, phot_fmod_b))
 
-        # update the best-fit parameters to the full x0 list (i.e., with all models in self.full_model_type) to guide following fitting
-        ret_dict['x0_final'] = copy(x0_input)
+        # update the best-fit parameters to the full par_p list (i.e., with all models in self.full_model_type) to guide following fitting
+        ret_dict['final_par_p'] = copy(input_par_p)
         for mod in model_type.split('+'):
             fp0, fp1 = self.search_model_index(mod, self.full_model_type)[0:2]
             mp0, mp1 = self.search_model_index(mod, model_type)[0:2]
-            ret_dict['x0_final'][fp0:fp1] = best_fit.x[mp0:mp1] # use best_fit.x instead of the converted par_p here to avoid bounds conflict in later non-linear process
+            ret_dict['final_par_p'][fp0:fp1] = best_fit.x[mp0:mp1] # use best_fit.x instead of the converted par_p here to avoid bounds conflict in later non-linear process
         ##############################################################
 
         ##############################################################
@@ -1156,7 +1147,7 @@ class FitFrame(object):
                 for mod in model_type.split('+'):
                     fp0, fp1, fe0, fe1 = self.search_model_index(mod, self.full_model_type)
                     mp0, mp1, me0, me1 = self.search_model_index(mod, model_type, mask_lite_dict)
-                    self.output_s[step_id]['par_lp'][i_loop, fp0:fp1] = par_p[mp0:mp1]
+                    self.output_s[step_id]['par_lp'  ][i_loop, fp0:fp1]                      = par_p[mp0:mp1]
                     self.output_s[step_id]['coeff_le'][i_loop, fe0:fe1][mask_lite_dict[mod]] = coeff_e[me0:me1]
                 self.output_s[step_id]['ret_dict_l'][i_loop] = ret_dict
         ##############################################################
@@ -1258,12 +1249,12 @@ class FitFrame(object):
                               self.log_message, self.print_step)                 
                     # fix the parameters of disabled components (to reduce number of free parameters)
                     for i_comp in range(self.line.num_comps):
-                        if self.line.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'
+                        if self.line.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].par_tie_cp[i_comp,:] = 'fix'
                     # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
                     mask_lite_dict = self.update_mask_lite_dict('line', self.line.mask_lite_with_comps(disabled_comps=line_disabled_comps), dict=mask_lite_dict)
             # obtain a better fit of emission lines after subtracting continuum models of cont_fit_1
-            # here use cont_fit_1['x0_final'] to transfer the best-fit parameters from cont_fit_1
-            line_fit_1 = self.nonlinear_process(cont_fit_1['x0_final'], (spec_fmock_w - cont_fit_1['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+            # here use cont_fit_1['final_par_p'] to transfer the best-fit parameters from cont_fit_1
+            line_fit_1 = self.nonlinear_process(cont_fit_1['final_par_p'], (spec_fmock_w - cont_fit_1['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                 'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
                                                 annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
                                                 fit_message='line_fit_1: spectral fitting, update emission lines', i_loop=i_loop)
@@ -1274,7 +1265,7 @@ class FitFrame(object):
         ########################################
         # joint fit of continuum models and emission lines with best-fit parameters of cont_fit_1 and line_fit_1
         model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
-        joint_fit_1 = self.nonlinear_process(line_fit_1['x0_final'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
+        joint_fit_1 = self.nonlinear_process(line_fit_1['final_par_p'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
                                              model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
                                              annealing=False, perturb_scale=self.perturb_scale, accept_chi_sq=max(cont_fit_1['chi_sq'], line_fit_1['chi_sq']),
                                              fit_message='joint_fit_1: spectral fitting, fit with all models', i_loop=i_loop) 
@@ -1309,7 +1300,7 @@ class FitFrame(object):
             # fix the parameters of disabled models (to reduce number of free parameters)
             for mod in joint_fit_1['model_type'].split('+'):
                 if mod == 'line': continue
-                if ~np.isin(mod, cont_type.split('+')): self.model_dict[mod]['cframe'].tie_cp[:,:] = 'fix'
+                if ~np.isin(mod, cont_type.split('+')): self.model_dict[mod]['cframe'].par_tie_cp[:,:] = 'fix'
             ########################################
             print_log(center_string(f'Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
                       self.log_message, self.print_step)
@@ -1334,12 +1325,14 @@ class FitFrame(object):
                     print_log(f'#### Emission lines are too faint, only {line_comps} is enabled.', self.log_message, self.print_step)                    
                 # fix the parameters of disabled components (to reduce number of free parameters)
                 for i_comp in range(self.line.num_comps):
-                    if ~np.isin(self.line.cframe.comp_c[i_comp], line_comps): self.model_dict['line']['cframe'].tie_cp[i_comp,:] = 'fix'                
+                    if ~np.isin(self.line.cframe.comp_c[i_comp], line_comps): self.model_dict['line']['cframe'].par_tie_cp[i_comp,:] = 'fix'                
                 # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
                 mask_lite_dict = self.update_mask_lite_dict('line', self.line.mask_lite_with_comps(enabled_comps=line_comps), dict=mask_lite_dict)
             ########################################
             # update parameter_constraints since parameters of disabled model components are fixed
             self.set_par_constraints()
+            joint_fit_1['update_par_p'] = np.maximum(joint_fit_1['final_par_p'], self.par_min_p)
+            joint_fit_1['update_par_p'] = np.minimum(joint_fit_1['final_par_p'], self.par_max_p)
             ########################################
             ########################################
 
@@ -1347,7 +1340,7 @@ class FitFrame(object):
             ############# 2nd fit cycle ############
             # update continuum models after model examination
             # initialize parameters using best-fit of joint_fit_1
-            cont_fit_2a = self.nonlinear_process(joint_fit_1['x0_final'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+            cont_fit_2a = self.nonlinear_process(joint_fit_1['update_par_p'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                  cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
                                                  annealing=False, perturb_scale=0, 
                                                  fit_message='cont_fit_2a: spectral fitting, update continuum models', i_loop=i_loop) 
@@ -1357,7 +1350,7 @@ class FitFrame(object):
             if np.isin('stellar', cont_type.split('+')): 
                 mask_lite_stellar = self.stellar.mask_lite_allowed(csp=(self.stellar.sfh_names[0]!='nonparametric'))
                 mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
-                cont_fit_2b = self.nonlinear_process(cont_fit_2a['x0_final'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                cont_fit_2b = self.nonlinear_process(cont_fit_2a['final_par_p'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                      cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
                                                      annealing=False, perturb_scale=self.perturb_scale, 
                                                      fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
@@ -1371,7 +1364,7 @@ class FitFrame(object):
             if np.isin('line', self.full_model_type.split('+')): 
                 # update emission line with the latest mask_lite_dict for el
                 # initialize parameters from best-fit of joint_fit_1 and subtract continuum models from cont_fit_2b
-                line_fit_2 = self.nonlinear_process(cont_fit_2b['x0_final'], (spec_fmock_w - cont_fit_2b['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
+                line_fit_2 = self.nonlinear_process(cont_fit_2b['final_par_p'], (spec_fmock_w - cont_fit_2b['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                     'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
                                                     annealing=False, perturb_scale=self.perturb_scale, 
                                                     fit_message='line_fit_2: spectral fitting, update emission lines', i_loop=i_loop)
@@ -1382,7 +1375,7 @@ class FitFrame(object):
             ########################################
             # joint fit of continuum and emission lines with initial values from best-fit of cont_fit_2b and line_fit_2
             model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
-            joint_fit_2 = self.nonlinear_process(line_fit_2['x0_final'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
+            joint_fit_2 = self.nonlinear_process(line_fit_2['final_par_p'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
                                                  model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
                                                  annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_2b['chi_sq'], line_fit_2['chi_sq']),
                                                  fit_message='joint_fit_2: spectral fitting, update all models', i_loop=i_loop)
@@ -1416,7 +1409,7 @@ class FitFrame(object):
             ########################################
             # spectrum+SED fitting for continuum
             # initialize parameters using best-fit of joint_fit_2; subtract emission lines from joint_fit_2
-            cont_fit_3a = self.nonlinear_process(joint_fit_2['x0_final'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
+            cont_fit_3a = self.nonlinear_process(joint_fit_2['final_par_p'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
                                                  specphot_reverr_w, specphot_mask_w, 
                                                  cont_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
                                                  annealing=False, perturb_scale=0, 
@@ -1430,7 +1423,7 @@ class FitFrame(object):
             # update scaled error based on chi_sq of cont_fit_3a and re-create mock data
             specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3a['chi_sq'])
             # use initial best-fit values from cont_fit_3a and subtract emission lines from joint_fit_2
-            cont_fit_3b = self.nonlinear_process(cont_fit_3a['x0_final'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
+            cont_fit_3b = self.nonlinear_process(cont_fit_3a['final_par_p'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
                                                  specphot_reverr_w, specphot_mask_w, 
                                                  cont_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
                                                  annealing=False, perturb_scale=self.perturb_scale, 
@@ -1447,7 +1440,7 @@ class FitFrame(object):
                 # initialize parameters from best-fit of joint_fit_2 (transfer via cont_fit_3b)
                 # update scaled error based on chi_sq of cont_fit_3b and re-create mock data
                 specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3b['chi_sq'])
-                line_fit_3 = self.nonlinear_process(cont_fit_3b['x0_final'], specphot_fmock_w - cont_fit_3b['cont_specphot_fmod_w'], 
+                line_fit_3 = self.nonlinear_process(cont_fit_3b['final_par_p'], specphot_fmock_w - cont_fit_3b['cont_specphot_fmod_w'], 
                                                     specphot_reverr_w, specphot_mask_w, 
                                                     'line', mask_lite_dict, fit_phot=True, fit_grid='linear', conv_nbin=None, 
                                                     annealing=False, perturb_scale=0, 
@@ -1461,7 +1454,7 @@ class FitFrame(object):
             # update scaled error based on chi_sq of line_fit_3 and re-create mock data
             specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=line_fit_3['chi_sq'])
             model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
-            joint_fit_3 = self.nonlinear_process(line_fit_3['x0_final'], specphot_fmock_w, specphot_reverr_w, specphot_mask_w, 
+            joint_fit_3 = self.nonlinear_process(line_fit_3['final_par_p'], specphot_fmock_w, specphot_reverr_w, specphot_mask_w, 
                                                  model_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=2, 
                                                  annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_3b['chi_sq'], line_fit_3['chi_sq']),
                                                  fit_message='joint_fit_3: spectrum+SED fitting, update all models', i_loop=i_loop)
@@ -1700,9 +1693,9 @@ class FitFrame(object):
             comp_c = self.model_dict[mod]['cframe'].comp_c
             num_comps = self.model_dict[mod]['cframe'].num_comps
             for i_comp in range(num_comps): 
-                output_mc[mod][comp_c[i_comp]]['par_lp'] = tmp_output_c[comp_c[i_comp]]['par_lp']
+                output_mc[mod][comp_c[i_comp]]['par_lp']   = tmp_output_c[comp_c[i_comp]]['par_lp']
                 output_mc[mod][comp_c[i_comp]]['coeff_le'] = tmp_output_c[comp_c[i_comp]]['coeff_le']
-                output_mc[mod][comp_c[i_comp]]['values'] = tmp_output_c[comp_c[i_comp]]['values']
+                output_mc[mod][comp_c[i_comp]]['values']   = tmp_output_c[comp_c[i_comp]]['values']
             output_mc[mod]['sum']['values'] = tmp_output_c['sum']['values']
 
         # also allow 'ssp' and 'el' in output_mc to be compatible with old version 
