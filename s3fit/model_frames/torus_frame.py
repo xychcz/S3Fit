@@ -15,12 +15,13 @@ from scipy.interpolate import RegularGridInterpolator
 from ..auxiliary_func import print_log
 
 class TorusFrame(object): 
-    def __init__(self, filename=None, cframe=None, v0_redshift=None, 
+    def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, 
                  w_min=None, w_max=None, lum_norm=None, flux_scale=None, 
                  verbose=True, log_message=[]): 
 
         self.filename = filename        
         self.cframe = cframe 
+        self.fframe = fframe
         self.v0_redshift = v0_redshift        
         self.w_min = w_min # currently not used
         self.w_max = w_max # currently not used
@@ -199,19 +200,30 @@ class TorusFrame(object):
     ##########################################################################
     ########################### Output functions #############################
 
-    def extract_results(self, ff=None, step=None, print_results=True, return_results=False, show_average=False):
+    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
+
+        # check and replace the args to be compatible with old version <= 2.2.4
+        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
+        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
+        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+
         if (step is None) | (step == 'best') | (step == 'final'):
-            step = 'joint_fit_3' if ff.have_phot else 'joint_fit_2'
+            step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
         if (step == 'spec+SED'):  step = 'joint_fit_3'
         if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
         
-        best_chi_sq_l = copy(ff.output_s[step]['chi_sq_l'])
-        best_par_lp   = copy(ff.output_s[step]['par_lp'])
-        best_coeff_le = copy(ff.output_s[step]['coeff_le'])
+        best_chi_sq_l = copy(self.fframe.output_s[step]['chi_sq_l'])
+        best_par_lp   = copy(self.fframe.output_s[step]['par_lp'])
+        best_coeff_le = copy(self.fframe.output_s[step]['coeff_le'])
+
+        # update best-fit voff and fwhm if systemic redshift is updated
+        if if_rev_v0_redshift & (self.fframe.rev_v0_redshift is not None):
+            best_par_lp[:, self.fframe.par_name_p == 'voff'] -= self.fframe.ref_voff_l[0]
+            best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
         mod = 'torus'
-        fp0, fp1, fe0, fe1 = ff.search_model_index(mod, ff.full_model_type)
-        num_loops = ff.num_loops
+        fp0, fp1, fe0, fe1 = self.fframe.search_model_index(mod, self.fframe.full_model_type)
+        num_loops = self.fframe.num_loops
         comp_c = self.cframe.comp_c
         par_name_cp = self.cframe.par_name_cp
         num_comps = self.cframe.num_comps
@@ -250,14 +262,14 @@ class TorusFrame(object):
 
         self.output_c = output_c # save to model frame
         self.num_loops = num_loops # for print_results
-        self.spec_flux_scale = ff.spec_flux_scale # to calculate luminosity in printing
+        self.spec_flux_scale = self.fframe.spec_flux_scale # to calculate luminosity in printing
 
-        if print_results: self.print_results(log=ff.log_message, show_average=show_average)
-        if return_results: return output_c
+        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average)
+        if if_return_results: return output_c
 
-    def print_results(self, log=[], show_average=False):
+    def print_results(self, log=[], if_show_average=False):
         mask_l = np.ones(self.num_loops, dtype='bool')
-        if not show_average: mask_l[1:] = False
+        if not if_show_average: mask_l[1:] = False
 
         if self.cframe.num_comps > 1:
             num_comps = len([*self.output_c])

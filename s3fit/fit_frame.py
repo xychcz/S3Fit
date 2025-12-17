@@ -40,21 +40,33 @@ class FitFrame(object):
                  phot_trans_dir=None, phot_trans_rsmp=10, 
                  sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, 
                  # connection between spectral and photometric data
-                 phot_calib_b=None, inst_calib_ratio=0.1, inst_calib_ratio_rev=True, inst_calib_smooth=1e4, 
-                 keep_invalid=False, 
+                 phot_calib_b=None, inst_calib_ratio=0.1, if_rev_inst_calib_ratio=True, inst_calib_smooth=1e4, 
+                 if_keep_invalid=False, 
                  # model setup
-                 v0_redshift=None, model_config=None, norm_wave=5500, norm_width=25, model_R_ratio=2, 
+                 model_config=None, norm_wave=5500, norm_width=25, model_R_ratio=2, 
+                 v0_redshift=None, if_rev_v0_redshift=False, v0_reference=None, 
                  # mock setup
-                 num_mocks=0, use_multi_thread=False, num_multi_thread=-1, 
+                 num_mocks=0, if_use_multi_thread=False, num_multi_thread=-1, 
                  # basic fitting control
-                 fit_grid='linear', examine_result=True, accept_model_SN=2, accept_absorption_SN=None, 
+                 fit_grid='linear', if_examine_result=True, accept_model_SN=2, accept_absorption_SN=None, 
                  # detailed fitting quality control
                  accept_chi_sq=3, nlfit_ntry_max=3, nllsq_ftol_ratio=0.01, conv_nbin_max=5, 
-                 init_annealing=True, da_niter_max=10, perturb_scale=0.02, 
+                 if_run_init_annealing=True, da_niter_max=10, perturb_scale=0.02, 
                  # auxiliary
-                 print_step=True, plot_step=False, canvas=None, 
-                 save_per_loop=False, output_filename=None, 
-                 save_test=False, verbose=False): 
+                 if_print_step=True, if_plot_step=False, canvas=None, 
+                 if_save_per_loop=False, output_filename=None, 
+                 if_save_test=False, verbose=False, **kwargs): 
+
+        # check and replace the args to be compatible with old version <= 2.2.4
+        if np.isin('inst_calib_ratio_rev', [*kwargs]): if_rev_inst_calib_ratio = kwargs['inst_calib_ratio_rev']
+        if np.isin('keep_invalid', [*kwargs]): if_keep_invalid = kwargs['keep_invalid']
+        if np.isin('use_multi_thread', [*kwargs]): if_use_multi_thread = kwargs['use_multi_thread']
+        if np.isin('examine_result', [*kwargs]): if_examine_result = kwargs['examine_result']
+        if np.isin('init_annealing', [*kwargs]): if_run_init_annealing = kwargs['init_annealing']
+        if np.isin('print_step', [*kwargs]): if_print_step = kwargs['print_step']
+        if np.isin('plot_step', [*kwargs]): if_plot_step = kwargs['plot_step']
+        if np.isin('save_per_loop', [*kwargs]): if_save_per_loop = kwargs['save_per_loop']
+        if np.isin('save_test', [*kwargs]): if_save_test = kwargs['save_test']
 
         input_args = {k: v for k, v in locals().items() if k != "self"}
         if not np.array([isinstance(input_args[k], np.ndarray) for i, k in enumerate(input_args)]).any():
@@ -91,15 +103,13 @@ class FitFrame(object):
         self.phot_calib_b = np.array(phot_calib_b) if phot_calib_b is not None else None
         # initial ratio to estimate calibration error
         self.inst_calib_ratio = inst_calib_ratio
-        self.inst_calib_ratio_rev = inst_calib_ratio_rev
+        self.if_rev_inst_calib_ratio = if_rev_inst_calib_ratio
         # smoothing width when creating modified error
         self.inst_calib_smooth = inst_calib_smooth
 
         # whether to keep invalid wavelength range; if true, mock data and models will be created in invalid range
-        self.keep_invalid = keep_invalid
+        self.if_keep_invalid = if_keep_invalid
 
-        # set initial guess of systemic redshift, all velocity shifts are in relative to v0_redshift
-        self.v0_redshift = v0_redshift
         # load model configuration
         self.model_config = copy(model_config) # use copy to avoid changing the input config
         # set wavelength and width (in AA) used to normalize model spectra
@@ -107,14 +117,18 @@ class FitFrame(object):
         self.norm_width = norm_width
         # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument
         self.model_R_ratio = model_R_ratio
+        # set initial guess of systemic redshift, all velocity shifts are in relative to v0_redshift
+        self.v0_redshift = v0_redshift
+        self.if_rev_v0_redshift = if_rev_v0_redshift
+        self.v0_reference = v0_reference
 
         # number of mock data
         self.num_mocks = num_mocks
         print_log(f"Perform fitting for the original data and {self.num_mocks} mock data.", self.log_message)
         # control parallel mock data fitting 
-        self.use_multi_thread = use_multi_thread # if use joblib parallelism with backend="threading"
+        self.if_use_multi_thread = if_use_multi_thread # if use joblib parallelism with backend="threading"
         self.num_multi_thread = num_multi_thread # number of threads 
-        if self.use_multi_thread & (self.num_mocks > 1): 
+        if self.if_use_multi_thread & (self.num_mocks > 1): 
             print_log(f"Perform fitting for the {self.num_mocks} mock data in multithreading with {num_multi_thread if num_multi_thread !=-1 else 'system available'} threads.", self.log_message)
 
         # basic fitting control
@@ -124,13 +138,13 @@ class FitFrame(object):
         if self.fit_grid == 'log':
             print_log(f"[Note] Pure line fitting (i.e., after subtracting continuum), if enabled, is always in linear space.", self.log_message)
         # fitting steps
-        self.examine_result = examine_result 
+        self.if_examine_result = if_examine_result 
         self.accept_model_SN = accept_model_SN
         self.accept_absorption_SN = accept_absorption_SN if accept_absorption_SN is not None else accept_model_SN
-        if self.examine_result: 
+        if self.if_examine_result: 
             print_log(f"All continuum models and line components with peak S/N < {self.accept_model_SN} (set with 'accept_model_SN') will be automatically disabled in examination.", self.log_message)
         else:
-            print_log(f"[Note] The examination of S/N of models and the updating of fitting will be skipped since 'examine_result' is set to False.", self.log_message)
+            print_log(f"[Note] The examination of S/N of models and the updating of fitting will be skipped since 'if_examine_result' is set to False.", self.log_message)
 
         # detailed fitting quality control
         # 1) fitting accuracy
@@ -143,18 +157,18 @@ class FitFrame(object):
         self.conv_nbin_max = conv_nbin_max
         # 2) searching global minima
         # control on fitting quality: nonlinear process, dual annealing
-        self.init_annealing = init_annealing
+        self.if_run_init_annealing = if_run_init_annealing
         self.da_niter_max = da_niter_max
         # control on fitting quality: nonlinear process, parameter pertrubation
         self.perturb_scale = perturb_scale 
 
         # whether to output intermediate results
-        self.print_step = print_step # if display in stdout
-        self.plot_step = plot_step # if display in matplotlib window
+        self.if_print_step = if_print_step # if display in stdout
+        self.if_plot_step = if_plot_step # if display in matplotlib window
         self.canvas = canvas # canvas=(fig,ax), to display plots dynamically
-        self.save_per_loop = save_per_loop
+        self.if_save_per_loop = if_save_per_loop
         self.output_filename = output_filename
-        self.save_test = save_test # if save the iteration tracing for test
+        self.if_save_test = if_save_test # if save the iteration tracing for test
         self.verbose = verbose 
 
         arg_list = list(inspect.signature(self.__init__).parameters.values())
@@ -166,8 +180,8 @@ class FitFrame(object):
         # import all available models; should be after set_masks to select covered lines
         self.load_models()
         # set constraints of fitting parameters 
-        self.set_par_constraints()
-        # initialize output formats; should be after set_par_constraints
+        self.init_par_constraints()
+        # initialize output formats; should be after init_par_constraints
         self.init_output_results()
 
         print_log(center_string('Initialization finishes', 80), self.log_message)
@@ -210,7 +224,7 @@ class FitFrame(object):
         ##############################
 
         mask_keep_w = copy(self.mask_valid_w)
-        if self.keep_invalid: mask_keep_w[:] = True # mock data and models will be created in invalid range
+        if self.if_keep_invalid: mask_keep_w[:] = True # mock data and models will be created in invalid range
 
         if self.spec_flux_scale is None: self.spec_flux_scale = 10.0**np.round(np.log10(np.median(self.spec_flux_w[mask_keep_w])))
         self.spec_flux_w = self.input_args['spec_flux_w'] / self.spec_flux_scale # use input_args to avoid iterative changing of values
@@ -271,7 +285,7 @@ class FitFrame(object):
             # set valid band range
             self.mask_valid_b = self.pframe.ferr_b > 0
             mask_keep_b = copy(self.mask_valid_b)
-            if self.keep_invalid: mask_keep_b[:] = True # mock data and models will be created in invalid range
+            if self.if_keep_invalid: mask_keep_b[:] = True # mock data and models will be created in invalid range
 
             # create a dictionary for converted photometric data
             self.phot = {}
@@ -313,10 +327,9 @@ class FitFrame(object):
 
     def load_models(self):
         # models init setup
-        self.full_model_type = ''
         self.model_dict = {}
 
-        # also allow 'ssp' and 'el' in model_config to be compatible with old version 
+        # update old mod name, 'ssp' and 'el', in model_config to be compatible with old version <= 2.2.4
         for mod in [*self.model_config]:
             if mod == 'ssp': self.model_config['stellar'] = self.model_config.pop('ssp')
             if mod == 'el' : self.model_config['line']    = self.model_config.pop('el')
@@ -326,83 +339,98 @@ class FitFrame(object):
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
                 print_log(center_string('Initialize stellar continuum models', 80), self.log_message)
-                self.full_model_type += mod + '+'
-                self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.stellar_frame import StellarFrame
+                self.model_dict[mod] = {}
                 self.model_dict[mod]['spec_mod'] = StellarFrame(filename=self.model_config[mod]['file'], 
-                                                                cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
+                                                                cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                                                                v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                                 w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                 Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                 log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = StellarFrame(filename=self.model_config[mod]['file'], 
-                                                                   cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
+                                                                   cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                                                                   v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                    w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                    dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
                                                                    verbose=False) 
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-                self.stellar = self.model_dict[mod]['spec_mod'] # set a short name
         ###############################
         mod = 'agn'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
                 print_log(center_string('Initialize AGN UV/optical continuum models', 80), self.log_message)
-                self.full_model_type += mod + '+'
-                self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.agn_frame import AGNFrame
+                self.model_dict[mod] = {}
                 self.model_dict[mod]['spec_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
-                                                            cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
+                                                            cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                                                            v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                             Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                             log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
-                                                               cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=None, 
+                                                               cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                                                               v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
                                                                verbose=False) 
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-                self.agn = self.model_dict[mod]['spec_mod'] # set a short name
         ###############################
         mod = 'torus'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
                 print_log(center_string('Initialize AGN torus models', 80), self.log_message)
-                self.full_model_type += mod + '+'
-                self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.torus_frame import TorusFrame
+                self.model_dict[mod] = {}
                 self.model_dict[mod]['spec_mod'] = TorusFrame(filename=self.model_config[mod]['file'], 
-                                                              cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, 
+                                                              cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                                                              v0_redshift=self.v0_redshift, 
                                                               flux_scale=self.spec_flux_scale, 
                                                               log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 1e4) & (self.spec_wmin < 1e6)
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e6)
-                self.torus = self.model_dict[mod]['spec_mod'] # set a short name
         ###############################
         mod = 'line'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']:
                 print_log(center_string('Initialize line models', 80), self.log_message)
-                self.full_model_type += mod + '+'
-                self.model_dict[mod] = {'cframe': ConfigFrame(self.model_config[mod]['config'])}
                 from .model_frames.line_frame import LineFrame
+                self.model_dict[mod] = {}
                 self.model_dict[mod]['spec_mod'] = LineFrame(use_pyneb=self.model_config[mod]['use_pyneb'], 
-                                                             cframe=self.model_dict[mod]['cframe'], v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
+                                                             cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                                                             v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                              w_min=self.spec_wmin, w_max=self.spec_wmax, mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']], 
                                                              log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5) # set range from Lyman break to 10 micron
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy, only fit lines in spectral wavelength range
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-                self.line = self.model_dict[mod]['spec_mod'] # set a short name
         ###############################
 
-        # add short name for returning function of model spectra
+        print_log(center_string('Model summary', 80), self.log_message)
+        print_log(f'S3Fit imports these models: {[*self.model_dict]}.', self.log_message)
         for mod in [*self.model_dict]:
+            if self.have_phot:
+                if not (self.model_dict[mod]['spec_enable'] | self.model_dict[mod]['sed_enable']): 
+                    print_log(f"'{mod}' model will not be enabled in the fitting since the defined wavelength range "+
+                              f"is not covered by both of the input spectrum and photometric-SED.", self.log_message)
+            else:
+                if not self.model_dict[mod]['spec_enable']: 
+                    print_log(f"'{mod}' model will not be enabled in the spectral fitting since the defined wavelength range "+
+                              f"is not covered by the input spectrum.", self.log_message)
+
+        # add short names to simplify the callback
+        self.full_model_type = '+'.join([*self.model_dict])
+        for mod in [*self.model_dict]:
+            setattr(self, mod, self.model_dict[mod]['spec_mod']) 
+            self.model_dict[mod]['cframe'] = self.model_dict[mod]['spec_mod'].cframe
+            self.model_dict[mod]['num_pars'] = self.model_dict[mod]['spec_mod'].cframe.num_pars
+            self.model_dict[mod]['num_coeffs'] = self.model_dict[mod]['spec_mod'].num_coeffs
             self.model_dict[mod]['spec_func'] = self.model_dict[mod]['spec_mod'].models_unitnorm_obsframe
             if self.have_phot:
                 self.model_dict[mod]['sed_func'] = self.model_dict[mod]['sed_mod'].models_unitnorm_obsframe
@@ -420,20 +448,7 @@ class FitFrame(object):
         else:
             self.spec['mask_noline_w'] = copy(self.spec['mask_valid_w'])
 
-        if self.full_model_type[-1] == '+': self.full_model_type = self.full_model_type[:-1]
-        print_log(center_string('Model summary', 80), self.log_message)
-        print_log(f'The fitting will be performed with these models: {self.full_model_type}.', self.log_message)
-        for mod in self.full_model_type.split('+'):
-            if self.have_phot:
-                if not (self.model_dict[mod]['spec_enable'] | self.model_dict[mod]['sed_enable']): 
-                    print_log(f"'{mod}' model will not be enabled in the fitting since the defined wavelength range "+
-                              f"is not covered by both of the input spectrum and photometric-SED.", self.log_message)
-            else:
-                if not self.model_dict[mod]['spec_enable']: 
-                    print_log(f"'{mod}' model will not be enabled in the spectral fitting since the defined wavelength range "+
-                              f"is not covered by the input spectrum.", self.log_message)
-
-        # also allow 'ssp' and 'el' in model_dict to be compatible with old version 
+        # check old mod name, 'ssp' and 'el', in tying relations to be compatible with old version <= 2.2.4
         for mod in [*self.model_dict]:
             for i_comp in range(self.model_dict[mod]['cframe'].num_comps):
                 for i_par in range(self.model_dict[mod]['cframe'].num_pars_c_max):
@@ -443,21 +458,37 @@ class FitFrame(object):
                     if tmp_tie.split(':')[0] == 'el': tmp_tie = 'line' + tmp_tie[2:]
                     tmp_tie = tmp_tie.replace(';el:', ';line:')
                     self.model_dict[mod]['cframe'].par_tie_cp[i_comp,i_par] = tmp_tie
+        # allow old mod name, 'ssp' and 'el', in model_dict to be compatible with old version <= 2.2.4
         for mod in [*self.model_dict]:
             if mod == 'stellar': self.model_dict['ssp'] = self.model_dict['stellar']
             if mod == 'line'   : self.model_dict['el']  = self.model_dict['line']
 
-    def set_par_constraints(self):
+        if self.if_rev_v0_redshift:
+            print_log(f"The systemic redshift (v0_redshift) will be updated using the model and component: '{self.v0_reference}'.", self.log_message)
+            if self.v0_reference is None:
+                raise ValueError((f"Please input the reference of systemic redshift, e.g., v0_reference='model:component'; otherwise set if_rev_v0_redshift=False."))
+            elif len(self.v0_reference.split(':')) != 2:
+                raise ValueError((f"Please correct for the reference of systemic redshift with the format, v0_reference='model:component'."))
+            elif ~np.isin(self.v0_reference.split(':')[0], [*self.model_dict]):
+                raise ValueError((f"The reference model of systemic redshift, '{self.v0_reference.split(':')[0]}', is not available in the imported models: {[*self.model_dict]}."))
+            elif ~np.isin(self.v0_reference.split(':')[1], self.model_dict[self.v0_reference.split(':')[0]]['cframe'].comp_c):
+                raise ValueError((f"The reference component of systemic redshift, '{self.v0_reference.split(':')[1]}', is not available in the model: '{self.v0_reference.split(':')[0]}'."))
+
+    def init_par_constraints(self):
+        self.mod_name_p  = np.array([])
+        self.comp_name_p = np.array([])
+        self.par_name_p  = np.array([])
         self.num_tot_pars   = 0
         self.num_tot_coeffs = 0
         for mod in self.full_model_type.split('+'):
-            self.model_dict[mod]['num_pars'] = self.model_dict[mod]['cframe'].num_pars
-            self.model_dict[mod]['num_coeffs'] = self.model_dict[mod]['spec_mod'].num_coeffs
-            self.num_tot_pars += self.model_dict[mod]['num_pars']
+            self.mod_name_p  = np.hstack((self.mod_name_p , np.full(self.model_dict[mod]['cframe'].num_pars_c_tot, mod)))
+            self.comp_name_p = np.hstack((self.comp_name_p, np.tile(self.model_dict[mod]['cframe'].comp_c, (self.model_dict[mod]['cframe'].num_pars_c_max,1)).T.flatten()))
+            self.par_name_p  = np.hstack((self.par_name_p , self.model_dict[mod]['cframe'].par_name_cp.flatten()))
+            self.num_tot_pars   += self.model_dict[mod]['num_pars']
             self.num_tot_coeffs += self.model_dict[mod]['num_coeffs']
 
         # update bounds to match requirement of fitting fucntion, to avoid making conflict in non linear process
-        self.par_tie_p, self.par_min_p, self.par_max_p = self.update_tied_pars(model_type=self.full_model_type)
+        self.par_min_p, self.par_max_p, self.par_tie_p = self.update_tied_pars(model_type=self.full_model_type)
 
     def init_output_results(self):
         self.num_loops = self.num_mocks+1
@@ -517,13 +548,13 @@ class FitFrame(object):
     def update_tied_pars(self, model_type=None, input_par_p=None):
         par_p = copy(input_par_p) # avoid changing input_par_p to make confilicts with the outer non-linear process
 
-        tie_p = np.array([])
         min_p = np.array([])
         max_p = np.array([])
+        tie_p = np.array([])
         for mod in model_type.split('+'):
-            tie_p = np.hstack((tie_p, self.model_dict[mod]['cframe'].par_tie_cp.flatten()))
             min_p = np.hstack((min_p, self.model_dict[mod]['cframe'].par_min_cp.flatten()))
             max_p = np.hstack((max_p, self.model_dict[mod]['cframe'].par_max_cp.flatten()))
+            tie_p = np.hstack((tie_p, self.model_dict[mod]['cframe'].par_tie_cp.flatten()))
 
         n_freepars = 0
         for i_p in range(len(tie_p)):
@@ -609,7 +640,7 @@ class FitFrame(object):
         if par_p is not None: 
             return par_p, n_freepars
         else:
-            return tie_p, min_p, max_p
+            return min_p, max_p, tie_p
 
     def update_mask_lite_dict(self, model_name=None, mask_lite=None, dict=None):
         if dict is None:
@@ -657,7 +688,7 @@ class FitFrame(object):
         if (self.num_loops-success_count) > 0:
             print_log(f'{self.num_loops-success_count} loops need refitting, with current chi_sq = {np.round(best_chi_sq_l[~self.fit_quality_l],3)}.', self.log_message)
         else:
-            print_log(f'No fitting loop needs refitting. Run with main_fit(refit=True) to force refitting.', self.log_message)
+            print_log(f'No fitting loop needs refitting. Run with FitFrame.main_fit(refit=True) to force refitting.', self.log_message)
 
         return success_count
 
@@ -680,13 +711,13 @@ class FitFrame(object):
             # consider the case when calibration dominates the error, i.e., could be overestimated
             # chi_sq_0 = sum((residuals/error_0)**2)/N, a good-fit has chi_sq ~ 1, 
             # i.e., revise error_1 = error_0 * sqrt(chi_sq_0) to get sum((residuals/error_1)**2)/N ~ 1 in the next fitting
-            if (self.inst_calib_ratio_rev == True) & (i_loop == 0) & (chi_sq is not None):
+            if (self.if_rev_inst_calib_ratio == True) & (i_loop == 0) & (chi_sq is not None):
                 k0_sq = self.inst_calib_ratio**2
                 k1_sq = k0_sq * chi_sq - np.median((1 - chi_sq) * specphot_ferr_w[specphot_mask_w]**2 / specphot_flux_w[specphot_mask_w]**2)
                 if k1_sq < 0: k1_sq = 0
                 self.inst_calib_ratio = min(np.sqrt(k1_sq), 0.2) # set an upperlimit of 0.2
                 print_log(f"The ratio of calibration error over flux is updated from {np.sqrt(k0_sq):.3f} to {np.sqrt(k1_sq):.3f}.", 
-                          self.log_message, self.print_step)
+                          self.log_message, self.if_print_step)
 
             # create modified error
             if self.inst_calib_smooth < 1e-4: # use 1e-4 instead of 0 to avoid possible equal==0 error
@@ -895,22 +926,22 @@ class FitFrame(object):
         else:
             if not fit_phot:
                 print_log(f"Fit with {n_elements} free elements and {n_freepars} free parameters of {len(rev_model_type.split('+'))} models, "
-                         +f"reduced chi-squared = {chi_sq:.3f}.", self.log_message, self.print_step)
+                         +f"reduced chi-squared = {chi_sq:.3f}.", self.log_message, self.if_print_step)
             else:                
                 print_log(f"Fit with {n_elements} free elements and {n_freepars} free parameters of {len(rev_model_type.split('+'))} models: ", 
-                          self.log_message, self.print_step)
-                print_log(f"Reduced chi-squared with scaled errors = {chi_sq:.3f} for spectrum+SED;", self.log_message, self.print_step)
+                          self.log_message, self.if_print_step)
+                print_log(f"Reduced chi-squared with scaled errors = {chi_sq:.3f} for spectrum+SED;", self.log_message, self.if_print_step)
                 spec_chi_sq = (chi_w[:self.num_spec_wave]**2).sum()
-                print_log(f"Reduced chi-squared with scaled errors = {spec_chi_sq:.3f} for pure spectrum;", self.log_message, self.print_step)
+                print_log(f"Reduced chi-squared with scaled errors = {spec_chi_sq:.3f} for pure spectrum;", self.log_message, self.if_print_step)
                 phot_chi_sq = (chi_w[-self.num_phot_band:]**2).sum()
-                print_log(f"Reduced chi-squared with scaled errors = {phot_chi_sq:.3f} for pure phot-SED;", self.log_message, self.print_step)
+                print_log(f"Reduced chi-squared with scaled errors = {phot_chi_sq:.3f} for pure phot-SED;", self.log_message, self.if_print_step)
 
                 orig_ferr_w = np.hstack((self.spec['ferr_w'], self.phot['ferr_b']))
                 tmp_chi_w = np.divide(chi_w*ferr_w, orig_ferr_w, where=mask_valid_w, out=np.zeros_like(ferr_w))
                 spec_chi_sq = (tmp_chi_w[:self.num_spec_wave]**2).sum()
-                print_log(f"Reduced chi-squared with original errors = {spec_chi_sq:.3f} for pure spectrum;", self.log_message, self.print_step)
+                print_log(f"Reduced chi-squared with original errors = {spec_chi_sq:.3f} for pure spectrum;", self.log_message, self.if_print_step)
                 phot_chi_sq = (tmp_chi_w[-self.num_phot_band:]**2).sum()
-                print_log(f"Reduced chi-squared with original errors = {phot_chi_sq:.3f} for pure phot-SED.", self.log_message, self.print_step)
+                print_log(f"Reduced chi-squared with original errors = {phot_chi_sq:.3f} for pure phot-SED.", self.log_message, self.if_print_step)
 
             return par_p, coeff_e, model_w, chi_sq
 
@@ -930,7 +961,7 @@ class FitFrame(object):
             f_backward_w = function(x_backward, *args)
             # compute central difference
             Jac_wx[:, i_x] = (f_forward_w - f_backward_w) / (2 * x_step)
-            # if self.save_test: 
+            # if self.if_save_test: 
             #     self.log_test_jacs.append((i_x, x, x_forward, x_backward, f_forward_w, f_backward_w, Jac_wx))
             if (~np.isfinite(Jac_wx[:, i_x])).any():
                 raise ValueError((f"NaN or Inf detected in Jacobian column {i_x} at x = {x}"))
@@ -958,7 +989,7 @@ class FitFrame(object):
         # core fitting function to obtain solution of non-linear least-square problems
 
         print_log('#### <'+fit_message.split(':')[0]+'> start:'+fit_message.split(':')[1]+'.', 
-                  self.log_message, self.print_step)
+                  self.log_message, self.if_print_step)
         self.time_step = time.time()
 
         if input_par_p is None: input_par_p = np.random.uniform(self.par_min_p, self.par_max_p) # create random parameters
@@ -977,7 +1008,7 @@ class FitFrame(object):
         # save fit_grid; the value transfered in arg may be forced to 'linear' by linear_process if with too many non-positive fluxes
         ret_dict['fit_grid_actual'] = copy(fit_grid)
 
-        if self.save_test: 
+        if self.if_save_test: 
             self.log_test_args = (input_par_p, args)
             self.log_test_jacs = [] # to trace steps in jacobian
             self.log_test_ret_dict = ret_dict
@@ -995,7 +1026,7 @@ class FitFrame(object):
             try:
                 init_par_p = copy(input_par_p) # avoid modify the transferred input_par_p
                 if annealing: 
-                    print_log(f'Perform Dual Annealing optimazation for a rough global search.', self.log_message, self.print_step)
+                    print_log(f'Perform Dual Annealing optimazation for a rough global search.', self.log_message, self.if_print_step)
                     # create randomly initialized parameters used in this step
                     # although x0=init_par_p is not mandatory for dual_annealing, random x0 can enable it to explore from different starting
                     rand_par_p = np.random.uniform(self.par_min_p, self.par_max_p)
@@ -1008,12 +1039,12 @@ class FitFrame(object):
                                                  args=args, x0=init_par_p[mask_p], no_local_search=True, initial_temp=1e4, visit=1.5, maxiter=da_niter_max)
                     init_par_p[mask_p] = da_solution.x # update init_par_p used in this step
 
-                    if self.plot_step: 
+                    if self.if_plot_step: 
                         par_p, coeff_e, model_w, chi_sq = self.linear_process(da_solution.x, *args, ret_par_coeff=True)
                         self.plot_canvas(flux_w, model_w, ferr_w, mask_w, fit_phot, '[DA] '+fit_message, chi_sq, i_loop)
                     else:
                         print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max}, Dual Annealing returns chi_sq = {da_solution.fun:.3f}.', 
-                                  self.log_message, self.print_step)
+                                  self.log_message, self.if_print_step)
                 else:
                     if (perturb_scale > 0) & ((i_fit+1) < nlfit_ntry_max):
                         # do not perturb in the last try of nlfit
@@ -1023,12 +1054,12 @@ class FitFrame(object):
                         rand_par_p = np.minimum(rand_par_p, self.par_max_p)
                         init_par_p[mask_p] = rand_par_p[mask_p] # update init_par_p used in this step 
                         print_log(f'Perturb transferred parameters with scatters of {perturb_scale*100}% of parameter ranges.', 
-                                  self.log_message, self.print_step)
+                                  self.log_message, self.if_print_step)
                     else:
-                        print_log(f'Do not perturb transferred parameters from the former step.', self.log_message, self.print_step)
+                        print_log(f'Do not perturb transferred parameters from the former step.', self.log_message, self.if_print_step)
                 ret_dict['init_par_p'] = copy(init_par_p) # save the updated init_par_p
 
-                print_log(f'Perform Non-linear Least-square optimazation for fine tuning.', self.log_message, self.print_step)
+                print_log(f'Perform Non-linear Least-square optimazation for fine tuning.', self.log_message, self.if_print_step)
                 ls_solution = least_squares(fun=self.linear_process, args=args,
                                             x0=init_par_p[mask_p], bounds=(self.par_min_p[mask_p], self.par_max_p[mask_p]), 
                                             x_scale='jac', jac=lambda x, *args: self.jac_matrix(self.linear_process, x, args=args), 
@@ -1052,11 +1083,11 @@ class FitFrame(object):
                         if (chi_sq > accept_chi_sq) & (chi_sq <= (accept_chi_sq * 1.1)):
                             print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max}, '+
                                       f'accept this fitting with chi_sq = {chi_sq:.3f} / {accept_chi_sq:.3f} (goal) < 110%.', 
-                                      self.log_message, self.print_step)
+                                      self.log_message, self.if_print_step)
                         if (chi_sq > (accept_chi_sq * 1.1)) & (chi_sq <= (accept_chi_sq * 1.5)):
                             print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max}, '+
                                       f'accept this fitting with chi_sq = {chi_sq:.3f} / {accept_chi_sq:.3f} (goal) < 150%, achieved twice.', 
-                                      self.log_message, self.print_step) 
+                                      self.log_message, self.if_print_step) 
                         break # exit nlfit cycle
                     else:
                         if chi_sq < achieved_chi_sq: 
@@ -1065,18 +1096,18 @@ class FitFrame(object):
                         if (i_fit+1) < nlfit_ntry_max:
                             print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max}, '+
                                       f'poor-fit with chi_sq = {chi_sq:.3f} > {accept_chi_sq:.3f} (goal) --> try refitting; '+
-                                      f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.print_step)
+                                      f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.if_print_step)
                         else:
                             print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max}, '+
                                       f'poor-fit with chi_sq = {chi_sq:.3f} > {accept_chi_sq:.3f} (goal); accept the solution with the '+
-                                      f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.print_step)                            
+                                      f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.if_print_step)                            
                 else:
                     if (i_fit+1) < nlfit_ntry_max:
                         print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max} failed --> try refitting; '+
-                                  f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.print_step) 
+                                  f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.if_print_step) 
                     else:
                         print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max} failed; accept the solution with the '+
-                                  f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.print_step) 
+                                  f'achieved min_chi_sq = {achieved_chi_sq:.3f}', self.log_message, self.if_print_step) 
         
         # save the best solution
         if accept_condition: 
@@ -1088,7 +1119,7 @@ class FitFrame(object):
                 best_fit = ls_solution # use the solution in the final try if all tries failed
 
         par_p, coeff_e, model_w, chi_sq = self.linear_process(best_fit.x, *args, ret_par_coeff=True)
-        if self.plot_step: self.plot_canvas(flux_w, model_w, ferr_w, mask_w, fit_phot, '[LS] '+fit_message, chi_sq, i_loop)
+        if self.if_plot_step: self.plot_canvas(flux_w, model_w, ferr_w, mask_w, fit_phot, '[LS] '+fit_message, chi_sq, i_loop)
         ##############################################################
 
         ##############################################################
@@ -1157,7 +1188,7 @@ class FitFrame(object):
                   f'{time.time()-self.time_loop:.1f}s/'+
                   f'{time.time()-self.time_init:.1f}s '+
                   'spent in this step/loop/total.', 
-                  self.log_message, self.print_step)            
+                  self.log_message, self.if_print_step)            
 
         return ret_dict
 
@@ -1182,9 +1213,9 @@ class FitFrame(object):
         self.time_loop = time.time()
 
         if i_loop == 0: 
-            print_log(center_string(f'Fit the original spectrum', 80), self.log_message, self.print_step)
+            print_log(center_string(f'Fit the original spectrum', 80), self.log_message, self.if_print_step)
         else:
-            print_log(center_string(f'Fit the mock spectrum', 80), self.log_message, self.print_step)
+            print_log(center_string(f'Fit the mock spectrum', 80), self.log_message, self.if_print_step)
         spec_fmock_w = self.create_mock_data(i_loop)
         
         ####################################################
@@ -1199,24 +1230,24 @@ class FitFrame(object):
         for mod in self.full_model_type.split('+'):
             if (mod != 'line') & self.model_dict[mod]['spec_enable']: cont_type += mod + '+'
         cont_type = cont_type[:-1] # remove the last '+' 
-        print_log(f'Continuum models used in spectral fitting: {cont_type}', self.log_message, self.print_step)
+        print_log(f'Continuum models used in spectral fitting: {cont_type}', self.log_message, self.if_print_step)
         ########################################
         # obtain a rough fit of continuum with emission line wavelength ranges masked out
         if np.isin('stellar', cont_type.split('+')): 
-            mask_lite_stellar = self.stellar.mask_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.print_step)
+            mask_lite_stellar = self.stellar.mask_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.if_print_step)
             mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar)
         else:
             mask_lite_dict = self.update_mask_lite_dict()
         cont_fit_init = self.nonlinear_process(None, spec_fmock_w, spec_ferr_w, mask_noline_w, 
                                                cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=1, 
-                                               annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                               annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                fit_message='cont_fit_init: spectral fitting, initialize continuum models', i_loop=i_loop)
         ########################################
         if np.isin('line', self.full_model_type.split('+')): 
             # obtain a rough fit of emission lines with continuum of cont_fit_init subtracted
             line_fit_init = self.nonlinear_process(None, (spec_fmock_w - cont_fit_init['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                    'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None,
-                                                   annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                                   annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                    fit_message='line_fit_init: spectral fitting, initialize emission lines', i_loop=i_loop)
         else:
             # just copy the cont_fit to line_fit. note that line_fit['line_spec_fmod_w'] = 0, but line_fit['fmod_w'] = cont_fit['fmod_w']
@@ -1229,13 +1260,13 @@ class FitFrame(object):
         ################## 1st fit cycle ###################
         # obtain a better fit of stellar continuum after subtracting emission lines of line_fit_init
         if np.isin('stellar', cont_type.split('+')): 
-            mask_lite_stellar = self.stellar.mask_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.print_step)
+            mask_lite_stellar = self.stellar.mask_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.if_print_step)
             mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar)
         else:
             mask_lite_dict = self.update_mask_lite_dict()
         cont_fit_1 = self.nonlinear_process(None, (spec_fmock_w - line_fit_init['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                             cont_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
-                                            annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                            annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                             fit_message='cont_fit_1: spectral fitting, update continuum models', i_loop=i_loop)
         ########################################
         if np.isin('line', self.full_model_type.split('+')): 
@@ -1246,7 +1277,7 @@ class FitFrame(object):
                 line_abs_peak_SN, line_abs_examine = self.examine_model_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.accept_absorption_SN)
                 if not line_abs_examine:
                     print_log(f'Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.accept_absorption_SN} (set by accept_absorption_SN).',
-                              self.log_message, self.print_step)                 
+                              self.log_message, self.if_print_step)                 
                     # fix the parameters of disabled components (to reduce number of free parameters)
                     for i_comp in range(self.line.num_comps):
                         if self.line.cframe.info_c[i_comp]['sign'] == 'absorption': self.model_dict['line']['cframe'].par_tie_cp[i_comp,:] = 'fix'
@@ -1256,7 +1287,7 @@ class FitFrame(object):
             # here use cont_fit_1['final_par_p'] to transfer the best-fit parameters from cont_fit_1
             line_fit_1 = self.nonlinear_process(cont_fit_1['final_par_p'], (spec_fmock_w - cont_fit_1['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                 'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None, 
-                                                annealing=self.init_annealing, perturb_scale=self.perturb_scale, 
+                                                annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                 fit_message='line_fit_1: spectral fitting, update emission lines', i_loop=i_loop)
         else:
             # just copy the cont_fit to line_fit, i.e., with zero line flux
@@ -1274,11 +1305,11 @@ class FitFrame(object):
 
         ################################################################
         ############### Examine models and 2nd fit cycle ###############
-        if self.examine_result: 
+        if self.if_examine_result: 
             ########################################
             ########### Examine models #############
             print_log(center_string(f'Examine if each continuum model is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
-                      self.log_message, self.print_step)
+                      self.log_message, self.if_print_step)
             cont_type = '' # reset
             for mod in joint_fit_1['model_type'].split('+'):
                 if mod == 'line': continue
@@ -1288,22 +1319,22 @@ class FitFrame(object):
                 mod_peak_SN, mod_examine = self.examine_model_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
                 if mod_examine: 
                     cont_type += mod + '+'
-                    print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
+                    print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> remaining', self.log_message, self.if_print_step)
                 else:
-                    print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
+                    print_log(f'{mod} continuum peak S/N = {mod_peak_SN:.3f} --> disabled', self.log_message, self.if_print_step)
             if cont_type != '':
                 cont_type = cont_type[:-1] # remove the last '+'
-                print_log(f'#### Continuum models after examination: {cont_type}', self.log_message, self.print_step)
+                print_log(f'#### Continuum models after examination: {cont_type}', self.log_message, self.if_print_step)
             else:
                 cont_type = 'stellar'
-                print_log(f'#### Continuum is very faint, only stellar continuum model is enabled.', self.log_message, self.print_step)
+                print_log(f'#### Continuum is very faint, only stellar continuum model is enabled.', self.log_message, self.if_print_step)
             # fix the parameters of disabled models (to reduce number of free parameters)
             for mod in joint_fit_1['model_type'].split('+'):
                 if mod == 'line': continue
                 if ~np.isin(mod, cont_type.split('+')): self.model_dict[mod]['cframe'].par_tie_cp[:,:] = 'fix'
             ########################################
             print_log(center_string(f'Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
-                      self.log_message, self.print_step)
+                      self.log_message, self.if_print_step)
             if np.isin('line', joint_fit_1['model_type'].split('+')): 
                 mp0, mp1, me0, me1 = self.search_model_index('line', joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
                 line_spec_fmod_ew = self.model_dict['line']['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_dict']['line'])
@@ -1315,22 +1346,22 @@ class FitFrame(object):
                     line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
                     if line_comp_examine: 
                         line_comps.append(line_comp)
-                        print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> remaining', self.log_message, self.print_step)
+                        print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> remaining', self.log_message, self.if_print_step)
                     else:
-                        print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> disabled', self.log_message, self.print_step)
+                        print_log(f'{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> disabled', self.log_message, self.if_print_step)
                 if len(line_comps) > 0:
-                    print_log(f'#### Emission line components after examination: {line_comps}', self.log_message, self.print_step)
+                    print_log(f'#### Emission line components after examination: {line_comps}', self.log_message, self.if_print_step)
                 else:
                     line_comps.append(self.line.cframe.comp_c[0]) # only use the 1st component if emission lines are too faint
-                    print_log(f'#### Emission lines are too faint, only {line_comps} is enabled.', self.log_message, self.print_step)                    
+                    print_log(f'#### Emission lines are too faint, only {line_comps} is enabled.', self.log_message, self.if_print_step)                    
                 # fix the parameters of disabled components (to reduce number of free parameters)
                 for i_comp in range(self.line.num_comps):
                     if ~np.isin(self.line.cframe.comp_c[i_comp], line_comps): self.model_dict['line']['cframe'].par_tie_cp[i_comp,:] = 'fix'                
                 # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
                 mask_lite_dict = self.update_mask_lite_dict('line', self.line.mask_lite_with_comps(enabled_comps=line_comps), dict=mask_lite_dict)
             ########################################
-            # update parameter_constraints since parameters of disabled model components are fixed
-            self.set_par_constraints()
+            # update parameter and constraints since parameters of disabled model components moved to 'fix', to avoid making conflict in non linear process
+            self.par_min_p, self.par_max_p, self.par_tie_p = self.update_tied_pars(model_type=self.full_model_type)
             joint_fit_1['update_par_p'] = np.maximum(joint_fit_1['final_par_p'], self.par_min_p)
             joint_fit_1['update_par_p'] = np.minimum(joint_fit_1['final_par_p'], self.par_max_p)
             ########################################
@@ -1356,7 +1387,7 @@ class FitFrame(object):
                                                      fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
                 # create new mask_lite_stellar with new coeffs; do not use full allowed stellar model elements to save time
                 mp0, mp1, me0, me1 = self.search_model_index('stellar', cont_fit_2b['model_type'], cont_fit_2b['mask_lite_dict'])
-                mask_lite_stellar = self.stellar.mask_lite_with_coeffs(cont_fit_2b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.print_step)
+                mask_lite_stellar = self.stellar.mask_lite_with_coeffs(cont_fit_2b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.if_print_step)
                 mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
             else:
                 cont_fit_2b = cont_fit_2a
@@ -1395,9 +1426,9 @@ class FitFrame(object):
         if self.have_phot:
             # re-create mock spectrum and SED 
             if i_loop == 0: 
-                print_log(center_string(f'Perform simultaneous spectrum+SED fitting with original data', 80), self.log_message, self.print_step)
+                print_log(center_string(f'Perform simultaneous spectrum+SED fitting with original data', 80), self.log_message, self.if_print_step)
             else:
-                print_log(center_string(f'Perform simultaneous spectrum+SED fitting with mock data', 80), self.log_message, self.print_step)
+                print_log(center_string(f'Perform simultaneous spectrum+SED fitting with mock data', 80), self.log_message, self.if_print_step)
             specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True)
             ########################################
             # update model types for coninuum fitting
@@ -1405,7 +1436,7 @@ class FitFrame(object):
             for mod in self.full_model_type.split('+'):
                 if (mod != 'line') & self.model_dict[mod]['sed_enable']: cont_type += mod + '+'
             cont_type = cont_type[:-1] # remove the last '+' 
-            print_log(f'Continuum models used in spectrum+SED fitting: {cont_type}', self.log_message, self.print_step)
+            print_log(f'Continuum models used in spectrum+SED fitting: {cont_type}', self.log_message, self.if_print_step)
             ########################################
             # spectrum+SED fitting for continuum
             # initialize parameters using best-fit of joint_fit_2; subtract emission lines from joint_fit_2
@@ -1432,7 +1463,7 @@ class FitFrame(object):
             if np.isin('stellar', cont_type.split('+')): 
                 # create new mask_lite_stellar with new coeffs; do not use full allowed stellar model elements to save time
                 mp0, mp1, me0, me1 = self.search_model_index('stellar', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_dict'])
-                mask_lite_stellar = self.stellar.mask_lite_with_coeffs(cont_fit_3b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.print_step)
+                mask_lite_stellar = self.stellar.mask_lite_with_coeffs(cont_fit_3b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.if_print_step)
                 mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
             ########################################
             if np.isin('line', self.full_model_type.split('+')): 
@@ -1501,10 +1532,10 @@ class FitFrame(object):
             # pick up loops without good fits
             index_loops = np.where(~self.fit_quality_l)[0]
 
-            if not self.use_multi_thread: 
+            if not self.if_use_multi_thread: 
                 for i_loop in index_loops:
                     self.single_loop_fit(i_loop) # self.fit_quality_l[i_loop] updated
-                    if self.save_per_loop: self.save_to_file(self.output_filename)
+                    if self.if_save_per_loop: self.save_to_file(self.output_filename)
             else:
                 if ~self.fit_quality_l[0]: 
                     # run original data fitting individually
@@ -1512,7 +1543,7 @@ class FitFrame(object):
                     index_loops = index_loops[1:] # remove 0th loop if it is included
                 # run mock data fitting in parallel
                 _ = Parallel(n_jobs=self.num_multi_thread, backend="threading")(delayed(self.single_loop_fit)(i_loop) for i_loop in index_loops)
-                if self.save_per_loop: self.save_to_file(self.output_filename)
+                if self.if_save_per_loop: self.save_to_file(self.output_filename)
 
             # check fitting quality after all loops finished
             # allow additional loops to remove outlier fit; exit if additional loops > 3
@@ -1526,14 +1557,19 @@ class FitFrame(object):
         # delete the format template with empty values
         if np.isin('empty_step', [*self.output_s]): hide_return = self.output_s.pop('empty_step') 
         # extract results
-        self.extract_results(step='final', print_results=True, return_results=False, num_sed_wave=5000)
+        self.extract_results(step='final', if_print_results=True, if_rev_v0_redshift=self.if_rev_v0_redshift)
 
         print_log(center_string(f'S3Fit all processes finish', 80), self.log_message)
 
     ##########################################################################
-    ################# Output best-fit spectra and valurs #####################
+    ################# Output best-fit spectra and values #####################
 
-    def extract_results(self, step=None, print_results=False, return_results=False, num_sed_wave=5000, flux_type='Flam'):
+    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, num_sed_wave=5000, flux_type='Flam', **kwargs):
+
+        # check and replace the args to be compatible with old version <= 2.2.4
+        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
+        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
+
         if (step is None) | (step == 'best') | (step == 'final'):
             step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
         if (step == 'spec+SED'):  step = 'joint_fit_3'
@@ -1566,7 +1602,38 @@ class FitFrame(object):
                         rev_model_type += mod+'+'
         rev_model_type = rev_model_type[:-1] # remove the last '+'
         self.rev_model_type = rev_model_type # save for indexing output_mc
-        print_log(f'The best-fit properties are extracted for the models: {rev_model_type}', self.log_message, self.print_step)
+        print_log(f'The best-fit properties are extracted for the models: {rev_model_type}', self.log_message, self.if_print_step)
+
+        if if_rev_v0_redshift:
+            mask_v0_p  = self.par_name_p  == 'voff'
+            mask_v0_p &= self.mod_name_p  == self.v0_reference.split(':')[0]
+            mask_v0_p &= self.comp_name_p == self.v0_reference.split(':')[1]
+            if sum(mask_v0_p) == 1:
+                # get the updated systemic redshift
+                self.ref_voff_l = best_par_lp[:, mask_v0_p][:,0] # [:,0] is required to keep _l
+                self.rev_v0_redshift_l = (1+self.v0_redshift) * (1+self.ref_voff_l/299792.458) - 1
+                self.rev_v0_redshift = self.rev_v0_redshift_l[0]
+                self.rev_v0_redshift_std = self.rev_v0_redshift_l.std()
+                # update best-fit voff and fwhm
+                best_par_lp[:, self.par_name_p == 'voff'] -= self.ref_voff_l[0]
+                best_par_lp[:, self.par_name_p == 'fwhm'] *= (1+self.v0_redshift) / (1+self.rev_v0_redshift)
+                # update v0_redshift in each model frame
+                for mod in rev_model_type.split('+'): 
+                    self.model_dict[mod]['spec_mod'].v0_redshift = self.rev_v0_redshift
+                    if self.have_phot: self.model_dict[mod]['sed_mod'].v0_redshift = self.rev_v0_redshift
+                print_log(f"The systemic redshift (v0_redshift) is updated to {self.rev_v0_redshift:.6f}+/-{self.rev_v0_redshift_std:.6f} (from the input {self.v0_redshift}) " + 
+                          f"referring to the model and component: '{self.v0_reference}'.", self.log_message)
+                print_log(f"The related best-fit results (e.g., shifted velocities) are also updated.", self.log_message)
+            else:
+                self.rev_v0_redshift = None
+                print_log(f"[WARNING] The specified reference component of systemic redshift, '{self.v0_reference}', is not available. The redshift is skipped.", self.log_message)
+        else:
+            self.rev_v0_redshift = None
+            # recover un-updated v0_redshift, if it is changed, in each model frame
+            for mod in rev_model_type.split('+'): 
+                if self.model_dict[mod]['spec_mod'].v0_redshift != self.v0_redshift:
+                    self.model_dict[mod]['spec_mod'].v0_redshift = self.v0_redshift
+                    if self.have_phot: self.model_dict[mod]['sed_mod'].v0_redshift = self.v0_redshift
 
         # format of results
         # output_mc['mod']['comp']['spec_lw'][i_l,i_w]: spectra in observed spectral wavelength
@@ -1651,7 +1718,7 @@ class FitFrame(object):
         if self.have_phot:
             output_mc['tot']['fres']['phot_lb'] = output_mc['tot']['flux']['phot_lb'] - output_mc['tot']['fmod']['phot_lb']
 
-        # save model spectra in flambda to calculate observed flux in later .extract_results()
+        # save model spectra in flambda to calculate observed flux in later mod.extract_results()
         self.output_mc = output_mc
 
         # convert to flux in mJy if required
@@ -1689,7 +1756,8 @@ class FitFrame(object):
                 if not (self.model_dict[mod]['spec_enable'] | self.model_dict[mod]['sed_enable']): continue
             else:
                 if not self.model_dict[mod]['spec_enable']: continue
-            tmp_output_c = self.model_dict[mod]['spec_mod'].extract_results(self, step, print_results, return_results=True, show_average=False)
+            tmp_output_c = self.model_dict[mod]['spec_mod'].extract_results(step=step, if_print_results=if_print_results, if_return_results=True, 
+                                                                                       if_rev_v0_redshift=if_rev_v0_redshift, if_show_average=if_show_average)
             comp_c = self.model_dict[mod]['cframe'].comp_c
             num_comps = self.model_dict[mod]['cframe'].num_comps
             for i_comp in range(num_comps): 
@@ -1698,12 +1766,12 @@ class FitFrame(object):
                 output_mc[mod][comp_c[i_comp]]['values']   = tmp_output_c[comp_c[i_comp]]['values']
             output_mc[mod]['sum']['values'] = tmp_output_c['sum']['values']
 
-        # also allow 'ssp' and 'el' in output_mc to be compatible with old version 
+        # allow old mod name, 'ssp' and 'el', in output_mc to be compatible with old version <= 2.2.4
         if np.isin('stellar', self.full_model_type.split('+')): self.output_mc['ssp'] = output_mc['stellar']
         if np.isin('line',    self.full_model_type.split('+')): self.output_mc['el']  = output_mc['line']
 
         self.output_mc = output_mc
-        if return_results: return output_mc
+        if if_return_results: return output_mc
 
     def plot_canvas(self, flux_w, model_w, ferr_w, mask_w, fit_phot, fit_message, chi_sq, i_loop):
         if self.canvas is None:
@@ -1727,7 +1795,7 @@ class FitFrame(object):
                          hatch='////', fc='None', ec='C5', alpha=0.25)
         ax2.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
-        if not self.keep_invalid:
+        if not self.if_keep_invalid:
             ax1.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
                              hatch='////', fc='None', ec='C5', alpha=0.25)
             ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 

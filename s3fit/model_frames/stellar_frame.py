@@ -17,13 +17,14 @@ from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_wid
 from ..extinct_law import ExtLaw
 
 class StellarFrame(object):
-    def __init__(self, filename=None, cframe=None, v0_redshift=None, R_inst_rw=None, 
+    def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, R_inst_rw=None, 
                  w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
         self.filename = filename
         self.cframe = cframe
+        self.fframe = fframe
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.w_min = w_min
@@ -239,8 +240,11 @@ class StellarFrame(object):
             sfh_func_e = self.cframe.info_c[i_comp]['sfh_func'](evo_time_e, par_p, i_comp, self)
         ##########################################################################
         # a user defined sfh function (input via config) has the following format
-        # def sfh_user(time, parameters, i_component, StellarFrame):
+        # def sfh_user(*args):
+        #     # please do not touch the following two lines
+        #     time, parameters, i_component, StellarFrame = args
         #     def get_par(par_name): return parameters[StellarFrame.cframe.par_index_cp[i_component][par_name]]
+        #     # you can modify the sfh function and parameter names (should be the same as those in input config)
         #     log_t_peak = get_par('log_t_peak')
         #     log_tau = get_par('log_tau')
         #     t_peak = 10.0**log_t_peak
@@ -415,21 +419,32 @@ class StellarFrame(object):
     ##########################################################################
     ########################## Output functions ##############################
 
-    def extract_results(self, ff=None, step=None, print_results=True, show_average=False, return_results=False):
+    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
+
+        # check and replace the args to be compatible with old version <= 2.2.4
+        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
+        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
+        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+
         if (step is None) | (step == 'best') | (step == 'final'):
-            step = 'joint_fit_3' if ff.have_phot else 'joint_fit_2'
+            step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
         if (step == 'spec+SED'):  step = 'joint_fit_3'
         if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
         
-        best_chi_sq_l = copy(ff.output_s[step]['chi_sq_l'])
-        best_par_lp   = copy(ff.output_s[step]['par_lp'])
-        best_coeff_le = copy(ff.output_s[step]['coeff_le'])
+        best_chi_sq_l = copy(self.fframe.output_s[step]['chi_sq_l'])
+        best_par_lp   = copy(self.fframe.output_s[step]['par_lp'])
+        best_coeff_le = copy(self.fframe.output_s[step]['coeff_le'])
+
+        # update best-fit voff and fwhm if systemic redshift is updated
+        if if_rev_v0_redshift & (self.fframe.rev_v0_redshift is not None):
+            best_par_lp[:, self.fframe.par_name_p == 'voff'] -= self.fframe.ref_voff_l[0]
+            best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
         mod = 'stellar'
-        fp0, fp1, fe0, fe1 = ff.search_model_index(mod, ff.full_model_type)
-        spec_wave_w = ff.spec['wave_w']
-        spec_flux_scale = ff.spec_flux_scale
-        num_loops = ff.num_loops
+        fp0, fp1, fe0, fe1 = self.fframe.search_model_index(mod, self.fframe.full_model_type)
+        spec_wave_w = self.fframe.spec['wave_w']
+        spec_flux_scale = self.fframe.spec_flux_scale
+        num_loops = self.fframe.num_loops
         comp_c = self.cframe.comp_c
         par_name_cp = self.cframe.par_name_cp
         num_comps = self.cframe.num_comps
@@ -471,7 +486,7 @@ class StellarFrame(object):
                 rev_redshift = (1+self.v0_redshift) * (1+voff/299792.458) - 1
                 output_c[comp_c[i_comp]]['values']['redshift'][i_loop] = copy(rev_redshift)
 
-                tmp_spec_w = ff.output_mc[mod][comp_c[i_comp]]['spec_lw'][i_loop, :]
+                tmp_spec_w = self.fframe.output_mc[mod][comp_c[i_comp]]['spec_lw'][i_loop, :]
                 mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 AA
                 if mask_norm_w.sum() > 0:
                     output_c[comp_c[i_comp]]['values']['flux_5500'][i_loop] = tmp_spec_w[mask_norm_w].mean()
@@ -531,12 +546,12 @@ class StellarFrame(object):
         self.num_loops = num_loops # for reconstruct_sfh and print_results
         self.spec_flux_scale = spec_flux_scale # for reconstruct_sfh and print_results
 
-        if print_results: self.print_results(log=ff.log_message, show_average=show_average)
-        if return_results: return output_c
+        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average)
+        if if_return_results: return output_c
 
-    def print_results(self, log=[], show_average=False):
+    def print_results(self, log=[], if_show_average=False):
         mask_l = np.ones(self.num_loops, dtype='bool')
-        if not show_average: mask_l[1:] = False
+        if not if_show_average: mask_l[1:] = False
 
         if self.cframe.num_comps > 1:
             num_comps = len([*self.output_c])
@@ -578,7 +593,7 @@ class StellarFrame(object):
             msg = ''
             if i_comp < self.cframe.num_comps:
                 print_log(f'Best-fit stellar properties of the <{self.cframe.comp_c[i_comp]}> component with {self.sfh_names[i_comp]} SFH.', log)
-                msg += f'| Redshift                                  = {tmp_values_vl["redshift"][mask_l].mean():10.4f}'
+                msg += f'| Redshift (from continuum absorptions)     = {tmp_values_vl["redshift"][mask_l].mean():10.4f}'
                 msg += f' +/- {tmp_values_vl["redshift"].std():<8.4f}|\n'
                 msg += f'| Velocity dispersion (σ,km/s)              = {tmp_values_vl["fwhm"][mask_l].mean()/2.355:10.4f}'
                 msg += f' +/- {tmp_values_vl["fwhm"].std()/2.355:<8.4f}|\n'
@@ -629,9 +644,15 @@ class StellarFrame(object):
             print_log(msg, log)
             print_log(bar, log)
 
-    def reconstruct_sfh(self, output_c=None, num_bins=None, plot=True, return_sfh=False, show_average=True):
+    def reconstruct_sfh(self, output_c=None, num_bins=None, if_plot_sfh=True, if_return_sfh=False, if_show_average=True, **kwargs):
+
+        # check and replace the args to be compatible with old version <= 2.2.4
+        if np.isin('plot', [*kwargs]): if_plot_sfh = kwargs['plot']
+        if np.isin('return_sfh', [*kwargs]): if_return_sfh = kwargs['return_sfh']
+        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+
         mask_l = np.ones(self.num_loops, dtype='bool')
-        if not show_average: mask_l[1:] = False
+        if not if_show_average: mask_l[1:] = False
 
         if output_c is None: output_c = self.output_c
         comp_c = self.cframe.comp_c
@@ -670,7 +691,7 @@ class StellarFrame(object):
                 output_sfh_lczb[:,:,:,i_bin] = (output_sfh_lcza[:,:,:,mask_a] * self.duration_e[:self.num_ages][mask_a]).sum(axis=3) / duration_b
                 age_b[i_bin] = 10.0**(logage_a[0]+(i_bin+1/2)*bwidth)
                 
-        if plot:
+        if if_plot_sfh:
             plt.figure(figsize=(9,3))
             plt.subplots_adjust(bottom=0.15, top=0.9, left=0.08, right=0.98, hspace=0, wspace=0.2)
             ax = plt.subplot(1, 2, 1)
@@ -694,7 +715,7 @@ class StellarFrame(object):
                 plt.xlabel('Log looking back time (Gyr)'); plt.ylabel('SFR (Msun/yr)'); plt.legend()
                 plt.title('After binning in log time')
                 
-        if return_sfh:
+        if if_return_sfh:
             if num_bins is None:
                 return output_sfh_lcza, age_a
             else:
