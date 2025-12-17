@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/919828744.svg)](https://doi.org/10.5281/zenodo.17959794)
 # S<sup>3</sup>Fit
 **S<sup>3</sup>Fit**: a <ins>**S**</ins>imultaneous <ins>**S**</ins>pectrum and photometric-<ins>**S**</ins>ED <ins>**Fit**</ins>ting code for observation of galaxies
 
