@@ -8,7 +8,7 @@ np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliary_func import print_log, convolve_fix_width_fft
+from ..auxiliary_func import print_log, lamb_air_to_vac, convolve_fix_width_fft
 from ..extinct_law import ExtLaw
 
 class LineFrame(object):
@@ -42,7 +42,7 @@ class LineFrame(object):
             if ~np.isin('profile', [*self.cframe.info_c[i_comp]]):
                 self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
 
-        self.HI_lv_up_max = 40 # limited by pyneb atomdata._Energy of H1, max lv_up = 40
+        self.H_lv_up_max = 40 # limited by pyneb H1._Energy, max lv_up = 40
         if np.array([self.cframe.info_c[i_comp]['H_hi_order'] for i_comp in range(self.num_comps)]).any(): 
             self.enable_H_hi_order = True
             if not self.use_pyneb: raise ValueError((f"Please enable pyneb in line config to include high order Hydrogen lines."))
@@ -53,6 +53,8 @@ class LineFrame(object):
         if len(self.cframe.par_index_cp[0]) == 0:
             self.cframe.par_name_cp = np.array([['voff', 'fwhm', 'Av', 'log_e_den', 'log_e_tem'] for i_comp in range(self.num_comps)])
             self.cframe.par_index_cp = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_den': 3, 'log_e_tem': 4} for i_comp in range(self.num_comps)]
+        self.tie_pair = self.tie_line_fluxes
+        self.release_pair = self.untie_line_fluxes
 
         self.initialize_linelist()
         if self.use_pyneb: self.initialize_pyneb()
@@ -117,6 +119,11 @@ class LineFrame(object):
         self.linerest_n.append(19450.89); self.lineratio_n.append(0.00638) ; self.linename_n.append('Brd')
         self.linerest_n.append(18179.10); self.lineratio_n.append(0.00442) ; self.linename_n.append('Br9')
         self.linerest_n.append(17366.87); self.lineratio_n.append(0.00319) ; self.linename_n.append('Br10')
+        self.linerest_n.append(74598.41); self.lineratio_n.append(0.00891) ; self.linename_n.append('Pfa')
+        self.linerest_n.append(46537.74); self.lineratio_n.append(0.00566) ; self.linename_n.append('Pfb')
+        self.linerest_n.append(37405.55); self.lineratio_n.append(0.00372) ; self.linename_n.append('Pfg')
+        self.linerest_n.append(32969.91); self.lineratio_n.append(0.00257) ; self.linename_n.append('Pfd')
+        self.linerest_n.append(30392.02); self.lineratio_n.append(0.00186) ; self.linename_n.append('Pf10')
         ########################################################################################################################
         # only pick up one intermediate wavelength in He I fine/hyperfine structure lines
         self.linerest_n.append(2945.965); self.lineratio_n.append(1.0)     ; self.linename_n.append('He I:2946') # T00
@@ -370,8 +377,7 @@ class LineFrame(object):
                                           'Paa', 'Brd', '[Si VI]:19650', 'He I:20587', 'Brg', 'Brb'])
         
     def initialize_pyneb(self):
-        if self.verbose: 
-            print_log('[Note] PyNeb is used in the fitting to derive line emissivities and ratios of line doublets.', self.log_message)
+        if self.verbose: print_log('[Note] PyNeb is used in the fitting to derive line emissivities and ratios of line doublets.', self.log_message)
         import pyneb
         self.pyneb = pyneb
         self.pyneblib = {'RecAtom':{'list': pyneb.atomicData.getAllAtoms(coll=False, rec=True)}, 
@@ -391,7 +397,7 @@ class LineFrame(object):
                 self.linerest_n[i_line] = linerest
 
         if self.enable_H_hi_order: 
-            self.linelist_H_hi_order = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] if n+'10' in self.linelist_full for u in [str(i+11) for i in range(self.HI_lv_up_max-10)]]) 
+            self.linelist_H_hi_order = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] if n+'10' in self.linelist_full for u in [str(i+11) for i in range(self.H_lv_up_max-10)]]) 
             # lv_up from 11 to 40
             self.linelist_full = np.hstack((self.linelist_full, self.linelist_H_hi_order))
             for linename in self.linelist_H_hi_order:
@@ -400,7 +406,7 @@ class LineFrame(object):
                 self.linerest_n = np.hstack((self.linerest_n, linerest))
                 self.lineratio_n = np.hstack((self.lineratio_n, 1.0))
 
-    def search_pyneb(self, name, ret_atomdata=False, verbose=True):
+    def search_pyneb(self, name, wave_medium='vacuum', ret_atomlib=False, verbose=True):
         # due to the current coverage of elements and atoms of pyneb, 
         # currently only use pyneb to identify Hydrogen recombination lines
         # add other recombination lines manually
@@ -416,26 +422,31 @@ class LineFrame(object):
                     int_num+=roman_dict[roman_num[i]]; i+=1
             return int_num
 
-        HI_lv_up_max = 40 # limited by atomdata._Energy of H1, max lv_up = 40
-        HI_lv_low_dict = {}
-        for u in ['a','b','g','d'] + [str(i+1) for i in range(HI_lv_up_max)]: 
-            HI_lv_low_dict['Ly'+u] = 1 # Lyman
-            HI_lv_low_dict['H' +u] = 2 # Balmer
-            HI_lv_low_dict['Pa'+u] = 3 # Paschen
-            HI_lv_low_dict['Br'+u] = 4 # Brackett
-            HI_lv_low_dict['Pf'+u] = 5 # Pfund
+        H_lv_low_dict = {}
+        for u in ['a','b','g','d'] + [str(i+1) for i in range(self.H_lv_up_max)]: 
+            H_lv_low_dict['Ly'+u] = 1 # Lyman
+            H_lv_low_dict['H' +u] = 2 # Balmer
+            H_lv_low_dict['Pa'+u] = 3 # Paschen
+            H_lv_low_dict['Br'+u] = 4 # Brackett
+            H_lv_low_dict['Pf'+u] = 5 # Pfund
 
-        if name in HI_lv_low_dict:
+        if name in H_lv_low_dict:
             element = 'H'; notation = 1; line_id = name
             if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
-                self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
-            atomdata = self.pyneblib['RecAtom'][element+str(notation)]
-            lv_low = HI_lv_low_dict[name]
+                atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+                dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
+                wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
+                def func_emissivity(den, tem, wave_vac): 
+                    lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
+                    return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
+                self.pyneblib['RecAtom'][element+str(notation)] = {'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
+            atomlib = self.pyneblib['RecAtom'][element+str(notation)]
+            lv_low = H_lv_low_dict[name]
             if np.isin(name[-1], ['a','b','g','d']): 
                 lv_up = lv_low + {'a':1,'b':2,'g':3,'d':4}[name[-1]] 
             else:
                 lv_up = int(name[1:]) if name[1].isdigit() else int(name[2:])
-            wave_vac = 1/(atomdata._Energy[lv_up-1] - atomdata._Energy[lv_low-1])
+            wave_vac = atomlib['wave_vac_ij'][lv_up-1, lv_low-1]
         else:
             ion, wave = name.split(':')
             if ion[0] == '[': 
@@ -448,39 +459,55 @@ class LineFrame(object):
             notation = roman_to_int(notation)
             if np.isin(element+str(notation), ['H1', 'He2']):
                 if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
-                    self.pyneblib['RecAtom'][element+str(notation)] = self.pyneb.RecAtom(element, notation) # , extrapolate=False
-                atomdata = self.pyneblib['RecAtom'][element+str(notation)]
+                    atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+                    dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
+                    wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
+                    def func_emissivity(den, tem, wave_vac): 
+                        lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
+                        return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
+                    self.pyneblib['RecAtom'][element+str(notation)] = {'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
+                atomlib = self.pyneblib['RecAtom'][element+str(notation)]
             else:
                 if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
-                    if verbose: print(f"{name} not provided in pyneb, please add it manually following the github/advanced_usage page.")
-                    if ret_atomdata: 
+                    if verbose: print_log(f"{name} not provided in pyneb, please add it manually following the github/advanced_usage page.", self.log_message)
+                    if ret_atomlib: 
                         return None, None, None
                     else:
                         return None, None
                 if ~np.isin(element+str(notation), [*self.pyneblib['Atom']]):
-                    self.pyneblib['Atom'][element+str(notation)] = self.pyneb.Atom(element, notation) # , noExtrapol=True
-                atomdata = self.pyneblib['Atom'][element+str(notation)]
+                    atomdata = self.pyneb.Atom(element, notation) # , noExtrapol=True
+                    dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
+                    wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
+                    def func_emissivity(den, tem, wave_vac): 
+                        lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
+                        return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
+                    self.pyneblib['Atom'][element+str(notation)] = {'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
+                atomlib = self.pyneblib['Atom'][element+str(notation)]
             wave = float(wave[:-2])*1e4 if wave[-2:] == 'um' else float(wave)
-            lv_up, lv_low = atomdata.getTransition(wave=wave)
-            wave_vac = 1/(atomdata._Energy[lv_up-1] - atomdata._Energy[lv_low-1])
+            if wave_medium == 'air': wave = lamb_air_to_vac(wave)
+            wave_vac = atomlib['wave_vac_ij'].flatten()[np.argmin(np.abs(atomlib['wave_vac_ij'] - wave))]
             line_id = f'{ion}:{round(wave_vac)}'
-        # line_id = f'{element}{notation}_{int(wave_vac)}'
-        # line_id = f'{element}{notation}u{lv_up}l{lv_low}'
-        if ret_atomdata: 
-            return line_id, wave_vac, atomdata
+
+        if ret_atomlib: 
+            return line_id, wave_vac, atomlib
         else:
             return line_id, wave_vac
 
-    def add_line(self, linenames=None, linerests=None, lineratios=None, force=False, use_pyneb=False):
-        if not isinstance(linenames, list): linenames = [linenames]
+    def add_line(self, linenames=None, linerests=None, lineratios=None, wave_medium='vacuum', force=False, use_pyneb=False, verbose=True):
+        if not isinstance(linenames,  list): linenames  = [linenames]
+        if not isinstance(linerests,  list): linerests  = [linerests]
+        if not isinstance(lineratios, list): lineratios = [lineratios]
         for (i_line, linename) in enumerate(linenames):
             if use_pyneb:
-                linename, linerest = self.search_pyneb(linename)
+                linename, linerest = self.search_pyneb(linename, wave_medium=wave_medium)
                 lineratio = 1.0
             else:
-                linerest = linerests[i_line]
-                lineratio = lineratios[i_line] if lineratios is not None else 1.0
-            if np.isin(linename, self.linename_n): raise ValueError((f"{linename} is already in the line list: {self.linename_n}."))
+                linerest = linerests[i_line] if wave_medium == 'vacuum' else lamb_air_to_vac(linerests[i_line])
+                lineratio = lineratios[i_line] if lineratios[i_line] is not None else 1.0
+            if np.isin(linename, self.linelist_full): 
+                if verbose: print_log(f"There is already the same line {linename} in the line list, set force=True to add this line forcibly.", self.log_message)
+                continue # skip the following steps
+
             i_close = np.absolute(self.linerest_n - linerest).argmin()
             if (np.abs(self.linerest_n[i_close] - linerest) > 1) | force: 
                 self.linename_n  = np.hstack((self.linename_n, linename))
@@ -488,13 +515,13 @@ class LineFrame(object):
                 self.lineratio_n = np.hstack((self.lineratio_n, lineratio))
                 self.linelist_full = np.hstack((self.linelist_full, linename))
                 self.linelist_default = np.hstack((self.linelist_default, linename))
-                print_log(f"{linename, linerest} with linkratio={lineratio} is added into the line list.", self.log_message)
+                if verbose: print_log(f"{linename, linerest} with linkratio={lineratio} is added into the line list.", self.log_message)
             else:
-                print_log(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest}"
-                         +f", set force=True to add this line.", self.log_message)
+                if verbose: print_log(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest}, "+
+                                      f"set force=True to add this line forcibly.", self.log_message)
         self.update_linelist()
 
-    def delete_line(self, linenames=None):
+    def delete_line(self, linenames=None, verbose=True):
         if not isinstance(linenames, list): linenames = [linenames]
         mask_remain_n = np.ones_like(self.linename_n, dtype='bool')
         for linename in linenames:
@@ -504,6 +531,7 @@ class LineFrame(object):
             self.lineratio_n = self.lineratio_n[mask_remain_n]
             self.linelist_full = self.linelist_full[self.linelist_full != linename]
             self.linelist_default = self.linelist_default[self.linelist_default != linename]
+            if verbose: print_log(f"{linename} is deleted from (or does not exist in) the line list.", self.log_message)
         self.update_linelist()
 
     def update_linelist(self):
@@ -527,7 +555,7 @@ class LineFrame(object):
         self.linelist_intercombination = np.array([line for line in self.linelist_full if (line[0] != '[') & (line.split(':')[0][-1] == ']')])
         self.linelist_forbidden        = np.array([line for line in self.linelist_full if  line[0] == '['])
 
-        linelist_H = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.HI_lv_up_max)]])
+        linelist_H = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.H_lv_up_max)]])
         linelist_H = linelist_H[np.isin(linelist_H, self.linelist_full)]
         linelist_nonH = self.linelist_full[~np.isin(self.linelist_full, linelist_H)]
 
@@ -649,28 +677,29 @@ class LineFrame(object):
         if self.use_pyneb & self.verbose:
             print_log(f"Line tying (if line available) with flux ratios from pyneb under the best-fit (or fixed) electron density and temperature:", self.log_message)
 
-        H_linenames = [n+u for n in ['H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.HI_lv_up_max)]] # do not set 'Ly' due to Lya forest
-        self.tie_pair(H_linenames, ['Ha','Hb','Hg','Hd', 'Paa','Pab','Pag','Pad']) # use set alternative line is Ha is not covered
+        H_linenames = [n+u for n in ['H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.H_lv_up_max)]] # do not set 'Ly' due to Lya forest
+        self.tie_line_fluxes(H_linenames, ['Ha','Hb','Hg','Hd', 'Paa','Pab','Pag','Pad']) # use set alternative line is Ha is not covered
 
-        self.tie_pair('[Ne V]:3347', '[Ne V]:3427')
-        self.tie_pair('[O II]:3727', '[O II]:3730')
-        self.tie_pair('[Ne III]:3969', '[Ne III]:3870')
-        self.tie_pair('[O III]:4960', '[O III]:5008')
-        self.tie_pair('[N I]:5199', '[N I]:5202')
-        self.tie_pair('[O I]:6366', '[O I]:6302')
-        self.tie_pair('[N II]:6550', '[N II]:6585')
-        self.tie_pair('[S II]:6718', '[S II]:6733')
+        self.tie_line_fluxes('[Ne V]:3347', '[Ne V]:3427')
+        self.tie_line_fluxes('[O II]:3727', '[O II]:3730')
+        self.tie_line_fluxes('[Ne III]:3969', '[Ne III]:3870')
+        self.tie_line_fluxes('[O III]:4960', '[O III]:5008')
+        self.tie_line_fluxes('[N I]:5199', '[N I]:5202')
+        self.tie_line_fluxes('[O I]:6366', '[O I]:6302')
+        self.tie_line_fluxes('[N II]:6550', '[N II]:6585')
+        self.tie_line_fluxes('[S II]:6718', '[S II]:6733')
 
         # update mask of free lines and count num_coeffs
         self.update_mask_free()
         # update line ratios with default Av, log_e_den, and log_e_tem
         self.update_lineratio()
 
-    def tie_pair(self, tied_names, ref_names=None, ratio=None, use_pyneb=None):
+    def tie_line_fluxes(self, tied_names=None, ref_names=None, ratio=None, use_pyneb=None):
         # prebuild the tying ratio libraries between tied lines and the reference line (1st valid one if multi given)
+        if not isinstance(ref_names, list): ref_names = [ref_names]
+        if not isinstance(tied_names, list): tied_names = [tied_names]
         if use_pyneb is None: use_pyneb = self.use_pyneb
 
-        if not isinstance(ref_names, list): ref_names = [ref_names]
         ref_valid = False
         for ref_name in ref_names:
             if np.isin(ref_name, self.linename_n):
@@ -678,7 +707,14 @@ class LineFrame(object):
                 ref_valid = self.mask_valid_cn[:, i_ref].any() # if ref_name exists in any one comp
                 if ref_valid: break # pick up the 1st valid ref_name
 
-        if not isinstance(tied_names, list): tied_names = [tied_names]
+        if not ref_valid:
+            if any(~np.isin(ref_names, self.linelist_full)):
+                print_log(f"[WARNING] The reference line(s), {np.array(ref_names)[~np.isin(ref_names, self.linelist_full)]}, are not available. " + 
+                          f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line()", self.log_message)
+            else: 
+                if self.verbose: print_log(f"The reference line(s), {ref_names}, are not covered by the spectrum. {tied_names} will be fit as free line(s).", self.log_message)
+                return # skip the following steps
+
         tied_names_valid = []
         for tied_name in tied_names:
             if np.isin(tied_name, self.linename_n) & (tied_name != ref_name):
@@ -688,12 +724,12 @@ class LineFrame(object):
                     self.linelink_n[i_tied] = ref_name
                     tied_names_valid.append(tied_name)
                     if use_pyneb:
-                        tied_wave, tied_atomdata = self.search_pyneb(tied_name, ret_atomdata=True)[1:]
-                        ref_wave,   ref_atomdata = self.search_pyneb( ref_name, ret_atomdata=True)[1:]
+                        tied_wave, tied_atomlib = self.search_pyneb(tied_name, ret_atomlib=True)[1:]
+                        ref_wave,   ref_atomlib = self.search_pyneb( ref_name, ret_atomlib=True)[1:]
                         log_e_dens = np.linspace(0, 12, 25)
                         log_e_tems = np.linspace(np.log10(5e2), np.log10(3e4), 11)
-                        tied_emi_td = tied_atomdata.getEmissivity(den=10.0**log_e_dens, tem=10.0**log_e_tems, wave=int(tied_wave))
-                        ref_emi_td  =  ref_atomdata.getEmissivity(den=10.0**log_e_dens, tem=10.0**log_e_tems, wave=int( ref_wave))
+                        tied_emi_td = tied_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int(tied_wave))
+                        ref_emi_td  =  ref_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int( ref_wave))
                         ratio_dt = (tied_emi_td / ref_emi_td).T
                         func_ratio_dt = RegularGridInterpolator((log_e_dens, log_e_tems), ratio_dt, method='linear', bounds_error=False)
                         self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
@@ -718,20 +754,27 @@ class LineFrame(object):
                             def func_ratio_dt(pars, ret=tmp): return [ret]
                         self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
 
-        if use_pyneb & self.verbose:
-            if len(tied_names_valid)  > 1: print_log(f"    {tied_names_valid} --> {ref_name}", self.log_message)
-            if len(tied_names_valid) == 1: print_log(f"    {tied_names_valid[0]} --> {ref_name}", self.log_message)
-                
-    def release_pair(self, tied_names):
+        if len(tied_names_valid) > 0:
+            if use_pyneb & self.verbose:
+                if len(tied_names_valid)  > 1: print_log(f"    {tied_names_valid} --> {ref_name}", self.log_message)
+                if len(tied_names_valid) == 1: print_log(f"    {tied_names_valid[0]} --> {ref_name}", self.log_message)
+        else:            
+            if any(~np.isin(tied_names, self.linelist_full)):
+                print_log(f"[WARNING] The reference line(s), {np.array(tied_names)[~np.isin(tied_names, self.linelist_full)]}, are not available. " + 
+                          f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line()", self.log_message)
+            else: 
+                if self.verbose: print_log(f"The reference line(s), {tied_names}, are not covered by the spectrum, which will be fit as free line(s).", self.log_message)
+
+    def untie_line_fluxes(self, tied_names):
         if not isinstance(tied_names, list): tied_names = [tied_names]
         for tied_name in tied_names:
-            if ~np.isin(tied_name, self.linename_n):
-                raise ValueError((f"The tied line '{tied_name}' is not included in the line list."))
-            i_tied = np.where(self.linename_n == tied_name)[0][0]
-            self.linelink_n[i_tied] = 'free'
-            self.linelink_dict.pop(tied_name)
-            if self.verbose:
-                print_log(f"{tied_name} becomes untied.", self.log_message)
+            if np.isin(tied_name, [*self.linelink_dict]):
+                i_tied = np.where(self.linename_n == tied_name)[0][0]
+                self.linelink_n[i_tied] = 'free'
+                self.linelink_dict.pop(tied_name)
+                if self.verbose: print_log(f"{tied_name} becomes untied.", self.log_message)
+            else:
+                if self.verbose: print_log(f"{tied_name} is not tied or nor covered by the spectrum.", self.log_message)
         
     def update_lineratio(self, Av=0, log_e_den=2, log_e_tem=4):
         for tied_name in self.linelink_dict:
