@@ -1,8 +1,7 @@
 # List of all parameters of S<sup>3</sup>Fit
 
 > [!NOTE]
-> 'Parameters' here means the input arguments of `FitFrame` (the main framework of S<sup>3</sup>Fit).
-> Please do not be confused with the non-linear fitting 'parameters' of models discussed in  [fitting strategy](./fitting_strategy.md).
+> 'Parameters' here means the input arguments of `FitFrame` (the main framework of S<sup>3</sup>Fit). Please do not be confused with the non-linear fitting 'parameters' of models discussed in  [fitting strategy](./fitting_strategy.md). Please follow the [manual](./basic_usage.md) for the usage of S<sup>3</sup>Fit.
 
 > [!NOTE]
 > This page is for S<sup>3</sup>Fit **v2.3**. S<sup>3</sup>Fit is under active development. Please double-check the manuals archived in the GitHub release for a specific version if you encounter any discrepancies.
@@ -19,11 +18,12 @@
 - `spec_flux_scale` (float, optional) \
    Scaling ratio of the input flux (e.g., `spec_flux_scale=1e-15`) to avoid too small values of flux in the fitting. 
   `spec_flux_scale` is not mandatory and it can be determined automatically if setting `spec_flux_scale=None` (default). 
-- `keep_invalid` (bool, optional) \
+- `if_keep_invalid` (bool, optional) \
    Whether to keep the invalid wavelength range in the fitting. 
-   If `keep_invalid=True`, mock data and models will be created in the invalid range for a reference with the costs of longer running time.
+   If `if_keep_invalid=True`, mock data and models will be created in the invalid range for a reference with the costs of longer running time.
    The parameter also works for the input photometric data. 
    Default is `False`. 
+   
 ### Input photometric data
 - `phot_name_b` (list or numpy array of strings, required for simultaneous spectrum+SED fitting) \
    List of band names of the input photometric data, e.g., `phot_name_b=['SDSS_gp','2MASS_J','WISE_1']`. The names should be the same as the filenames of the transmission curves in each band, e.g., `'SDSS_gp.dat'`. 
@@ -46,8 +46,8 @@
 ### Connection between spectral and photometric data
 - `phot_calib_b` (list or numpy array of strings, optional) \
    List of band names of photometric data that is used for flux calibration of spectrum (e.g., to correct for aperture loss of the input spectrum). For example, if 'SDSS_rp' and 'SDSS_ip' bands are covered by the spectrum, you can set `phot_calib_b=['SDSS_rp','SDSS_ip']` and S<sup>3</sup>Fit will scale the input `spec_flux_w` and `spec_ferr_w` with `phot_flux_b` in the two bands. Set `phot_calib_b=None` (default) if the calibration is not required. 
-- `inst_calib_ratio` (float, optional) and `inst_calib_ratio_rev` (bool, optional) \
-   Initial ratio to estimate the calibration uncertainties across multiple instruments.  Default is `0.1`, i.e., the calibration erros are estimated as 10% of the corresponding fluxes. If `inst_calib_ratio_rev=True` (Default), the ratio will be iteratively refreshed in the fitting process (please refer to [fitting strategy](./fitting_strategy.md) for details).
+- `inst_calib_ratio` (float, optional) and `if_rev_inst_calib_ratio` (bool, optional) \
+   Initial ratio to estimate the calibration uncertainties across multiple instruments.  Default is `0.1`, i.e., the calibration erros are estimated as 10% of the corresponding fluxes. If `if_rev_inst_calib_ratio=True` (Default), the ratio will be iteratively refreshed in the fitting process (please refer to [fitting strategy](./fitting_strategy.md) for details).
 - `inst_calib_smooth` (float, optional) \
    The convolving width (in velocity, km/s) to smooth the original observed spectrum in calculation of revised errors (i.e., to reflect calibration errors). The convolution is adopted to avoid involving artifacts into Monte Carlo mock spectra surrounding bright lines. Default is `10000` (km/s). Set it to `0` if you want to disable the convolution. 
    
@@ -66,27 +66,27 @@
 ### Monte Carlo simulation
 - `num_mocks` (int, optional) \
    Number of the mock spectra for the Monte Carlo method.  The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
-- `use_multi_thread` (bool, optional) and `num_multi_thread` (int, optional) \
-   If `use_multi_thread=True` (default `False`), S<sup>3</sup>Fit with run the fitting for mock data in multithreading with threads number specified by `num_multi_thread` (default `-1`, i.e., using all available system threads). 
+- `if_use_multi_thread` (bool, optional) and `num_multi_thread` (int, optional) \
+   If `if_use_multi_thread=True` (default `False`), S<sup>3</sup>Fit with run the fitting for mock data in multithreading with threads number specified by `num_multi_thread` (default `-1`, i.e., using all available system threads). 
    
 ### Basic fitting control
 - `fit_grid` (string, optional) \
    Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, or `fit_grid='log'` to run the fitting in logarithmic flux grid. Note that if `line` model is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`. (please refer to [fitting strategy](./fitting_strategy.md) for details). 
-- `examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
-   If `examine_result=True` (default), the best-fit models will be examined. All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled. An additional fitting step will be performed with the updated model configuration (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)). 
-   If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
+- `if_examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
+   If `if_examine_result=True` (default), the best-fit models will be examined. All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled. An additional fitting step will be performed with the updated model configuration (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)). 
+   If `if_examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
 -  `accept_absorption_SN` (float, optional) \
-   Acceptable minimum peak S/N of absorption line component(s). Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled. The default value is the same as `accept_model_SN`. Note that the examinations of absorption lines is always performed even though `examine_result=False`.
+   Acceptable minimum peak S/N of absorption line component(s). Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled. The default value is the same as `accept_model_SN`. Note that the examinations of absorption lines is always performed even though `if_examine_result=False`.
    
 ### Detailed fitting quality control
 - `accept_chi_sq` (float, optional) \
    The accepted $\chi_\nu^2$ in the initial and intermediate fitting steps. Default is `3`. The accepted $\chi_\nu^2$ in the final fitting step will be dynamically chosen with $\chi_\nu^2$ of the progenitor steps. 
 - `nlfit_ntry_max` (int, optional) \
    Maximum number of tries of non-linear fitting process ([fitting strategy](./fitting_strategy.md)) to achieve the accepted $\chi_\nu^2$. Default is `3`.
-- `init_annealing` (bool, optional) \
+- `if_run_init_annealing` (bool, optional) \
    Whether to perform Dual Annealing optimization to search for rough global minima in the initial and the 1st fitting steps ([fitting strategy](./fitting_strategy.md)). Default is `True`. 
 - `da_niter_max` (int, optional) \
-   Maximum number of iterations of the Dual Annealing optimization. Default is `10`. Since the purpose of the Dual Annealing optimization is to find a proper initial guess for the Non-linear Least-square optimization, a small number of `da_niter_max` already works well. You may examine the results of the Dual Annealing optimization by setting `plot_step=True`. 
+   Maximum number of iterations of the Dual Annealing optimization. Default is `10`. Since the purpose of the Dual Annealing optimization is to find a proper initial guess for the Non-linear Least-square optimization, a small number of `da_niter_max` already works well. You may examine the results of the Dual Annealing optimization by setting `if_plot_step=True`. 
 - `perturb_scale` (float, optional) \
    Perturbation scaling factor for the transferred parameters.  Default is `0.02`, i.e., an array of Gaussian noise with the sigma of 2% of the boundaries of parameters will be added to the transferred parameters (please refer to [fitting strategy](./fitting_strategy.md) for details). 
 - `nllsq_ftol_ratio` (float, optional) \
@@ -96,13 +96,13 @@
    Default is `5`, i.e., the convolution will be performed with kernel widths at 5 evenly-spaced wavelengths. The convolved spectrum at wavelengths between the 5 selected wavelengths will be interpolated linearly using the spectra convolved with the kernel at the two neighboring selected wavelengths.  A small number of `conv_nbin_max` works well for a smooth function of wavelength-dependent resolution. Increasing the number will slow down the fitting process significantly.
 
 ### Auxiliary
-- `print_step` (bool, optional) \
+- `if_print_step` (bool, optional) \
    Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`.
-- `plot_step` (bool, optional) \
+- `if_plot_step` (bool, optional) \
    Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. 
 - `canvas` (tuple, optional) \
    Matplotlib window with a format of `canvas=(fig,axs)` to display each intermediate step dynamically. Please read the [Jupyter Notebook example](../examples/example_galaxy.ipynb) in the [example directory](../examples) for a reference of the usage. 
 - `verbose` (bool, optional) \
    Whether or not to print the running information of the Linear and Non-linear Least-square solvers. Default is `False`.
-- `save_per_loop` (bool, optional) and `output_filename` (string, optional)\
-   If `save_per_loop` is set to `True`, the fitting results will be saved per Monte Carlo mock fitting loop to the file with path specified in `output_filename`. 
+- `if_save_per_loop` (bool, optional) and `output_filename` (string, optional)\
+   If `if_save_per_loop` is set to `True`, the fitting results will be saved per Monte Carlo mock fitting loop to the file with path specified in `output_filename`. 

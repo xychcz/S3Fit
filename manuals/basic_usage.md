@@ -16,8 +16,8 @@ from s3fit import FitFrame
 FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_w=None, spec_valid_range=None, 
               phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_trans_dir=None, phot_flux_unit='mJy', 
               v0_redshift=None, model_config=None, 
-              num_mocks=0, fit_grid='linear', examine_result=True, 
-              print_step=True, plot_step=False)
+              num_mocks=0, fit_grid='linear', if_examine_result=True, 
+              if_print_step=True, if_plot_step=False)
 ```
 #### 1.1 Input spectroscopic data
 - `spec_wave_w` (list or numpy array of floats, <ins>**required**</ins>) \
@@ -52,15 +52,15 @@ FF = FitFrame(spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, spec_R_inst_
    Number of the mock spectra for the Monte Carlo method. The mock spectra are used to estimate the uncertainty of best-fit results. Default is `0`, i.e., only the original data will be fit.
 - `fit_grid` (string, optional) \
    Set `fit_grid='linear'` (default) to run the fitting in linear flux grid, or `fit_grid='log'` to run the fitting in logarithmic flux grid. Note that if `line` model is the only fitting model (e.g., for the fitting of continuum-subtracted spectrum), `fit_grid` is always set to `'linear'`. (please refer to [fitting strategy](./fitting_strategy.md) for details).
-- `examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
-   If `examine_result=True` (default), the best-fit models will be examined. All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled. An additional fitting step will be performed with the updated model configuration (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)). 
-   If `examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
+- `if_examine_result` (bool, optional) and `accept_model_SN` (float, optional) \
+   If `if_examine_result=True` (default), the best-fit models will be examined. All continuum models and line components with peak S/N < `accept_model_SN` (default: 2) will be automatically disabled. An additional fitting step will be performed with the updated model configuration (i.e., the 2nd fitting steps in [fitting strategy](./fitting_strategy.md)). 
+   If `if_examine_result=False`, the model examinations (except for absorption lines, if included in line configuration) and updated fitting step will be skipped.
 -  `accept_absorption_SN` (float, optional) \
-   Acceptable minimum peak S/N of absorption line component(s). Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled. The default value is the same as `accept_model_SN`. Note that the examinations of absorption lines is always performed even though `examine_result=False`.
+   Acceptable minimum peak S/N of absorption line component(s). Any absorption line component(s) with peak S/N < `accept_absorption_SN` will be automatically disabled. The default value is the same as `accept_model_SN`. Note that the examinations of absorption lines is always performed even though `if_examine_result=False`.
 #### 1.5 Auxiliary
-- `print_step` (bool, optional) \
+- `if_print_step` (bool, optional) \
    Whether or not to print the information each intermediate step (e.g., the examination of each model component). Default is `True`.
-- `plot_step` (bool, optional) \
+- `if_plot_step` (bool, optional) \
    Whether or not to plot the best-fit model spectra and fitting residuals in each intermediate step. Default is `False`. 
    
 > [!NOTE]
@@ -441,7 +441,7 @@ After finishing the configuration of all models, run the fitting with the follow
 ```python
 FF.main_fit()
 ```
-The followng figures denote cases if you would like to check each fitting step by setting `plot_step=True`.
+The followng figures denote cases if you would like to check each fitting step by setting `if_plot_step=True`.
 You can choose to list figures in each step (left) or show them dynamically in a given window (right) by specifying the `canvas`. 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/de2aaa34-ccdc-419a-ba7d-80660854d012" width="48%" />
