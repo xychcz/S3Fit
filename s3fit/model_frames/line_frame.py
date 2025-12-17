@@ -774,7 +774,7 @@ class LineFrame(object):
 
     ##################
 
-    def single_line(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, sign='emission', profile=None):
+    def single_line(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
         if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
         if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
 
@@ -803,9 +803,6 @@ class LineFrame(object):
         else:
             raise ValueError((f"Please specify one of the line profiles: Gaussian, Lorentzian, or Exponential."))
 
-        # if model.sum() <= 0: model[0] = 1e-10 # avoid error from full zero output in case line is not covered
-        if sign == 'absorption': model *= -1 # set negative profile for absorption line
-
         return model * flux
 
     def models_single_comp(self, obs_wave_w, par_p, par_index_p, list_valid, list_free, sign, profile):
@@ -821,14 +818,23 @@ class LineFrame(object):
         models_scomp = []
         for i_free in list_free:
             model_sline = self.single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
-                                           1, self.v0_redshift, self.R_inst_rw, sign, profile) # flux=1
+                                           1, self.v0_redshift, self.R_inst_rw, profile) # flux=1
             list_linked = np.where(self.linelink_n == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
                 model_sline += self.single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
-                                                self.lineratio_n[i_linked], self.v0_redshift, self.R_inst_rw, sign, profile)
+                                                self.lineratio_n[i_linked], self.v0_redshift, self.R_inst_rw, profile)
+            # detect and exclude weak lines
+            int_flux_list = [1] + [self.lineratio_n[i_linked] for i_linked in list_linked]
+            peak_flux_min = min(int_flux_list) / (fwhm / np.sqrt(np.log(256)) * np.sqrt(2*np.pi)) 
+            if not any(model_sline > (peak_flux_min * 0.5)): model_sline *= 0 # require to cover half peak height
+            
             models_scomp.append(model_sline)
-        return np.array(models_scomp)
+
+        models_scomp = np.array(models_scomp)
+        if sign == 'absorption': models_scomp *= -1 # set negative profile for absorption line
+
+        return models_scomp
     
     def models_unitnorm_obsframe(self, obs_wave_w, input_pars, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
@@ -837,16 +843,17 @@ class LineFrame(object):
         else:
             par_cp = copy(input_pars)
 
+        obs_flux_mcomp_ew = None
         for i_comp in range(self.num_comps):
             list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
             list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
-            obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp[i_comp], self.cframe.par_index_cp[i_comp], list_valid, list_free, 
-                                                        self.cframe.info_c[i_comp]['sign'], self.cframe.info_c[i_comp]['profile'])
-
-            if i_comp == 0: 
-                obs_flux_mcomp_ew = obs_flux_scomp_ew
-            else:
-                obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+            if len(list_free) >= 1:
+                obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp[i_comp], self.cframe.par_index_cp[i_comp], list_valid, list_free, 
+                                                            self.cframe.info_c[i_comp]['sign'], self.cframe.info_c[i_comp]['profile'])
+                if obs_flux_mcomp_ew is None: 
+                    obs_flux_mcomp_ew = obs_flux_scomp_ew
+                else:
+                    obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
 
         if mask_lite_e is not None:
             obs_flux_mcomp_ew = obs_flux_mcomp_ew[mask_lite_e,:]
