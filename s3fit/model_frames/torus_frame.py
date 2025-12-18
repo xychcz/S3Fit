@@ -12,7 +12,7 @@ import astropy.constants as const
 from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliary_func import print_log
+from ..auxiliaries.auxiliary_functions import print_log
 
 class TorusFrame(object): 
     def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, 

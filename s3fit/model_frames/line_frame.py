@@ -8,8 +8,8 @@ np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliary_func import print_log, lamb_air_to_vac, convolve_fix_width_fft
-from ..extinct_law import ExtLaw
+from ..auxiliaries.auxiliary_functions import print_log, lamb_air_to_vac, convolve_fix_width_fft
+from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
     def __init__(self, use_pyneb=False, cframe=None, fframe=None, v0_redshift=0, R_inst_rw=None, 

@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 include-package-data = true
-
 [tool.setuptools.packages.find]
-include = ["s3fit", "s3fit.model_frames"]
-
+include = ["s3fit", "s3fit.model_frames", "s3fit.auxiliaries"]
+[tool.setuptools.package-data]
+s3fit = ["auxiliaries/*"]
 [tool.setuptools_scm]
 # version_scheme = "release-branch-semver"
 # version_scheme = "no-guess-dev"

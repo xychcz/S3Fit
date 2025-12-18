@@ -12,8 +12,8 @@ import astropy.constants as const
 from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 
-from ..auxiliary_func import print_log, convolve_var_width_fft
-from ..extinct_law import ExtLaw
+from ..auxiliaries.auxiliary_functions import print_log, convolve_var_width_fft
+from ..auxiliaries.extinct_laws import ExtLaw
 
 # alternative component names
 powerlaw_names = ['powerlaw', 'pl', 'Powerlaw', 'PL']

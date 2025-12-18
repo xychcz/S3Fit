@@ -36,12 +36,12 @@
 > S<sup>3</sup>Fit will run in a pure-spectral fitting mode if these parameters are set to `None` (default). 
 - `phot_fluxunit` (string, optional) \
    Flux unit of `phot_flux_b` and `phot_ferr_b`, can be `'mJy'` (default) and `'erg/s/cm2/AA'`. S<sup>3</sup>Fit run with $f_\lambda$ and it can handle the conversion automatically if the input flux is in $f_\nu$. 
-- `phot_trans_rsmp` (int, optional) \
-   Minimum number of data points to resample the transmission curves within their FWHM. Default is 10, i.e., at least 10 data points will be used to resample all of the transmission curves in the ranges with half of their maximum transmission values. 
 - `sed_wave_w` (list or numpy array of floats, optional) and `sed_waveunit` (string, optional) \
-   Wavelength array and its unit of the full SED wavelength range, which are used to create the model spectra and convert them to fluxes in each band. `sed_waveunit` can be `'angstrom'` (default) and `'micron'`; if set to `'micron'`, the wavelengths will be converted to angstrom before the fitting.  Note that `sed_wave_w` is not mandatory. S<sup>3</sup>Fit can create the wavelength array to cover all of the transmission curves of the used bands with either of the following two parameters:
+   Wavelength array and its unit of the full SED wavelength range, which are used to create the model spectra and convert them to fluxes in each band. `sed_waveunit` can be `'angstrom'` (default) and `'micron'`; if set to `'micron'`, the wavelengths will be converted to angstrom before the fitting.  Note that `sed_wave_w` is not mandatory. S<sup>3</sup>Fit can create the wavelength array to cover all of the transmission curves of the used bands with either of `sed_wave_num` or `phot_trans_rsmp`. 
 - `sed_wave_num` (int, optional) \
-   Length of `sed_wave_w`. `sed_wave_w` will be spaced evenly on a log scale. 
+   Length of `sed_wave_w`. `sed_wave_w` will be spaced evenly on a log scale. Default is `None`, i.e., not used. 
+- `phot_trans_rsmp` (int, optional) \
+   Minimum number of data points to resample the transmission curves within their FWHM. Default is `10`, i.e., at least 10 data points will be used to resample all of the transmission curves in the ranges with half of their maximum transmission values. 
 
 ### Connection between spectral and photometric data
 - `phot_calib_b` (list or numpy array of strings, optional) \
@@ -52,10 +52,12 @@
    The convolving width (in velocity, km/s) to smooth the original observed spectrum in calculation of revised errors (i.e., to reflect calibration errors). The convolution is adopted to avoid involving artifacts into Monte Carlo mock spectra surrounding bright lines. Default is `10000` (km/s). Set it to `0` if you want to disable the convolution. 
    
 ### Model setup 
-- `v0_redshift` (float, <ins>**required**</ins>) \
-   Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
 - `model_config` (nested dictionary, <ins>**required**</ins>) \
    Dictionary of model configurations. Please refer to the [model configuration](../manuals/basic_usage.md#2-model-configuration) section in the manual of [basic usage](../manuals/basic_usage.md) for details. 
+- `v0_redshift` (float, <ins>**required**</ins>) \
+   Initial guess of the systemic redshift. The velocity shifts of all models are in relative to the input `v0_redshift`. 
+- `if_rev_v0_redshift` (bool, optional) and `rev_v0_reference` (string, optional)\
+   If `if_rev_v0_redshift=True`, S<sup>3</sup>Fit will update the systemic redshift using the input  `v0_redshift` and the reference model and component specified with `rev_v0_reference='model:component'`. For example, if `rev_v0_reference='line:narrow'`, the new systemic redshift will be estimated based on the shifted velocity (i.e., the central wavelength) of the 'narrow' component of 'line' model. Default is `if_rev_v0_redshift=False`. 
 - `norm_wave` and `norm_width` (float, optional) \
    Wavelength and width (in angstrom) used to normalize continuum models. Default values are `5500` and `25` angstrom, respectively. 
 - `model_R_ratio` (float, optional) \

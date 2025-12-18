@@ -13,8 +13,8 @@ from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-from ..auxiliary_func import print_log, convolve_fix_width_fft, convolve_var_width_fft
-from ..extinct_law import ExtLaw
+from ..auxiliaries.auxiliary_functions import print_log, convolve_fix_width_fft, convolve_var_width_fft
+from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
     def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, R_inst_rw=None, 

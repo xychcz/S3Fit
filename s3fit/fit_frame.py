@@ -11,10 +11,7 @@ from scipy.optimize import lsq_linear, least_squares, dual_annealing
 from scipy.signal import savgol_filter
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
-
-from .config_frame import ConfigFrame
-from .phot_frame import PhotFrame
-from .auxiliary_func import print_log, center_string, convolve_var_width_fft
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 from pathlib import Path
 from importlib.metadata import version as pkg_version, PackageNotFoundError
@@ -30,21 +27,23 @@ else:
     __version__ = "2.3.0+local" 
     ##################################
 
+from .auxiliaries.auxiliary_frames import ConfigFrame, PhotFrame
+from .auxiliaries.auxiliary_functions import print_log, center_string, convolve_var_width_fft
+
 class FitFrame(object):
     def __init__(self, 
                  # spectral data
                  spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
                  spec_R_inst_w=None, spec_valid_range=None, spec_flux_scale=None, 
                  # photometirc data
-                 phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', 
-                 phot_trans_dir=None, phot_trans_rsmp=10, 
-                 sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, 
+                 phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
+                 sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, phot_trans_rsmp=10, 
                  # connection between spectral and photometric data
                  phot_calib_b=None, inst_calib_ratio=0.1, if_rev_inst_calib_ratio=True, inst_calib_smooth=1e4, 
                  if_keep_invalid=False, 
                  # model setup
                  model_config=None, norm_wave=5500, norm_width=25, model_R_ratio=2, 
-                 v0_redshift=None, if_rev_v0_redshift=False, v0_reference=None, 
+                 v0_redshift=None, if_rev_v0_redshift=False, rev_v0_reference=None, 
                  # mock setup
                  num_mocks=0, if_use_multi_thread=False, num_multi_thread=-1, 
                  # basic fitting control
@@ -53,7 +52,7 @@ class FitFrame(object):
                  accept_chi_sq=3, nlfit_ntry_max=3, nllsq_ftol_ratio=0.01, conv_nbin_max=5, 
                  if_run_init_annealing=True, da_niter_max=10, perturb_scale=0.02, 
                  # auxiliary
-                 if_print_step=True, if_plot_step=False, canvas=None, 
+                 if_print_step=True, if_plot_step=False, if_plot_icon=True, canvas=None, 
                  if_save_per_loop=False, output_filename=None, 
                  if_save_test=False, verbose=False, **kwargs): 
 
@@ -94,10 +93,11 @@ class FitFrame(object):
         self.phot_ferr_b = np.array(phot_ferr_b) if phot_ferr_b is not None else None
         self.phot_flux_unit = phot_flux_unit
         self.phot_trans_dir = phot_trans_dir
-        self.phot_trans_rsmp = phot_trans_rsmp
+        # generate wavelength grid to convolve spectra within each filter
         self.sed_wave_w = np.array(sed_wave_w) if sed_wave_w is not None else None
         self.sed_wave_unit = sed_wave_unit
         self.sed_wave_num = sed_wave_num
+        self.phot_trans_rsmp = phot_trans_rsmp
 
         # connection between spectral and photometric data
         self.phot_calib_b = np.array(phot_calib_b) if phot_calib_b is not None else None
@@ -120,7 +120,7 @@ class FitFrame(object):
         # set initial guess of systemic redshift, all velocity shifts are in relative to v0_redshift
         self.v0_redshift = v0_redshift
         self.if_rev_v0_redshift = if_rev_v0_redshift
-        self.v0_reference = v0_reference
+        self.rev_v0_reference = rev_v0_reference
 
         # number of mock data
         self.num_mocks = num_mocks
@@ -165,6 +165,7 @@ class FitFrame(object):
         # whether to output intermediate results
         self.if_print_step = if_print_step # if display in stdout
         self.if_plot_step = if_plot_step # if display in matplotlib window
+        self.if_plot_icon = if_plot_icon # if display icon in step plots
         self.canvas = canvas # canvas=(fig,ax), to display plots dynamically
         self.if_save_per_loop = if_save_per_loop
         self.output_filename = output_filename
@@ -323,7 +324,11 @@ class FitFrame(object):
                 print_log(f'[Note] The input spectrum is calibrated with photometric fluxes in the bands: {self.phot_calib_b}.', self.log_message, verbose)
                 print_log(f'[Note] The calibration ratio for spectrum is {self.spec_calib_ratio}.', self.log_message, verbose)
 
-        self.input_initialized = True # used to mark if input data is modified in following steps
+        self.if_input_modified = False # used to mark if input data is modified in following steps
+        self.archived_input = {'spec': copy(self.spec)} # archive the original input data
+        if self.have_phot: 
+            self.archived_input['phot'] = copy(self.phot)
+            self.archived_input['sed']  = copy(self.sed)
 
     def load_models(self):
         # models init setup
@@ -447,6 +452,7 @@ class FitFrame(object):
             self.spec['mask_noline_w'] = self.spec['mask_valid_w'] & (~mask_line_w)
         else:
             self.spec['mask_noline_w'] = copy(self.spec['mask_valid_w'])
+        self.archived_input['spec']['mask_noline_w'] = copy(self.spec['mask_noline_w'])
 
         # check old mod name, 'ssp' and 'el', in tying relations to be compatible with old version <= 2.2.4
         for mod in [*self.model_dict]:
@@ -464,15 +470,15 @@ class FitFrame(object):
             if mod == 'line'   : self.model_dict['el']  = self.model_dict['line']
 
         if self.if_rev_v0_redshift:
-            print_log(f"The systemic redshift (v0_redshift) will be updated using the model and component: '{self.v0_reference}'.", self.log_message)
-            if self.v0_reference is None:
-                raise ValueError((f"Please input the reference of systemic redshift, e.g., v0_reference='model:component'; otherwise set if_rev_v0_redshift=False."))
-            elif len(self.v0_reference.split(':')) != 2:
-                raise ValueError((f"Please correct for the reference of systemic redshift with the format, v0_reference='model:component'."))
-            elif ~np.isin(self.v0_reference.split(':')[0], [*self.model_dict]):
-                raise ValueError((f"The reference model of systemic redshift, '{self.v0_reference.split(':')[0]}', is not available in the imported models: {[*self.model_dict]}."))
-            elif ~np.isin(self.v0_reference.split(':')[1], self.model_dict[self.v0_reference.split(':')[0]]['cframe'].comp_c):
-                raise ValueError((f"The reference component of systemic redshift, '{self.v0_reference.split(':')[1]}', is not available in the model: '{self.v0_reference.split(':')[0]}'."))
+            print_log(f"The systemic redshift (v0_redshift) will be updated using the model and component: '{self.rev_v0_reference}'.", self.log_message)
+            if self.rev_v0_reference is None:
+                raise ValueError((f"Please input the reference of systemic redshift, e.g., rev_v0_reference='model:component'; otherwise set if_rev_v0_redshift=False."))
+            elif len(self.rev_v0_reference.split(':')) != 2:
+                raise ValueError((f"Please correct for the reference of systemic redshift with the format, rev_v0_reference='model:component'."))
+            elif ~np.isin(self.rev_v0_reference.split(':')[0], [*self.model_dict]):
+                raise ValueError((f"The reference model of systemic redshift, '{self.rev_v0_reference.split(':')[0]}', is not available in the imported models: {[*self.model_dict]}."))
+            elif ~np.isin(self.rev_v0_reference.split(':')[1], self.model_dict[self.rev_v0_reference.split(':')[0]]['cframe'].comp_c):
+                raise ValueError((f"The reference component of systemic redshift, '{self.rev_v0_reference.split(':')[1]}', is not available in the model: '{self.rev_v0_reference.split(':')[0]}'."))
 
     def init_par_constraints(self):
         self.mod_name_p  = np.array([])
@@ -1502,16 +1508,22 @@ class FitFrame(object):
     def main_fit(self, refit=False):
         self.time_init = time.time()
 
-        if not self.input_initialized: 
-            print_log(f'\n', self.log_message, display=False)
-            print_log(f'[Note] Re-initialize FitFrame since the input data is modified.', self.log_message)
-            output_s = self.output_s # save the current fitting results
-            log_message = self.log_message # save the current running message
-            current_canvas = self.canvas # save the current canvas
-            self.__init__(**self.input_args) # reset FitFrame if data is modified (e.g., in extract_results)
-            self.output_s = output_s # copy the current fitting results
-            self.log_message = log_message + ['\n'] + self.log_message + ['\n'] # copy the current running message
-            self.canvas = current_canvas # transfer the current canvas
+        if self.if_input_modified: 
+            # restore the original input data
+            self.spec = copy(self.archived_input['spec'])
+            if self.have_phot: 
+                self.phot = copy(self.archived_input['phot'])
+                self.sed  = copy(self.archived_input['sed'])
+            self.if_input_modified = False
+            # print_log(f'\n', self.log_message, display=False)
+            # print_log(f'[Note] Re-initialize FitFrame since the input data is modified.', self.log_message)
+            # output_s = self.output_s # save the current fitting results
+            # log_message = self.log_message # save the current running message
+            # current_canvas = self.canvas # save the current canvas
+            # self.__init__(**self.input_args) # reset FitFrame if data is modified (e.g., in extract_results)
+            # self.output_s = output_s # copy the current fitting results
+            # self.log_message = log_message + ['\n'] + self.log_message + ['\n'] # copy the current running message
+            # self.canvas = current_canvas # transfer the current canvas
 
         # restore the fitting status if it is reloaded
         step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
@@ -1580,17 +1592,22 @@ class FitFrame(object):
         best_coeff_le   = copy(self.output_s[step]['coeff_le'])
         best_ret_dict_l = self.output_s[step]['ret_dict_l']
 
-        if not self.input_initialized: 
-            print_log(f'\n[Note] Re-initialize input data before extracting results.', self.log_message, display=False)
-            self.init_input_data(verbose=False) # reset input if data is modified (e.g., in extract_results)
+        if self.if_input_modified: 
+            # restore the original input data
+            self.spec = copy(self.archived_input['spec'])
+            if self.have_phot: 
+                self.phot = copy(self.archived_input['phot'])
+                self.sed  = copy(self.archived_input['sed'])
+            self.if_input_modified = False
+            # print_log(f'\n[Note] Re-initialize input data before extracting results.', self.log_message, display=False)
+            # self.init_input_data(verbose=False) # reset input if data is modified (e.g., in extract_results)
 
         spec_wave_w = self.spec['wave_w']
         if self.have_phot: 
             if num_sed_wave is not None:
-                self.sed['wave_running_w'] = copy(self.sed['wave_w'])
-                self.sed['wave_w'] = np.logspace(np.log10(self.sed['wave_w'].min()), 
-                                                 np.log10(self.sed['wave_w'].max()), num=num_sed_wave)
-                self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
+                # re-generate wavelength grid to output better sed
+                self.sed['wave_w'] = np.logspace(np.log10(self.sed['wave_w'].min()), np.log10(self.sed['wave_w'].max()), num=num_sed_wave)
+                self.if_input_modified = True
             sed_wave_w = self.sed['wave_w']
             phot_trans_bw = self.pframe.read_transmission(name_b=self.phot_name_b, trans_dir=self.phot_trans_dir, wave_w=sed_wave_w)[1]
 
@@ -1606,8 +1623,8 @@ class FitFrame(object):
 
         if if_rev_v0_redshift:
             mask_v0_p  = self.par_name_p  == 'voff'
-            mask_v0_p &= self.mod_name_p  == self.v0_reference.split(':')[0]
-            mask_v0_p &= self.comp_name_p == self.v0_reference.split(':')[1]
+            mask_v0_p &= self.mod_name_p  == self.rev_v0_reference.split(':')[0]
+            mask_v0_p &= self.comp_name_p == self.rev_v0_reference.split(':')[1]
             if sum(mask_v0_p) == 1:
                 # get the updated systemic redshift
                 self.ref_voff_l = best_par_lp[:, mask_v0_p][:,0] # [:,0] is required to keep _l
@@ -1622,11 +1639,11 @@ class FitFrame(object):
                     self.model_dict[mod]['spec_mod'].v0_redshift = self.rev_v0_redshift
                     if self.have_phot: self.model_dict[mod]['sed_mod'].v0_redshift = self.rev_v0_redshift
                 print_log(f"The systemic redshift (v0_redshift) is updated to {self.rev_v0_redshift:.6f}+/-{self.rev_v0_redshift_std:.6f} (from the input {self.v0_redshift}) " + 
-                          f"referring to the model and component: '{self.v0_reference}'.", self.log_message)
+                          f"referring to the model and component: '{self.rev_v0_reference}'.", self.log_message)
                 print_log(f"The related best-fit results (e.g., shifted velocities) are also updated.", self.log_message)
             else:
                 self.rev_v0_redshift = None
-                print_log(f"[WARNING] The specified reference component of systemic redshift, '{self.v0_reference}', is not available. The redshift is skipped.", self.log_message)
+                print_log(f"[WARNING] The specified reference component of systemic redshift, '{self.rev_v0_reference}', is not available. The redshift is skipped.", self.log_message)
         else:
             self.rev_v0_redshift = None
             # recover un-updated v0_redshift, if it is changed, in each model frame
@@ -1736,7 +1753,7 @@ class FitFrame(object):
             if self.have_phot:
                 self.phot['flux_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
                 self.phot['ferr_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
-            self.input_initialized = False # set to re-initialize input data in next call of main_fit or extract_results
+            self.if_input_modified = True
 
         # calculate average spectra
         for mod in rev_model_type.split('+'): 
@@ -1772,6 +1789,8 @@ class FitFrame(object):
 
         self.output_mc = output_mc
         if if_return_results: return output_mc
+
+    ##########################################################################
 
     def plot_canvas(self, flux_w, model_w, ferr_w, mask_w, fit_phot, fit_message, chi_sq, i_loop):
         if self.canvas is None:
@@ -1819,14 +1838,25 @@ class FitFrame(object):
 
         ax1.legend(ncol=2); ax2.legend(ncol=3, loc="lower right")
         ax1.set_ylim(flux_w[mask_w].min()-0.05*(flux_w[mask_w].max()-flux_w[mask_w].min()), flux_w[mask_w].max()*1.05)
-        # ax2.set_ylim(-np.percentile(ferr_w[mask_w], 95)*1.1, np.percentile(ferr_w[mask_w], 95)*1.1)
         tmp_ylim = np.percentile(np.abs(flux_w-model_w)[mask_w], 90) * 1.5
         ax2.set_ylim(-tmp_ylim, tmp_ylim)
-        ax1.set_xticks([]); ax2.set_xlabel(r'Wavelength ($\AA$)')
+        ax1.set_xticks([]); ax2.set_xlabel(r'Wavelength ($\AA$)', labelpad=0)
         ax1.set_ylabel('Flux ('+str(self.spec_flux_scale)+r' $erg/s/cm2/\AA$)'); ax2.set_ylabel('Res.')
         title = fit_message + r' ($\chi^2_{\nu}$ = ' + f'{chi_sq:.3f}, '
         title += f'loop {i_loop+1}/{self.num_loops}, ' + ('original data)' if i_loop == 0 else 'mock data)')
         ax1.set_title(title)
+
+        # attach SEFI cat
+        if self.if_plot_icon:
+            icon_dir = str(Path(__file__).parent)+'/auxiliaries/'
+            icon_file = icon_dir + ('icon_s3fit.dat' if fit_phot else 'icon_s1fit.dat')
+            icon = plt.imread(icon_file)
+            zoom = min(0.02 * fig.get_figheight(), 0.1)
+            abox = AnnotationBbox(OffsetImage(icon, zoom=zoom), (1, -1/fig.get_figheight()), xycoords="axes fraction", box_alignment=(0.5, 0.5), frameon=False)
+            ax2.add_artist(abox)
+
         if self.canvas is not None:
             fig.canvas.draw(); fig.canvas.flush_events() # refresh plot in the given window
-        plt.pause(0.1)  # forces immediate update
+        plt.pause(0.0001)  # forces immediate update
+
+
