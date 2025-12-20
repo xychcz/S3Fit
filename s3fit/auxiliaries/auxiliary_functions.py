@@ -47,7 +47,7 @@ def roman_to_int(roman_num):
 greek_letters = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta',
                  'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'pi', 'rho',
                  'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega']
-                 
+
 #####################################################################
 #####################################################################
 
@@ -298,7 +298,7 @@ def convolve_var_width_csr(wave_w, flux_mw, R_inst_w=None,
 
     # convert sparse matrix to dense for interpolation
     interp_func = interp1d(wave_w[mask_select_w], conv_matrix_ww.toarray()[mask_select_w, :], 
-                           axis=0, kind='linear', fill_value="extrapolate")
+                           axis=0, kind='linear', fill_value='extrapolate')
     # interpolate to the full wave grid and convert back to Compressed Sparse Row
     conv_matrix_ww = sparse.csr_matrix(interp_func(wave_w)) 
     # perform sparse matrix multiplication

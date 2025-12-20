@@ -8,7 +8,7 @@ np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliaries.auxiliary_functions import print_log, greek_letters, roman_to_int, lamb_air_to_vac, convolve_fix_width_fft
+from ..auxiliaries.auxiliary_functions import print_log, greek_letters, roman_to_int, color_list_dict, lamb_air_to_vac, convolve_fix_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
@@ -27,6 +27,8 @@ class LineFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.num_comps = len(self.cframe.info_c)
+
         ############################################################
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cp[0]) == 0:
@@ -35,8 +37,6 @@ class LineFrame(object):
         self.tie_pair = self.tie_line_fluxes
         self.release_pair = self.untie_line_fluxes
         ############################################################
-
-        self.num_comps = len(self.cframe.info_c)
 
         for i_comp in range(self.num_comps):
             # set default info if not specified in config
@@ -53,6 +53,30 @@ class LineFrame(object):
 
         self.initialize_linelist()
         self.update_linelist()
+
+        self.plot_style_c = {}
+        self.plot_style_c['sum'] = {'color': 'C2', 'alpha': 1, 'linestyle': '-', 'linewidth': 1.5}
+        i_red, i_green, i_purple = 0, 0, 0
+        for i_comp in range(self.num_comps):
+            self.plot_style_c[str(self.cframe.comp_c[i_comp])] = {'color': 'None', 'alpha': 0.5, 'linestyle': '-', 'linewidth': 0.75}
+            i_par_voff = self.cframe.par_index_cp[i_comp]['voff']
+            i_par_fwhm = self.cframe.par_index_cp[i_comp]['fwhm']
+            voff_mid = 0.5 * (self.cframe.par_min_cp[i_comp, i_par_voff] + self.cframe.par_max_cp[i_comp, i_par_voff])
+            fwhm_mid = 0.5 * (self.cframe.par_min_cp[i_comp, i_par_fwhm] + self.cframe.par_max_cp[i_comp, i_par_fwhm])
+            if abs(voff_mid) < 500:
+                if fwhm_mid < 1500: # narrow line
+                    self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['green'][::-1], i_green, mode="wrap"))
+                    i_green += 1
+                elif fwhm_mid < 5000: # middle-broad line
+                    self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['red'][::-1], i_red, mode="wrap"))
+                    i_red += 1
+                else: # broad line
+                    self.plot_style_c[self.cframe.comp_c[i_comp]]['linewidth'] = 1.5
+                    self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['red'][::-1], i_red, mode="wrap"))
+                    i_red += 1
+            else: # outflow line
+                self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['purple'], i_purple, mode="wrap"))
+                i_purple += 1
 
     def initialize_linelist(self):
         # atomic lines up t0 3.0 micron
@@ -802,7 +826,7 @@ class LineFrame(object):
                             tied_names = []
                             break
                         if ref_atomlib['notation'] != tied_atomlib['notation']:
-                            print_log(f"[WARNING] The tied lines, '{ref_name}' and '{tied_name}' are from different ions. Only transitions from the same ion are allowed.", self.log_message)                            
+                            print_log(f"[WARNING] The tied lines, '{ref_name}' and '{tied_name}' are from different ions. Only transitions from the same ion are allowed.", self.log_message)
                             tied_names.remove(tied_name)
                             continue
                         log_e_dens = np.linspace(0, 12, 25)
@@ -1001,15 +1025,15 @@ class LineFrame(object):
             local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
         fwhm_inst = 1 / local_R_inst * lamb_c_obs
 
-        if np.isin(profile, ['gaussian', 'Gaussian']):
+        if np.isin(profile, ['gaussian', 'Gaussian', 'gauss', 'Gauss']):
             fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
             sigma_tot = fwhm_tot / np.sqrt(np.log(256))
             model = np.exp(-0.5 * ((obs_wave_w-mu) / sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
-        elif np.isin(profile, ['lorentzian', 'Lorentzian']):
+        elif np.isin(profile, ['lorentzian', 'Lorentzian', 'lorentz', 'Lorentz']):
             gamma_line = fwhm_line / 2
             model = 1 / (1 + ((obs_wave_w-mu) / gamma_line)**2) / (gamma_line * np.pi)
             model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
-        elif np.isin(profile, ['exponential', 'Exponential', 'laplace', 'Laplace']):
+        elif np.isin(profile, ['exponential', 'Exponential', 'exp', 'Exp', 'laplace', 'Laplace']):
             b_line = fwhm_line / np.log(4)
             model = np.exp(-np.abs(obs_wave_w-mu) / b_line) / (b_line * 2)
             model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)

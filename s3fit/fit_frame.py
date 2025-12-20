@@ -16,15 +16,15 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from pathlib import Path
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 # check if the fit_frame.py file is in the pip installed directory
-if any(m in Path(__file__).resolve().parts for m in ["site-packages", "dist-packages"]):
+if any(m in Path(__file__).resolve().parts for m in ['site-packages', 'dist-packages']):
     try:
-        __version__ = pkg_version("s3fit") # use the installed distribution's version
+        __version__ = pkg_version('s3fit') # use the installed distribution's version
     except PackageNotFoundError:
-        __version__ = "0.0.0+unknown" # installed in a weird way or metadata missing
+        __version__ = '0.0.0+unknown' # installed in a weird way or metadata missing
 else:
     ##################################
     # manually specified local version
-    __version__ = "2.3.0+local" 
+    __version__ = '2.3.0+local'
     ##################################
 
 from .auxiliaries.auxiliary_frames import ConfigFrame, PhotFrame
@@ -179,7 +179,7 @@ class FitFrame(object):
         self.num_mocks = num_mocks
         print_log(f"Perform fitting for the original data and {self.num_mocks} mock data.", self.log_message)
         # control parallel mock data fitting 
-        self.if_use_multi_thread = if_use_multi_thread # if use joblib parallelism with backend="threading"
+        self.if_use_multi_thread = if_use_multi_thread # if use joblib parallelism with backend='threading'
         self.num_multi_thread = num_multi_thread # number of threads 
         if self.if_use_multi_thread & (self.num_mocks > 1): 
             print_log(f"Perform fitting for the {self.num_mocks} mock data in multithreading with {num_multi_thread if num_multi_thread !=-1 else 'system available'} threads.", self.log_message)
@@ -564,7 +564,7 @@ class FitFrame(object):
         self.output_s['empty_step']['ret_dict_l'] = [{} for i in range(self.num_loops)]
 
     def save_to_file(self, file):
-        with gzip.open(file, "wb") as f: 
+        with gzip.open(file, 'wb') as f: 
             pickle.dump([self.input_args, self.output_s, self.log_message], f)
         print(f'The input arguments, best-fit results, and running messages are saved to {file} (a python pickle compressed with gzip).')
 
@@ -1611,7 +1611,7 @@ class FitFrame(object):
                     self.single_loop_fit(0) 
                     index_loops = index_loops[1:] # remove 0th loop if it is included
                 # run mock data fitting in parallel
-                _ = Parallel(n_jobs=self.num_multi_thread, backend="threading")(delayed(self.single_loop_fit)(i_loop) for i_loop in index_loops)
+                _ = Parallel(n_jobs=self.num_multi_thread, backend='threading')(delayed(self.single_loop_fit)(i_loop) for i_loop in index_loops)
                 if self.if_save_per_loop: self.save_to_file(self.output_filename)
 
             # check fitting quality after all loops finished
@@ -1898,7 +1898,7 @@ class FitFrame(object):
             ax1.set_xlim(np.hstack((rest_wave_w,rest_wave_b)).min()*0.9, np.hstack((rest_wave_w,rest_wave_b)).max()*1.1)
             ax2.set_xlim(np.hstack((rest_wave_w,rest_wave_b)).min()*0.9, np.hstack((rest_wave_w,rest_wave_b)).max()*1.1)
 
-        ax1.legend(ncol=2); ax2.legend(ncol=3, loc="lower right")
+        ax1.legend(ncol=2); ax2.legend(ncol=3, loc='lower right')
         ax1.set_ylim(flux_w[mask_w].min()-0.05*(flux_w[mask_w].max()-flux_w[mask_w].min()), flux_w[mask_w].max()*1.05)
         tmp_ylim = np.percentile(np.abs(flux_w-model_w)[mask_w], 90) * 1.5
         ax2.set_ylim(-tmp_ylim, tmp_ylim)
@@ -1914,7 +1914,7 @@ class FitFrame(object):
             icon_file = icon_dir + ('icon_s3fit.dat' if fit_phot else 'icon_s1fit.dat')
             icon = plt.imread(icon_file)
             zoom = min(0.02 * fig.get_figheight(), 0.1)
-            abox = AnnotationBbox(OffsetImage(icon, zoom=zoom), (1, -1/fig.get_figheight()), xycoords="axes fraction", box_alignment=(0.5, 0.5), frameon=False)
+            abox = AnnotationBbox(OffsetImage(icon, zoom=zoom), (1, -1/fig.get_figheight()), xycoords='axes fraction', box_alignment=(0.5, 0.5), frameon=False)
             ax2.add_artist(abox)
 
         if self.canvas is not None:

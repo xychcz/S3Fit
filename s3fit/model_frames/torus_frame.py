@@ -12,7 +12,7 @@ import astropy.constants as const
 from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliaries.auxiliary_functions import print_log
+from ..auxiliaries.auxiliary_functions import print_log, color_list_dict
 
 class TorusFrame(object): 
     def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, 
@@ -30,14 +30,14 @@ class TorusFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.num_comps = self.cframe.num_comps
+
         ############################################################
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cp[0]) == 0:
             self.cframe.par_name_cp = np.array([['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] for i_comp in range(self.num_comps)])
             self.cframe.par_index_cp = [{'voff': 0, 'opt_depth_9.7': 1, 'opening_angle': 2, 'radii_ratio': 3, 'inclination': 4} for i_comp in range(self.num_comps)]
         ############################################################
-                
-        self.num_comps = self.cframe.num_comps
 
         # one independent element per component since disc and torus are tied
         self.num_coeffs_c = np.ones(self.num_comps, dtype='int')
@@ -47,6 +47,14 @@ class TorusFrame(object):
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
 
         self.read_skirtor()
+
+        self.plot_style_c = {}
+        self.plot_style_c['sum'] = {'color': 'C8', 'alpha': 1, 'linestyle': '-', 'linewidth': 1.5}
+        i_yellow = 0
+        for i_comp in range(self.num_comps):
+            self.plot_style_c[str(self.cframe.comp_c[i_comp])] = {'color': 'None', 'alpha': 0.5, 'linestyle': '--', 'linewidth': 1}
+            self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['yellow'], i_yellow, mode="wrap"))
+            i_yellow += 1
 
         if self.verbose:
             print_log(f"SKIRTor torus model components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
@@ -287,23 +295,24 @@ class TorusFrame(object):
         for i_comp in range(num_comps):
             tmp_values_vl = self.output_c[[*self.output_c][i_comp]]['values']
             if i_comp < self.cframe.num_comps:
-                print_log(f'Best-fit properties of torus component: <{self.cframe.comp_c[i_comp]}>', log)
-                print_log(f'[Note] velocity shift (i.e., redshift) is tied following the input model_config.', log)
-                # msg  = f'| Voff (km/s)           = {tmp_values_vl["voff"][mask_l].mean():10.4f}'
-                # msg += f' +/- {tmp_values_vl["voff"].std():<8.4f}|\n'
-                msg += f'| Optical depth at 9.7 um = {tmp_values_vl["opt_depth_9.7"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["opt_depth_9.7"].std():<8.4f}|\n'
-                msg += f'| Out/in radii ratio      = {tmp_values_vl["radii_ratio"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["radii_ratio"].std():<8.4f}|\n'
-                msg += f'| Half OpenAng (degree)   = {tmp_values_vl["opening_angle"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["opening_angle"].std():<8.4f}|\n'
-                msg += f'| Inclination (degree)    = {tmp_values_vl["inclination"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["inclination"].std():<8.4f}|\n'
+                print_log(f"Best-fit properties of torus component: <{self.cframe.comp_c[i_comp]}>", log)
+                print_log(f"[Note] velocity shift (i.e., redshift) is tied following the input model_config.", log)
+                # msg  = f"| Voff (km/s)           = {tmp_values_vl['voff'][mask_l].mean():10.4f}'
+                # msg += f" +/- {tmp_values_vl['voff'].std():<8.4f}|\n'
+                msg += f"| Optical depth at 9.7 um = {tmp_values_vl['opt_depth_9.7'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['opt_depth_9.7'].std():<8.4f}|\n"
+                msg += f"| Out/in radii ratio      = {tmp_values_vl['radii_ratio'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['radii_ratio'].std():<8.4f}|\n"
+                msg += f"| Half OpenAng (degree)   = {tmp_values_vl['opening_angle'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['opening_angle'].std():<8.4f}|\n"
+                msg += f"| Inclination (degree)    = {tmp_values_vl['inclination'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['inclination'].std():<8.4f}|\n"
             else:
-                print_log(f'Best-fit stellar properties of the sum of all components.', log)
-            msg += f'| log Lum of torus (Lsun) = {tmp_values_vl["log_lum"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_lum"].std():<8.4f}|'
+                print_log(f"Best-fit stellar properties of the sum of all components.", log)
+            msg += f"| log Lum of torus (Lsun) = {tmp_values_vl['log_lum'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_lum'].std():<8.4f}|"
             bar = '=' * len(msg.split('|\n')[-1])
             print_log(bar, log)
             print_log(msg, log)
             print_log(bar, log)
+

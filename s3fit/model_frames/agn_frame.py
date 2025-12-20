@@ -12,7 +12,7 @@ import astropy.constants as const
 from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 
-from ..auxiliaries.auxiliary_functions import print_log, convolve_var_width_fft
+from ..auxiliaries.auxiliary_functions import print_log, color_list_dict, convolve_var_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
 # alternative component names
@@ -42,6 +42,8 @@ class AGNFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.num_comps = self.cframe.num_comps
+
         ############################################################
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cp[0]) == 0:
@@ -59,8 +61,6 @@ class AGNFrame(object):
                     self.cframe.par_name_cp[i_comp, :3] = ['voff', 'fwhm', 'Av']
                     self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2}
         ############################################################
-
-        self.num_comps = self.cframe.num_comps
 
         self.num_coeffs_c = np.zeros(self.num_comps, dtype='int')
         for i_comp in range(self.num_comps):
@@ -85,6 +85,23 @@ class AGNFrame(object):
         # set iron template
         if np.isin(iron_names, [self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).any(): 
             self.read_iron()
+
+        self.plot_style_c = {}
+        self.plot_style_c['sum'] = {'color': 'C3', 'alpha': 1, 'linestyle': '-', 'linewidth': 1.5}
+        i_purple, i_green, i_yellow = 0, 0, 0
+        for i_comp in range(self.num_comps):
+            if np.isin(powerlaw_names+bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                self.plot_style_c[str(self.cframe.comp_c[i_comp])] = {'color': 'None', 'alpha': 0.5, 'linestyle': '--', 'linewidth': 1}
+                self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['purple'], i_purple, mode="wrap"))
+                i_purple += 1
+            if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                self.plot_style_c[str(self.cframe.comp_c[i_comp])] = {'color': 'None', 'alpha': 0.5, 'linestyle': '--', 'linewidth': 1}
+                self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['green'], i_green, mode="wrap"))
+                i_green += 1
+            if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                self.plot_style_c[str(self.cframe.comp_c[i_comp])] = {'color': 'None', 'alpha': 0.5, 'linestyle': '-', 'linewidth': 0.75}
+                self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['yellow'], i_yellow, mode="wrap"))
+                i_yellow += 1
 
         if self.verbose:
             print_log(f"AGN UV/optical continuum components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
@@ -309,7 +326,7 @@ class AGNFrame(object):
                 orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
 
             # project to observed wavelength
-            interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value="extrapolate")
+            interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value='extrapolate')
             obs_flux_scomp_ew = interp_func(obs_wave_w)
 
             if i_comp == 0: 
@@ -466,61 +483,61 @@ class AGNFrame(object):
             print_log('', log)
             msg = ''
             if i_comp < self.cframe.num_comps:
-                print_log(f'Best-fit properties of AGN component: <{self.cframe.comp_c[i_comp]}>', log)
+                print_log(f"Best-fit properties of AGN component: <{self.cframe.comp_c[i_comp]}>", log)
                 if np.isin(iron_names+bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    msg += f'| Velocity shift (km/s)                               = {tmp_values_vl["voff"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["voff"].std():<8.4f}|\n'
-                    msg += f'| Velocity FWHM (km/s)                                = {tmp_values_vl["fwhm"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["fwhm"].std():<8.4f}|\n'
+                    msg += f"| Velocity shift (km/s)                               = {tmp_values_vl['voff'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['voff'].std():<8.4f}|\n"
+                    msg += f"| Velocity FWHM (km/s)                                = {tmp_values_vl['fwhm'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['fwhm'].std():<8.4f}|\n"
                 else:
-                    print_log(f'[Note] velocity shift (i.e., redshift) and FWHM are tied following the input model_config.', log)
-                msg += f'| Extinction (Av)                                     = {tmp_values_vl["Av"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["Av"].std():<8.4f}|\n'
+                    print_log(f"[Note] velocity shift (i.e., redshift) and FWHM are tied following the input model_config.", log)
+                msg += f"| Extinction (Av)                                     = {tmp_values_vl['Av'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['Av'].std():<8.4f}|\n"
                 if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    msg += f'| Powerlaw α_λ                                        = {tmp_values_vl["alpha_lambda"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["alpha_lambda"].std():<8.4f}|\n'  
-                    msg += f'| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_3000"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_lambLum_3000"].std():<8.4f}|\n'
-                    msg += f'| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_5100"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_lambLum_5100"].std():<8.4f}|\n'
+                    msg += f"| Powerlaw α_λ                                        = {tmp_values_vl['alpha_lambda'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['alpha_lambda'].std():<8.4f}|\n"
+                    msg += f"| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl['log_lambLum_3000'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_lambLum_3000'].std():<8.4f}|\n"
+                    msg += f"| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl['log_lambLum_5100'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_lambLum_5100'].std():<8.4f}|\n"
                     if ~np.isin(self.w_norm, [3000,5100]):
-                        msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_wavenorm"][mask_l].mean():10.4f}'
-                        msg += f' +/- {tmp_values_vl["log_lambLum_wavenorm"].std():<8.4f}|\n'
+                        msg += f"| λL{self.w_norm} (rest,intrinsic) (log Lsun)                  = {tmp_values_vl['log_lambLum_wavenorm'][mask_l].mean():10.4f}"
+                        msg += f" +/- {tmp_values_vl['log_lambLum_wavenorm'].std():<8.4f}|\n"
                 if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    msg += f'| Powerlaw α1_λ (<= turning wavelength)               = {tmp_values_vl["alpha_lambda1"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["alpha_lambda1"].std():<8.4f}|\n'  
-                    msg += f'| Powerlaw α2_λ ( > turning wavelength)               = {tmp_values_vl["alpha_lambda2"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["alpha_lambda2"].std():<8.4f}|\n'  
-                    msg += f'| Turning wavelength (Å)                              = {tmp_values_vl["wave_turn"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["wave_turn"].std():<8.4f}|\n'  
-                    msg += f'| Curvature                                           = {tmp_values_vl["curvature"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["curvature"].std():<8.4f}|\n' 
-                    msg += f'| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_3000"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_lambLum_3000"].std():<8.4f}|\n'
-                    msg += f'| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl["log_lambLum_5100"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_lambLum_5100"].std():<8.4f}|\n'
+                    msg += f"| Powerlaw α1_λ (<= turning wavelength)               = {tmp_values_vl['alpha_lambda1'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['alpha_lambda1'].std():<8.4f}|\n"
+                    msg += f"| Powerlaw α2_λ ( > turning wavelength)               = {tmp_values_vl['alpha_lambda2'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['alpha_lambda2'].std():<8.4f}|\n"
+                    msg += f"| Turning wavelength (Å)                              = {tmp_values_vl['wave_turn'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['wave_turn'].std():<8.4f}|\n"
+                    msg += f"| Curvature                                           = {tmp_values_vl['curvature'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['curvature'].std():<8.4f}|\n"
+                    msg += f"| λL3000 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl['log_lambLum_3000'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_lambLum_3000'].std():<8.4f}|\n"
+                    msg += f"| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl['log_lambLum_5100'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_lambLum_5100'].std():<8.4f}|\n"
                 if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    msg += f'| Balmer continuum e- temperature (log K)             = {tmp_values_vl["log_e_tem"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_e_tem"].std():<8.4f}|\n'       
-                    msg += f'| Balmer continuum optical depth at 3646 Å (log τ)    = {tmp_values_vl["log_tau_be"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_tau_be"].std():<8.4f}|\n'
-                    msg += f'| Balmer continuum integrated Lum (log erg/s/cm2)     = {tmp_values_vl["log_Lum_int"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_Lum_int"].std():<8.4f}|\n'
+                    msg += f"| Balmer continuum e- temperature (log K)             = {tmp_values_vl['log_e_tem'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_e_tem'].std():<8.4f}|\n"
+                    msg += f"| Balmer continuum optical depth at 3646 Å (log τ)    = {tmp_values_vl['log_tau_be'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_tau_be'].std():<8.4f}|\n"
+                    msg += f"| Balmer continuum integrated Lum (log erg/s/cm2)     = {tmp_values_vl['log_Lum_int'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_Lum_int'].std():<8.4f}|\n"
                 if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    msg += f'| Fe II integrated Lum in 2150-4000 Å (log erg/s/cm2) = {tmp_values_vl["log_Lum_uv"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_Lum_uv"].std():<8.4f}|\n'
-                    msg += f'| Fe II integrated Lum in 4000-5600 Å (log erg/s/cm2) = {tmp_values_vl["log_Lum_opt"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_Lum_opt"].std():<8.4f}|\n'
+                    msg += f"| Fe II integrated Lum in 2150-4000 Å (log erg/s/cm2) = {tmp_values_vl['log_Lum_uv'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_Lum_uv'].std():<8.4f}|\n"
+                    msg += f"| Fe II integrated Lum in 4000-5600 Å (log erg/s/cm2) = {tmp_values_vl['log_Lum_opt'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_Lum_opt'].std():<8.4f}|\n"
             else:
-                print_log(f'Best-fit AGN properties of the sum of all components.', log)
-            msg += f'| F3000 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl["flux_3000"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["flux_3000"].std():<8.4f}|\n'
-            msg += f'| F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl["flux_5100"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["flux_5100"].std():<8.4f}|'
+                print_log(f"Best-fit AGN properties of the sum of all components.", log)
+            msg += f"| F3000 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl['flux_3000'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['flux_3000'].std():<8.4f}|\n"
+            msg += f"| F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl['flux_5100'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['flux_5100'].std():<8.4f}|"
             if ~np.isin(self.w_norm, [3000,5100]):
                 msg += '\n'
-                msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["flux_wavenorm"].std():<8.4f}|'      
+                msg += f"| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl['flux_wavenorm'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['flux_wavenorm'].std():<8.4f}|"
 
             bar = '=' * len(msg.split('|\n')[-1])
             print_log(bar, log)

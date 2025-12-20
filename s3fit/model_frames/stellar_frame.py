@@ -13,7 +13,7 @@ from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-from ..auxiliaries.auxiliary_functions import print_log, convolve_fix_width_fft, convolve_var_width_fft
+from ..auxiliaries.auxiliary_functions import print_log, color_list_dict, convolve_fix_width_fft, convolve_var_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
@@ -86,13 +86,29 @@ class StellarFrame(object):
                 print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message) 
 
+        self.plot_style_c = {}
+        self.plot_style_c['sum'] = {'color': 'C0', 'alpha': 1, 'linestyle': '-', 'linewidth': 1.5}
+        i_red, i_green, i_blue = 0, 0, 0
+        for i_comp in range(self.num_comps):
+            self.plot_style_c[str(self.cframe.comp_c[i_comp])] = {'color': 'None', 'alpha': 0.5, 'linestyle': '-', 'linewidth': 1}
+            i_par_log_csp_age = self.cframe.par_index_cp[i_comp]['log_csp_age']
+            log_csp_age_mid = 0.5 * (self.cframe.par_min_cp[i_comp, i_par_log_csp_age] + self.cframe.par_max_cp[i_comp, i_par_log_csp_age])
+            if log_csp_age_mid > 0: # > 1 Gyr
+                self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['red'], i_red, mode="wrap"))
+                i_red += 1
+            elif log_csp_age_mid > -1: # 100 Myr - 1 Gyr
+                self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['green'], i_green, mode="wrap"))
+                i_green += 1
+            else: # < 100 Myr
+                self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['blue'], i_blue, mode="wrap"))
+                i_blue += 1
+
         if self.verbose:
-            print_log(f'SSP models normalization wavelength: {w_norm} +- {dw_norm}', self.log_message)
-            print_log(f'SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}', self.log_message)
-            print_log(f'SSP models age range (Gyr): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}', 
-                      self.log_message)
-            print_log(f'SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}', self.log_message) 
-            print_log(f'SFH functions: {self.sfh_names} for {self.cframe.comp_c} components, respectively.', self.log_message)
+            print_log(f"SSP models normalization wavelength: {w_norm} +- {dw_norm}", self.log_message)
+            print_log(f"SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}", self.log_message)
+            print_log(f"SSP models age range (Gyr): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}", self.log_message)
+            print_log(f"SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}", self.log_message) 
+            print_log(f"SFH functions: {self.sfh_names} for {self.cframe.comp_c} components, respectively.", self.log_message)
 
     def read_ssp_library(self):
         ##############################################################
@@ -331,7 +347,7 @@ class StellarFrame(object):
                 orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
 
             # project to observed wavelength
-            interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value="extrapolate")
+            interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value='extrapolate')
             obs_flux_scomp_ew = interp_func(obs_wave_w)
 
             if i_comp == 0: 
@@ -592,61 +608,61 @@ class StellarFrame(object):
                         tbl_row.append(np.log10(self.mtol_e[i_e]))
                         print_log(fmt_numbers.format(*tbl_row), log)
                     print_log(tbl_border, log)
-                    print_log(f'[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 AA.', log)
-                    print_log(f'[Note] only SSPs with flux fraction over 5% are listed.', log)
+                    print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 AA.", log)
+                    print_log(f"[Note] only SSPs with flux fraction over 5% are listed.", log)
 
             print_log('', log)
             msg = ''
             if i_comp < self.cframe.num_comps:
-                print_log(f'Best-fit stellar properties of the <{self.cframe.comp_c[i_comp]}> component with {self.sfh_names[i_comp]} SFH.', log)
-                msg += f'| Redshift (from continuum absorptions)     = {tmp_values_vl["redshift"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["redshift"].std():<8.4f}|\n'
-                msg += f'| Velocity shift in relative to z_sys (km/s)= {tmp_values_vl["voff"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["voff"].std():<8.4f}|\n'
-                msg += f'| Velocity dispersion (σ,km/s)              = {tmp_values_vl["fwhm"][mask_l].mean()/np.sqrt(np.log(256)):10.4f}'
-                msg += f' +/- {tmp_values_vl["fwhm"].std()/np.sqrt(np.log(256)):<8.4f}|\n'
-                msg += f'| Extinction (Av)                           = {tmp_values_vl["Av"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["Av"].std():<8.4f}|\n'
+                print_log(f"Best-fit stellar properties of the <{self.cframe.comp_c[i_comp]}> component with {self.sfh_names[i_comp]} SFH.", log)
+                msg += f"| Redshift (from continuum absorptions)     = {tmp_values_vl['redshift'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['redshift'].std():<8.4f}|\n"
+                msg += f"| Velocity shift in relative to z_sys (km/s)= {tmp_values_vl['voff'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['voff'].std():<8.4f}|\n"
+                msg += f"| Velocity dispersion (σ,km/s)              = {tmp_values_vl['fwhm'][mask_l].mean()/np.sqrt(np.log(256)):10.4f}"
+                msg += f" +/- {tmp_values_vl['fwhm'].std()/np.sqrt(np.log(256)):<8.4f}|\n"
+                msg += f"| Extinction (Av)                           = {tmp_values_vl['Av'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['Av'].std():<8.4f}|\n"
                 if np.isin(self.sfh_names[i_comp], ['exponential', 'delayed', 'constant', 'user']):
-                    msg += f'| Max age of composite star.pop. (log Gyr)  = {tmp_values_vl["log_csp_age"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_csp_age"].std():<8.4f}|\n'
+                    msg += f"| Max age of composite star.pop. (log Gyr)  = {tmp_values_vl['log_csp_age'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_csp_age'].std():<8.4f}|\n"
                 if np.isin(self.sfh_names[i_comp], ['exponential', 'delayed']):
-                    msg += f'| Declining timescale of SFH (log Gyr)      = {tmp_values_vl["log_csp_tau"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["log_csp_tau"].std():<8.4f}|\n'
+                    msg += f"| Declining timescale of SFH (log Gyr)      = {tmp_values_vl['log_csp_tau'][mask_l].mean():10.4f}"
+                    msg += f" +/- {tmp_values_vl['log_csp_tau'].std():<8.4f}|\n"
                 if np.isin(self.sfh_names[i_comp], ['user']):
                     # for par_name in [*tmp_values_vl]:
                     #     if par_name[:3] != 'sfh': continue
                     #     if par_name == 'sfh_par0': continue
                     for par_name in self.cframe.par_name_cp[i_comp]:
                         if ~np.isin(par_name, ['voff', 'fwhm', 'Av', 'log_csp_age']): 
-                            msg += f'| {par_name} ' + ' '*(40-len(par_name)) + f' = {tmp_values_vl[par_name][mask_l].mean():10.4f}'
-                            msg += f' +/- {tmp_values_vl[par_name].std():<8.4f}|\n'
+                            msg += f"| {par_name} " + ' '*(40-len(par_name)) + f" = {tmp_values_vl[par_name][mask_l].mean():10.4f}"
+                            msg += f" +/- {tmp_values_vl[par_name].std():<8.4f}|\n"
             else:
-                print_log(f'Best-fit stellar properties of the sum of all components.', log)
-            msg += f'| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl["flux_5500"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["flux_5500"].std():<8.4f}|\n'
+                print_log(f"Best-fit stellar properties of the sum of all components.", log)
+            msg += f"| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl['flux_5500'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['flux_5500'].std():<8.4f}|\n"
             if self.w_norm != 5500:
-                msg += f'| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl["flux_wavenorm"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["flux_wavenorm"].std():<8.4f}|\n'
-            msg += f'| λL5500 (rest,intrinsic) (log Lsun)        = {tmp_values_vl["log_lambLum_5500"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_lambLum_5500"].std():<8.4f}|\n'
+                msg += f"| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl['flux_wavenorm'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['flux_wavenorm'].std():<8.4f}|\n"
+            msg += f"| λL5500 (rest,intrinsic) (log Lsun)        = {tmp_values_vl['log_lambLum_5500'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_lambLum_5500'].std():<8.4f}|\n"
             if self.w_norm != 5500:
-                msg += f'| λL{self.w_norm} (rest,intrinsic) (log Lsun)        = {tmp_values_vl["log_lambLum_wavenorm"][mask_l].mean():10.4f}'
-                msg += f' +/- {tmp_values_vl["log_lambLum_wavenorm"].std():<8.4f}|\n'
-            msg += f'| Mass (all formed) (log Msun)              = {tmp_values_vl["log_Mass_formed"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_Mass_formed"].std():<8.4f}|\n'
-            msg += f'| Mass (remaining) (log Msun)               = {tmp_values_vl["log_Mass_remaining"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_Mass_remaining"].std():<8.4f}|\n'
-            msg += f'| Mass/λL5500 (log Msun/Lsun)               = {tmp_values_vl["log_MtoL"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_MtoL"].std():<8.4f}|\n'
-            msg += f'| λL5500-weight age (log Gyr)               = {tmp_values_vl["log_Age_Lweight"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_Age_Lweight"].std():<8.4f}|\n'
-            msg += f'| Mass-weight age (log Gyr)                 = {tmp_values_vl["log_Age_Mweight"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_Age_Mweight"].std():<8.4f}|\n'
-            msg += f'| λL5500-weight metallicity (log Z)         = {tmp_values_vl["log_Z_Lweight"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_Z_Lweight"].std():<8.4f}|\n'
-            msg += f'| Mass-weight metallicity (log Z)           = {tmp_values_vl["log_Z_Mweight"][mask_l].mean():10.4f}'
-            msg += f' +/- {tmp_values_vl["log_Z_Mweight"].std():<8.4f}|'
+                msg += f"| λL{self.w_norm} (rest,intrinsic) (log Lsun)        = {tmp_values_vl['log_lambLum_wavenorm'][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl['log_lambLum_wavenorm'].std():<8.4f}|\n"
+            msg += f"| Mass (all formed) (log Msun)              = {tmp_values_vl['log_Mass_formed'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_Mass_formed'].std():<8.4f}|\n"
+            msg += f"| Mass (remaining) (log Msun)               = {tmp_values_vl['log_Mass_remaining'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_Mass_remaining'].std():<8.4f}|\n"
+            msg += f"| Mass/λL5500 (log Msun/Lsun)               = {tmp_values_vl['log_MtoL'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_MtoL'].std():<8.4f}|\n"
+            msg += f"| λL5500-weight age (log Gyr)               = {tmp_values_vl['log_Age_Lweight'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_Age_Lweight'].std():<8.4f}|\n"
+            msg += f"| Mass-weight age (log Gyr)                 = {tmp_values_vl['log_Age_Mweight'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_Age_Mweight'].std():<8.4f}|\n"
+            msg += f"| λL5500-weight metallicity (log Z)         = {tmp_values_vl['log_Z_Lweight'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_Z_Lweight'].std():<8.4f}|\n"
+            msg += f"| Mass-weight metallicity (log Z)           = {tmp_values_vl['log_Z_Mweight'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_Z_Mweight'].std():<8.4f}|"
             bar = '=' * len(msg.split('\n')[-1])
             print_log(bar, log)
             print_log(msg, log)

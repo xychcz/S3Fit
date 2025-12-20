@@ -1,62 +1,62 @@
 [build-system]
-# requires = ["hatchling"]
-# build-backend = "hatchling.build"
-requires = ["setuptools>=61", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
+# requires = ['hatchling']
+# build-backend = 'hatchling.build'
+requires = ['setuptools>=61', 'setuptools-scm']
+build-backend = 'setuptools.build_meta'
 
 [tool.setuptools]
 include-package-data = true
 [tool.setuptools.packages.find]
-include = ["s3fit", "s3fit.model_frames", "s3fit.auxiliaries"]
+include = ['s3fit', 's3fit.model_frames', 's3fit.auxiliaries']
 [tool.setuptools.package-data]
-s3fit = ["auxiliaries/*"]
+s3fit = ['auxiliaries/*']
 [tool.setuptools_scm]
-# version_scheme = "release-branch-semver"
-# version_scheme = "no-guess-dev"
-version_scheme = "post-release"
-# local_scheme = "node-and-date"
-local_scheme = "no-local-version"
+# version_scheme = 'release-branch-semver'
+# version_scheme = 'no-guess-dev'
+version_scheme = 'post-release'
+# local_scheme = 'node-and-date'
+local_scheme = 'no-local-version'
 tag_regex = '^v?(?P<version>\d+\.\d+\.\d+)$'
 
 [project]
-name = "s3fit"
-dynamic = ["version"]
-description = "S3Fit: a Simultaneous Spectrum and photometric-SED Fitting code for observation of galaxies"
+name = 's3fit'
+dynamic = ['version']
+description = 'S3Fit: a Simultaneous Spectrum and photometric-SED Fitting code for observation of galaxies'
 authors = [
-    { name = "Xiaoyang Chen", email = "s3fit@xychen.me" }
+    { name = 'Xiaoyang Chen', email = 's3fit@xychen.me' }
 ]
-license = "GPL-3.0-or-later"
-readme = "README.md"
-keywords = ["spectral fitting", "SED fitting", "galaxy", "astronomy"]
+license = 'GPL-3.0-or-later'
+readme = 'README.md'
+keywords = ['spectral fitting', 'SED fitting', 'galaxy', 'astronomy']
 
 classifiers = [
   # How mature is this project? Common values are
   #   3 - Alpha
   #   4 - Beta
   #   5 - Production/Stable
-  "Development Status :: 5 - Production/Stable",
+  'Development Status :: 5 - Production/Stable',
   # Indicate who your project is intended for
-  "Topic :: Scientific/Engineering :: Astronomy",
+  'Topic :: Scientific/Engineering :: Astronomy',
   # Specify the Python versions you support here.
-  "Programming Language :: Python :: 3.10",
+  'Programming Language :: Python :: 3.10',
 ]
 
-requires-python = ">= 3.10"
+requires-python = '>= 3.10'
 dependencies = [
-  "scipy>=1.12.0",
-  "numpy>=1.26.4",
-  "astropy>=6.0.0",
-  "joblib>=1.5.2", 
-  "matplotlib>=3.9.1"
+  'scipy>=1.12.0',
+  'numpy>=1.26.4',
+  'astropy>=6.0.0',
+  'joblib>=1.5.2', 
+  'matplotlib>=3.9.1'
 ]
 
 [project.optional-dependencies]
-pyneb = ["pyneb>=1.1.23"]
+pyneb = ['pyneb>=1.1.23']
 # install with pyneb:
 # pip install s3fit[pyneb] 
 
 [project.urls]
-Homepage = "https://github.com/xychcz"
-Repository = "https://github.com/xychcz/S3Fit"
-Documentation = "https://github.com/xychcz/S3Fit/tree/main/manuals"
-Changelog = "https://github.com/xychcz/S3Fit/releases"
+Homepage = 'https://github.com/xychcz'
+Repository = 'https://github.com/xychcz/S3Fit'
+Documentation = 'https://github.com/xychcz/S3Fit/tree/main/manuals'
+Changelog = 'https://github.com/xychcz/S3Fit/releases'

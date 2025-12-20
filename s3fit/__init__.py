@@ -11,11 +11,11 @@ from .model_frames.torus_frame import TorusFrame
 from .model_frames.line_frame import LineFrame
 
 from .auxiliaries.auxiliary_frames import ConfigFrame, PhotFrame
-from .auxiliaries.auxiliary_functions import print_log, center_string, convolve_fix_width_fft, convolve_var_width_fft
+from .auxiliaries.auxiliary_functions import print_log, center_string, color_list_dict, convolve_fix_width_fft, convolve_var_width_fft
 from .auxiliaries.extinct_laws import ExtLaw
 
 __all__ = [
-    "__version__", "FitFrame", "ConfigFrame", "PhotFrame", 
-    "StellarFrame", "LineFrame", "AGNFrame", "TorusFrame", 
-    "ExtLaw", "print_log", "center_string", "convolve_fix_width_fft", "convolve_var_width_fft", 
+    '__version__', 'FitFrame', 'ConfigFrame', 'PhotFrame', 
+    'StellarFrame', 'LineFrame', 'AGNFrame', 'TorusFrame', 
+    'ExtLaw', 'print_log', 'center_string', 'color_list_dict', 'convolve_fix_width_fft', 'convolve_var_width_fft', 
 ]
