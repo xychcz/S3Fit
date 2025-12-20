@@ -42,6 +42,24 @@ class AGNFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        ############################################################
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cp[0]) == 0:
+            for i_comp in range(self.num_comps):
+                if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :4] = ['voff', 'fwhm', 'Av', 'alpha_lambda']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda': 3}
+                if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :6] = ['voff', 'fwhm', 'Av', 'alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda1': 3, 'alpha_lambda2': 4, 'wave_turn': 5, 'curvature': 6}
+                if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :5] = ['voff', 'fwhm', 'Av', 'log_e_tem', 'log_tau_be']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_tem': 3, 'log_tau_be': 4}
+                if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
+                    self.cframe.par_name_cp[i_comp, :3] = ['voff', 'fwhm', 'Av']
+                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2}
+        ############################################################
+
         self.num_comps = self.cframe.num_comps
 
         self.num_coeffs_c = np.zeros(self.num_comps, dtype='int')
@@ -67,22 +85,6 @@ class AGNFrame(object):
         # set iron template
         if np.isin(iron_names, [self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).any(): 
             self.read_iron()
-
-        # to be compatible with old version <= 2.2.4
-        if len(self.cframe.par_index_cp[0]) == 0:
-            for i_comp in range(self.num_comps):
-                if np.isin(powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    self.cframe.par_name_cp[i_comp, :4] = ['voff', 'fwhm', 'Av', 'alpha_lambda']
-                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda': 3}
-                if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    self.cframe.par_name_cp[i_comp, :6] = ['voff', 'fwhm', 'Av', 'alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature']
-                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda1': 3, 'alpha_lambda2': 4, 'wave_turn': 5, 'curvature': 6}
-                if np.isin(bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    self.cframe.par_name_cp[i_comp, :5] = ['voff', 'fwhm', 'Av', 'log_e_tem', 'log_tau_be']
-                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_tem': 3, 'log_tau_be': 4}
-                if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                    self.cframe.par_name_cp[i_comp, :3] = ['voff', 'fwhm', 'Av']
-                    self.cframe.par_index_cp[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2}
 
         if self.verbose:
             print_log(f"AGN UV/optical continuum components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
@@ -325,10 +327,12 @@ class AGNFrame(object):
 
     def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
 
+        ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
         if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
         if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        ############################################################
 
         if (step is None) | (step == 'best') | (step == 'final'):
             step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'

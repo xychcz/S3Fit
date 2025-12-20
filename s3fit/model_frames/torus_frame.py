@@ -29,20 +29,24 @@ class TorusFrame(object):
         self.lum_norm = lum_norm if lum_norm is not None else 1e10 # normlize model by 1e10 Lsun
         self.verbose = verbose
         self.log_message = log_message
+
+        ############################################################
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cp[0]) == 0:
+            self.cframe.par_name_cp = np.array([['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] for i_comp in range(self.num_comps)])
+            self.cframe.par_index_cp = [{'voff': 0, 'opt_depth_9.7': 1, 'opening_angle': 2, 'radii_ratio': 3, 'inclination': 4} for i_comp in range(self.num_comps)]
+        ############################################################
                 
         self.num_comps = self.cframe.num_comps
-        self.num_coeffs_c = np.ones(self.num_comps, dtype='int') # one independent element per component since disc and torus are tied
+
+        # one independent element per component since disc and torus are tied
+        self.num_coeffs_c = np.ones(self.num_comps, dtype='int')
         self.num_coeffs = self.num_coeffs_c.sum()
 
         # currently do not consider negative SED 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
 
         self.read_skirtor()
-
-        # to be compatible with old version <= 2.2.4
-        if len(self.cframe.par_index_cp[0]) == 0:
-            self.cframe.par_name_cp = np.array([['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] for i_comp in range(self.num_comps)])
-            self.cframe.par_index_cp = [{'voff': 0, 'opt_depth_9.7': 1, 'opening_angle': 2, 'radii_ratio': 3, 'inclination': 4} for i_comp in range(self.num_comps)]
 
         if self.verbose:
             print_log(f"SKIRTor torus model components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
@@ -202,10 +206,12 @@ class TorusFrame(object):
 
     def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
 
+        ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
         if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
         if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        ############################################################
 
         if (step is None) | (step == 'best') | (step == 'final'):
             step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'

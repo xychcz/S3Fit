@@ -37,15 +37,27 @@ class StellarFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
-        # load popstar library
-        self.read_ssp_library()
-
         self.num_comps = self.cframe.num_comps
+
+        ############################################################
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cp[0]) == 0:
+            self.cframe.par_name_cp = np.array([['voff', 'fwhm', 'Av', 'log_csp_age', 'log_csp_tau'] for i_comp in range(self.num_comps)])
+            self.cframe.par_index_cp = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_csp_age': 3, 'log_csp_tau': 4} for i_comp in range(self.num_comps)]
+        for i_comp in range(self.num_comps):
+            if np.isin('age_min', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['log_ssp_age_min'] = self.cframe.info_c[i_comp]['age_min']
+            if np.isin('age_max', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['log_ssp_age_max'] = self.cframe.info_c[i_comp]['age_max']
+            if np.isin('met_sel', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['ssp_metallicity'] = self.cframe.info_c[i_comp]['met_sel']
+        ############################################################
+
         # read SFH setup from input config file
         self.sfh_names = np.array([d['sfh_name'] for d in self.cframe.info_c])
         if self.num_comps > 1:
             if np.sum(self.sfh_names == 'nonparametric') >= 1:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
+
+        # load ssp library
+        self.read_ssp_library()
 
         self.num_coeffs_c = np.zeros(self.num_comps, dtype='int')
         for i_comp in range(self.num_comps):
@@ -59,29 +71,21 @@ class StellarFrame(object):
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
 
         for i_comp in range(self.num_comps):
-            if 10.0**self.cframe.par_max_cp[i_comp][3] > cosmo.age(self.v0_redshift).value:
-                self.cframe.par_max_cp[i_comp][3] = np.log10(cosmo.age(self.v0_redshift).value)
-                print_log(f"[WARNING]: Upper bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
+            i_par_log_csp_age = self.cframe.par_index_cp[i_comp]['log_csp_age']
+            if self.cframe.par_max_cp[i_comp, i_par_log_csp_age] > np.log10(cosmo.age(self.v0_redshift).value):
+                self.cframe.par_max_cp[i_comp, i_par_log_csp_age] = np.log10(cosmo.age(self.v0_redshift).value)
+                print_log(f"[WARNING]: Upper bound of log_csp_age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}.", self.log_message)
-            if 10.0**self.cframe.par_min_cp[i_comp][3] > cosmo.age(self.v0_redshift).value:
-                self.cframe.par_min_cp[i_comp][3] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
-                print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
+            if self.cframe.par_min_cp[i_comp, i_par_log_csp_age] > np.log10(cosmo.age(self.v0_redshift).value):
+                self.cframe.par_min_cp[i_comp, i_par_log_csp_age] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
+                print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" exceeds the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}, "
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message)
-            if 10.0**self.cframe.par_min_cp[i_comp][3] < self.age_e[self.mask_lite_allowed()].min():
-                self.cframe.par_min_cp[i_comp][3] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001)
-                print_log(f"[WARNING]: Lower bound of CSP_Age of the component '{self.cframe.comp_c[i_comp]}' "
+            if self.cframe.par_min_cp[i_comp, i_par_log_csp_age] < np.log10(self.age_e[self.mask_lite_allowed()].min()):
+                self.cframe.par_min_cp[i_comp, i_par_log_csp_age] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001)
+                print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message) 
 
-        # to be compatible with old version <= 2.2.4
-        if len(self.cframe.par_index_cp[0]) == 0:
-            self.cframe.par_name_cp = np.array([['voff', 'fwhm', 'Av', 'csp_age', 'csp_tau'] for i_comp in range(self.num_comps)])
-            self.cframe.par_index_cp = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'csp_age': 3, 'csp_tau': 4} for i_comp in range(self.num_comps)]
-        for i_comp in range(self.num_comps):
-            if np.isin('age_min', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['ssp_age_min'] = self.cframe.info_c[i_comp]['age_min']
-            if np.isin('age_max', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['ssp_age_max'] = self.cframe.info_c[i_comp]['age_max']
-            if np.isin('met_sel', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['ssp_metal'] = self.cframe.info_c[i_comp]['met_sel']
-        
         if self.verbose:
             print_log(f'SSP models normalization wavelength: {w_norm} +- {dw_norm}', self.log_message)
             print_log(f'SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}', self.log_message)
@@ -118,7 +122,7 @@ class StellarFrame(object):
         self.met_e = np.zeros(self.num_models, dtype='float')
         for i in range(self.num_models):
             met, age = self.header[f'NAME{i}'].split('.dat')[0].split('_')[1:3]
-            self.age_e[i] = 10**float(age.replace('logt',''))/1e9
+            self.age_e[i] = 10.0**float(age.replace('logt',''))/1e9
             self.met_e[i] = float(met.replace('Z',''))
         ##############################################################
         ##############################################################
@@ -224,15 +228,15 @@ class StellarFrame(object):
         # The returned models are ssp_spec_ew = self.orig_flux_ew * sfh_factor_e.
         # The corresponding lum(rest5500) is 1 * sfh_factor_e, in unit of Lsun/AA,
         # the corresponding mass is mtol_e * sfh_factor_e = SFR(csp_age-ssp_age_e) * (duration_e*1e9), in unit of Msun.
-        csp_age = 10.0**par_p[self.cframe.par_index_cp[i_comp]['csp_age']]
+        csp_age = 10.0**par_p[self.cframe.par_index_cp[i_comp]['log_csp_age']]
         ssp_age_e = self.age_e
         evo_time_e = csp_age - ssp_age_e
 
         if self.sfh_names[i_comp] == 'exponential': 
-            csp_tau = 10.0**par_p[self.cframe.par_index_cp[i_comp]['csp_tau']]
+            csp_tau = 10.0**par_p[self.cframe.par_index_cp[i_comp]['log_csp_tau']]
             sfh_func_e = np.exp(-(evo_time_e) / csp_tau)
         if self.sfh_names[i_comp] == 'delayed': 
-            csp_tau = 10.0**par_p[self.cframe.par_index_cp[i_comp]['csp_tau']]
+            csp_tau = 10.0**par_p[self.cframe.par_index_cp[i_comp]['log_csp_tau']]
             sfh_func_e = np.exp(-(evo_time_e) / csp_tau) * evo_time_e
         if self.sfh_names[i_comp] == 'constant': 
             sfh_func_e = np.ones_like(evo_time_e)
@@ -340,11 +344,11 @@ class StellarFrame(object):
     def mask_lite_allowed(self, i_comp=0, csp=False):
         if not csp: 
             # mask for all SSP elements, for an individual comp
-            age_min, age_max = self.cframe.info_c[i_comp]['ssp_age_min'], self.cframe.info_c[i_comp]['ssp_age_max']
-            age_min = self.age_e.min() if age_min is None else 10.0**age_min
-            age_max = cosmo.age(self.v0_redshift).value if age_max == 'universe' else 10.0**age_max
+            log_age_min, log_age_max = self.cframe.info_c[i_comp]['log_ssp_age_min'], self.cframe.info_c[i_comp]['log_ssp_age_max']
+            age_min = self.age_e.min() if log_age_min is None else 10.0**log_age_min
+            age_max = cosmo.age(self.v0_redshift).value if log_age_max == 'universe' else 10.0**log_age_max
             mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
-            met_sel = self.cframe.info_c[i_comp]['ssp_metal']
+            met_sel = self.cframe.info_c[i_comp]['ssp_metallicity']
             if met_sel != 'all':
                 if met_sel == 'solar':
                     mask_lite_ssp_e &= self.met_e == 0.02
@@ -357,7 +361,7 @@ class StellarFrame(object):
             mask_lite_csp_e = np.array([], dtype='bool')
             for i_comp in range(self.num_comps):
                 tmp_mask_e = np.ones(self.num_mets, dtype='bool') 
-                met_sel = self.cframe.info_c[i_comp]['ssp_metal']
+                met_sel = self.cframe.info_c[i_comp]['ssp_metallicity']
                 if met_sel != 'all':
                     if met_sel == 'solar':
                         tmp_mask_e &= np.unique(self.met_e) == 0.02
@@ -421,10 +425,12 @@ class StellarFrame(object):
 
     def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
 
+        ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
         if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
         if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        ############################################################
 
         if (step is None) | (step == 'best') | (step == 'final'):
             step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
@@ -595,22 +601,24 @@ class StellarFrame(object):
                 print_log(f'Best-fit stellar properties of the <{self.cframe.comp_c[i_comp]}> component with {self.sfh_names[i_comp]} SFH.', log)
                 msg += f'| Redshift (from continuum absorptions)     = {tmp_values_vl["redshift"][mask_l].mean():10.4f}'
                 msg += f' +/- {tmp_values_vl["redshift"].std():<8.4f}|\n'
-                msg += f'| Velocity dispersion (σ,km/s)              = {tmp_values_vl["fwhm"][mask_l].mean()/2.355:10.4f}'
-                msg += f' +/- {tmp_values_vl["fwhm"].std()/2.355:<8.4f}|\n'
+                msg += f'| Velocity shift in relative to z_sys (km/s)= {tmp_values_vl["voff"][mask_l].mean():10.4f}'
+                msg += f' +/- {tmp_values_vl["voff"].std():<8.4f}|\n'
+                msg += f'| Velocity dispersion (σ,km/s)              = {tmp_values_vl["fwhm"][mask_l].mean()/np.sqrt(np.log(256)):10.4f}'
+                msg += f' +/- {tmp_values_vl["fwhm"].std()/np.sqrt(np.log(256)):<8.4f}|\n'
                 msg += f'| Extinction (Av)                           = {tmp_values_vl["Av"][mask_l].mean():10.4f}'
                 msg += f' +/- {tmp_values_vl["Av"].std():<8.4f}|\n'
                 if np.isin(self.sfh_names[i_comp], ['exponential', 'delayed', 'constant', 'user']):
-                    msg += f'| Max age of composite star.pop. (log Gyr)  = {tmp_values_vl["csp_age"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["csp_age"].std():<8.4f}|\n'
+                    msg += f'| Max age of composite star.pop. (log Gyr)  = {tmp_values_vl["log_csp_age"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_csp_age"].std():<8.4f}|\n'
                 if np.isin(self.sfh_names[i_comp], ['exponential', 'delayed']):
-                    msg += f'| Declining timescale of SFH (log Gyr)      = {tmp_values_vl["csp_tau"][mask_l].mean():10.4f}'
-                    msg += f' +/- {tmp_values_vl["csp_tau"].std():<8.4f}|\n'
+                    msg += f'| Declining timescale of SFH (log Gyr)      = {tmp_values_vl["log_csp_tau"][mask_l].mean():10.4f}'
+                    msg += f' +/- {tmp_values_vl["log_csp_tau"].std():<8.4f}|\n'
                 if np.isin(self.sfh_names[i_comp], ['user']):
                     # for par_name in [*tmp_values_vl]:
                     #     if par_name[:3] != 'sfh': continue
                     #     if par_name == 'sfh_par0': continue
                     for par_name in self.cframe.par_name_cp[i_comp]:
-                        if ~np.isin(par_name, ['voff', 'fwhm', 'Av', 'csp_age']): 
+                        if ~np.isin(par_name, ['voff', 'fwhm', 'Av', 'log_csp_age']): 
                             msg += f'| {par_name} ' + ' '*(40-len(par_name)) + f' = {tmp_values_vl[par_name][mask_l].mean():10.4f}'
                             msg += f' +/- {tmp_values_vl[par_name].std():<8.4f}|\n'
             else:
@@ -646,10 +654,12 @@ class StellarFrame(object):
 
     def reconstruct_sfh(self, output_c=None, num_bins=None, if_plot_sfh=True, if_return_sfh=False, if_show_average=True, **kwargs):
 
+        ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if np.isin('plot', [*kwargs]): if_plot_sfh = kwargs['plot']
         if np.isin('return_sfh', [*kwargs]): if_return_sfh = kwargs['return_sfh']
         if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        ############################################################
 
         mask_l = np.ones(self.num_loops, dtype='bool')
         if not if_show_average: mask_l[1:] = False
@@ -683,13 +693,13 @@ class StellarFrame(object):
         if num_bins is not None:
             output_sfh_lczb = np.zeros((self.num_loops, num_comps, self.num_mets, num_bins))
             age_b = np.zeros((num_bins))
-            logage_a = np.log10(age_a)
-            bwidth = (logage_a[-1] - logage_a[0]) / num_bins
+            log_age_a = np.log10(age_a)
+            bwidth = (log_age_a[-1] - log_age_a[0]) / num_bins
             for i_bin in range(num_bins):
-                mask_a = (logage_a > (logage_a[0]+i_bin*bwidth)) & (logage_a <= (logage_a[0]+(i_bin+1)*bwidth))
-                duration_b = 10.0**(logage_a[0]+(i_bin+1)*bwidth) - 10.0**(logage_a[0]+i_bin*bwidth)
+                mask_a = (log_age_a > (log_age_a[0]+i_bin*bwidth)) & (log_age_a <= (log_age_a[0]+(i_bin+1)*bwidth))
+                duration_b = 10.0**(log_age_a[0]+(i_bin+1)*bwidth) - 10.0**(log_age_a[0]+i_bin*bwidth)
                 output_sfh_lczb[:,:,:,i_bin] = (output_sfh_lcza[:,:,:,mask_a] * self.duration_e[:self.num_ages][mask_a]).sum(axis=3) / duration_b
-                age_b[i_bin] = 10.0**(logage_a[0]+(i_bin+1/2)*bwidth)
+                age_b[i_bin] = 10.0**(log_age_a[0]+(i_bin+1/2)*bwidth)
                 
         if if_plot_sfh:
             plt.figure(figsize=(9,3))

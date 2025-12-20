@@ -8,7 +8,7 @@ np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliaries.auxiliary_functions import print_log, lamb_air_to_vac, convolve_fix_width_fft
+from ..auxiliaries.auxiliary_functions import print_log, greek_letters, roman_to_int, lamb_air_to_vac, convolve_fix_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
@@ -27,37 +27,31 @@ class LineFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
-        self.num_comps = len(self.cframe.info_c)
-        # set default info if not specified in config
-        for i_comp in range(self.num_comps):
-            if ~np.isin('line_used', [*self.cframe.info_c[i_comp]]):
-                self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
-        for i_comp in range(self.num_comps):
-            if ~np.isin('H_hi_order', [*self.cframe.info_c[i_comp]]):
-                self.cframe.info_c[i_comp]['H_hi_order'] = False
-        for i_comp in range(self.num_comps):
-            if ~np.isin('sign', [*self.cframe.info_c[i_comp]]):
-                self.cframe.info_c[i_comp]['sign'] = 'emission'
-        for i_comp in range(self.num_comps):
-            if ~np.isin('profile', [*self.cframe.info_c[i_comp]]):
-                self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
-
-        self.H_lv_up_max = 40 # limited by pyneb H1._Energy, max lv_up = 40
-        if np.array([self.cframe.info_c[i_comp]['H_hi_order'] for i_comp in range(self.num_comps)]).any(): 
-            self.enable_H_hi_order = True
-            if not self.use_pyneb: raise ValueError((f"Please enable pyneb in line config to include high order Hydrogen lines."))
-        else:
-            self.enable_H_hi_order = False
-
+        ############################################################
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cp[0]) == 0:
             self.cframe.par_name_cp = np.array([['voff', 'fwhm', 'Av', 'log_e_den', 'log_e_tem'] for i_comp in range(self.num_comps)])
             self.cframe.par_index_cp = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_den': 3, 'log_e_tem': 4} for i_comp in range(self.num_comps)]
         self.tie_pair = self.tie_line_fluxes
         self.release_pair = self.untie_line_fluxes
+        ############################################################
+
+        self.num_comps = len(self.cframe.info_c)
+
+        for i_comp in range(self.num_comps):
+            # set default info if not specified in config
+            if ~np.isin('line_used', [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
+            if ~np.isin('line_ties', [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_ties'] = ['default']
+            if ~np.isin('H_hi_order', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['H_hi_order'] = False
+            if ~np.isin('sign', [*self.cframe.info_c[i_comp]])      : self.cframe.info_c[i_comp]['sign'] = 'emission'
+            if ~np.isin('profile', [*self.cframe.info_c[i_comp]])   : self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
+            # group line info to a list
+            if isinstance(self.cframe.info_c[i_comp]['line_used'], str): self.cframe.info_c[i_comp]['line_used'] = [self.cframe.info_c[i_comp]['line_used']]
+            self.cframe.info_c[i_comp]['line_used'] = np.array(self.cframe.info_c[i_comp]['line_used'])
+            if isinstance(self.cframe.info_c[i_comp]['line_ties'], str): self.cframe.info_c[i_comp]['line_ties'] = [self.cframe.info_c[i_comp]['line_ties']]
+            if isinstance(self.cframe.info_c[i_comp]['line_ties'], tuple): self.cframe.info_c[i_comp]['line_ties'] = [self.cframe.info_c[i_comp]['line_ties']]
 
         self.initialize_linelist()
-        if self.use_pyneb: self.initialize_pyneb()
         self.update_linelist()
 
     def initialize_linelist(self):
@@ -88,42 +82,42 @@ class LineFrame(object):
         self.linerest_n, self.lineratio_n, self.linename_n = [],[],[]
 
         ########################################################################################################################
-        # Hydrogen lines can be tied to estimate extinction; all ratios (except for Lyman series) are in relative to Ha
-        self.linerest_n.append(1215.670); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lya')
-        self.linerest_n.append(1025.722); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lyb')
-        self.linerest_n.append( 972.537); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lyg')
-        self.linerest_n.append( 949.743); self.lineratio_n.append(1.0)     ; self.linename_n.append('Lyd')
-        self.linerest_n.append( 937.803); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly6')
-        self.linerest_n.append( 930.748); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly7')
-        self.linerest_n.append( 926.226); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly8')
-        self.linerest_n.append( 923.150); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly9')
-        self.linerest_n.append( 920.963); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly10')
-        self.linerest_n.append(6564.632); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ha')
-        self.linerest_n.append(4862.691); self.lineratio_n.append(0.349)   ; self.linename_n.append('Hb')
-        self.linerest_n.append(4341.691); self.lineratio_n.append(0.164)   ; self.linename_n.append('Hg')
-        self.linerest_n.append(4102.899); self.lineratio_n.append(0.0904)  ; self.linename_n.append('Hd')
-        self.linerest_n.append(3971.202); self.lineratio_n.append(0.0555)  ; self.linename_n.append('H7')
-        self.linerest_n.append(3890.158); self.lineratio_n.append(0.0367)  ; self.linename_n.append('H8')
-        self.linerest_n.append(3836.479); self.lineratio_n.append(0.0255)  ; self.linename_n.append('H9')
-        self.linerest_n.append(3798.983); self.lineratio_n.append(0.0185)  ; self.linename_n.append('H10')
-        self.linerest_n.append(18756.10); self.lineratio_n.append(0.118)   ; self.linename_n.append('Paa')
-        self.linerest_n.append(12821.58); self.lineratio_n.append(0.0570)  ; self.linename_n.append('Pab')
-        self.linerest_n.append(10941.08); self.lineratio_n.append(0.0316)  ; self.linename_n.append('Pag')
-        self.linerest_n.append(10052.12); self.lineratio_n.append(0.0194)  ; self.linename_n.append('Pad')
-        self.linerest_n.append(9548.588); self.lineratio_n.append(0.0128)  ; self.linename_n.append('Pa8')
-        self.linerest_n.append(9231.546); self.lineratio_n.append(0.00888) ; self.linename_n.append('Pa9')
-        self.linerest_n.append(9017.384); self.lineratio_n.append(0.00644) ; self.linename_n.append('Pa10')
-        self.linerest_n.append(40522.69); self.lineratio_n.append(0.0280)  ; self.linename_n.append('Bra')
-        self.linerest_n.append(26258.68); self.lineratio_n.append(0.0158)  ; self.linename_n.append('Brb')
-        self.linerest_n.append(21661.21); self.lineratio_n.append(0.00971) ; self.linename_n.append('Brg')
-        self.linerest_n.append(19450.89); self.lineratio_n.append(0.00638) ; self.linename_n.append('Brd')
-        self.linerest_n.append(18179.10); self.lineratio_n.append(0.00442) ; self.linename_n.append('Br9')
-        self.linerest_n.append(17366.87); self.lineratio_n.append(0.00319) ; self.linename_n.append('Br10')
-        self.linerest_n.append(74598.41); self.lineratio_n.append(0.00891) ; self.linename_n.append('Pfa')
-        self.linerest_n.append(46537.74); self.lineratio_n.append(0.00566) ; self.linename_n.append('Pfb')
-        self.linerest_n.append(37405.55); self.lineratio_n.append(0.00372) ; self.linename_n.append('Pfg')
-        self.linerest_n.append(32969.91); self.lineratio_n.append(0.00257) ; self.linename_n.append('Pfd')
-        self.linerest_n.append(30392.02); self.lineratio_n.append(0.00186) ; self.linename_n.append('Pf10')
+        # Hydrogen lines upto upper level of 10 can be tied to estimate extinction; all ratios (except for Lyman series) are in relative to H-alpha
+        self.linerest_n.append(1215.670); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-alpha')
+        self.linerest_n.append(1025.722); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-beta')
+        self.linerest_n.append( 972.537); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-gamma')
+        self.linerest_n.append( 949.743); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-delta')
+        self.linerest_n.append( 937.803); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-epsilon')
+        self.linerest_n.append( 930.748); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-zeta')
+        self.linerest_n.append( 926.226); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-eta')
+        self.linerest_n.append( 923.150); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-theta')
+        self.linerest_n.append( 920.963); self.lineratio_n.append(1.0)     ; self.linename_n.append('Ly-iota')
+        self.linerest_n.append(6564.632); self.lineratio_n.append(1.0)     ; self.linename_n.append('H-alpha')
+        self.linerest_n.append(4862.691); self.lineratio_n.append(0.349)   ; self.linename_n.append('H-beta')
+        self.linerest_n.append(4341.691); self.lineratio_n.append(0.164)   ; self.linename_n.append('H-gamma')
+        self.linerest_n.append(4102.899); self.lineratio_n.append(0.0904)  ; self.linename_n.append('H-delta')
+        self.linerest_n.append(3971.202); self.lineratio_n.append(0.0555)  ; self.linename_n.append('H-epsilon')
+        self.linerest_n.append(3890.158); self.lineratio_n.append(0.0367)  ; self.linename_n.append('H-zeta')
+        self.linerest_n.append(3836.479); self.lineratio_n.append(0.0255)  ; self.linename_n.append('H-eta')
+        self.linerest_n.append(3798.983); self.lineratio_n.append(0.0185)  ; self.linename_n.append('H-theta')
+        self.linerest_n.append(18756.10); self.lineratio_n.append(0.118)   ; self.linename_n.append('Pa-alpha')
+        self.linerest_n.append(12821.58); self.lineratio_n.append(0.0570)  ; self.linename_n.append('Pa-beta')
+        self.linerest_n.append(10941.08); self.lineratio_n.append(0.0316)  ; self.linename_n.append('Pa-gamma')
+        self.linerest_n.append(10052.12); self.lineratio_n.append(0.0194)  ; self.linename_n.append('Pa-delta')
+        self.linerest_n.append(9548.588); self.lineratio_n.append(0.0128)  ; self.linename_n.append('Pa-epsilon')
+        self.linerest_n.append(9231.546); self.lineratio_n.append(0.00888) ; self.linename_n.append('Pa-zeta')
+        self.linerest_n.append(9017.384); self.lineratio_n.append(0.00644) ; self.linename_n.append('Pa-eta')
+        self.linerest_n.append(40522.69); self.lineratio_n.append(0.0280)  ; self.linename_n.append('Br-alpha')
+        self.linerest_n.append(26258.68); self.lineratio_n.append(0.0158)  ; self.linename_n.append('Br-beta')
+        self.linerest_n.append(21661.21); self.lineratio_n.append(0.00971) ; self.linename_n.append('Br-gamma')
+        self.linerest_n.append(19450.89); self.lineratio_n.append(0.00638) ; self.linename_n.append('Br-delta')
+        self.linerest_n.append(18179.10); self.lineratio_n.append(0.00442) ; self.linename_n.append('Br-epsilon')
+        self.linerest_n.append(17366.87); self.lineratio_n.append(0.00319) ; self.linename_n.append('Br-zeta')
+        self.linerest_n.append(74598.41); self.lineratio_n.append(0.00891) ; self.linename_n.append('Pf-alpha')
+        self.linerest_n.append(46537.74); self.lineratio_n.append(0.00566) ; self.linename_n.append('Pf-beta')
+        self.linerest_n.append(37405.55); self.lineratio_n.append(0.00372) ; self.linename_n.append('Pf-gamma')
+        self.linerest_n.append(32969.91); self.lineratio_n.append(0.00257) ; self.linename_n.append('Pf-delta')
+        self.linerest_n.append(30392.02); self.lineratio_n.append(0.00186) ; self.linename_n.append('Pf-epsilon')
         ########################################################################################################################
         # only pick up one intermediate wavelength in He I fine/hyperfine structure lines
         self.linerest_n.append(2945.965); self.lineratio_n.append(1.0)     ; self.linename_n.append('He I:2946') # T00
@@ -367,71 +361,70 @@ class LineFrame(object):
 
         self.linelist_full = copy(self.linename_n)        
         # list main lines in G06 and RR06
-        self.linelist_default = np.array(['Lyb', 'O VI:1032', 'O VI:1038', 'Lya', 'N V:1239', 'N V:1243', 'Si IV:1394', 'O IV]:1397', 'O IV]:1400', 
+        self.linelist_default = np.array(['Ly-beta', 'O VI:1032', 'O VI:1038', 'Ly-alpha', 'N V:1239', 'N V:1243', 'Si IV:1394', 'O IV]:1397', 'O IV]:1400', 
                                           'Si IV:1403', 'C IV:1548', 'He II:1640', 'Al III:1855', 'Al III:1863', 'C III]:1909', 'Mg II]:2796', 'Mg II]:2804', 
-                                          '[Ne V]:3347', '[Ne V]:3427', '[O II]:3727', '[O II]:3730', '[Ne III]:3870', 'H8', '[Ne III]:3969', 
-                                          'H7', 'Hd', 'Hg', '[O III]:4364', 'Hb', '[O III]:4960', '[O III]:5008', '[N I]:5199', '[N I]:5202', 'He I:5877', 
-                                          '[O I]:6302', '[O I]:6366', '[N II]:6550', 'Ha', '[N II]:6585', '[S II]:6718', '[S II]:6733', 
+                                          '[Ne V]:3347', '[Ne V]:3427', '[O II]:3727', '[O II]:3730', '[Ne III]:3870', 'H-zeta', '[Ne III]:3969', 
+                                          'H-epsilon', 'H-delta', 'H-gamma', '[O III]:4364', 'H-beta', '[O III]:4960', '[O III]:5008', '[N I]:5199', '[N I]:5202', 'He I:5877', 
+                                          '[O I]:6302', '[O I]:6366', '[N II]:6550', 'H-alpha', '[N II]:6585', '[S II]:6718', '[S II]:6733', 
                                           'He I:7067', '[Ar III]:7138', '[O II]:7322', '[O II]:7333', '[Ni III]:7892', 'O I:8449', '[S III]:9071', 'Fe II:9206', '[S III]:9533', 
-                                          'Pa8', 'Pad', 'He I:10833', 'Pag', 'O I:11290', '[P II]:11886', '[Fe II]:12570', 'Pab', '[Fe II]:13209', '[Si X]:14305', '[Fe II]:16440', 
-                                          'Paa', 'Brd', '[Si VI]:19650', 'He I:20587', 'Brg', 'Brb'])
+                                          'Pa-epsilon', 'Pa-delta', 'He I:10833', 'Pa-gamma', 'O I:11290', '[P II]:11886', '[Fe II]:12570', 'Pa-beta', 
+                                          '[Fe II]:13209', '[Si X]:14305', '[Fe II]:16440', 'Pa-alpha', 'Br-delta', '[Si VI]:19650', 'He I:20587', 'Br-gamma', 'Br-beta', 'Br-alpha'])
         
-    def initialize_pyneb(self):
-        if self.verbose: print_log('[Note] PyNeb is used in the fitting to derive line emissivities and ratios of line doublets.', self.log_message)
-        import pyneb
-        self.pyneb = pyneb
-        self.pyneblib = {'RecAtom':{'list': pyneb.atomicData.getAllAtoms(coll=False, rec=True)}, 
-                         'Atom':{'list': pyneb.atomicData.getAllAtoms(coll=True, rec=False)}} 
-        # save to avoid duplicate reading
+        if any(self.cframe.info_c[i_comp]['H_hi_order'] for i_comp in range(self.num_comps)): 
+            self.enable_H_hi_order = True
+            self.H_level_upper_max = 40 # limited by pyneb H1._Energy
+            if not self.use_pyneb: raise ValueError((f"Please enable pyneb in line config to include high order Hydrogen lines."))
+        else:
+            self.enable_H_hi_order = False
+            self.H_level_upper_max = 10
 
-        # these lines cannot match with pyneb lib
-        linelist_mismatch = ['C II:7238', 'N I:7470', 'N I:8683', 'N I:8706', 'N I:8714', 'N III:4512', 
-                             'O I:1302', 'O I:6048', 'O I:7004', 'O I:7256', 'O I:8449', 'O I:11290', 'O II:4318', 'O II:4416', 'O III:3134', 'O III:3313', 'O III:3445', 
-                             'Si II:1260', 'Si II:1265', 'Si II:6349']
-        # refresh line info with pyneb
-        for i_line in range(len(self.linename_n)):
-            if np.isin(self.linename_n[i_line], linelist_mismatch): continue
-            linename, linerest = self.search_pyneb(self.linename_n[i_line], verbose=False)
-            if linename is not None: 
-                self.linename_n[i_line] = linename
-                self.linerest_n[i_line] = linerest
+        self.H_levels_dict = {}
+        for u in ['-'+g for g in greek_letters] + [str(i+1) for i in range(self.H_level_upper_max)]: 
+            self.H_levels_dict['Ly'+u] = {'lower': 1} # Lyman
+            self.H_levels_dict['H' +u] = {'lower': 2} # Balmer
+            self.H_levels_dict['Pa'+u] = {'lower': 3} # Paschen
+            self.H_levels_dict['Br'+u] = {'lower': 4} # Brackett
+            self.H_levels_dict['Pf'+u] = {'lower': 5} # Pfund
+        for name in self.H_levels_dict:
+            if len(name.split('-')) == 2: 
+                self.H_levels_dict[name]['upper'] = self.H_levels_dict[name]['lower'] + greek_letters.index(name.split('-')[1]) + 1
+            else: 
+                self.H_levels_dict[name]['upper'] = int(name[1:]) if name[1].isdigit() else int(name[2:])
+        
+        # initialize pyneb
+        if self.use_pyneb: 
+            if self.verbose: print_log('PyNeb is used in the fitting to derive line emissivities and ratios of line doublets.', self.log_message)
+            import pyneb
+            self.pyneb = pyneb
+            self.pyneblib = {'RecAtom': {'list': pyneb.atomicData.getAllAtoms(coll=False, rec=True)}, # save to avoid duplicate reading
+                             'Atom'   : {'list': pyneb.atomicData.getAllAtoms(coll=True , rec=False)}} 
 
-        if self.enable_H_hi_order: 
-            self.linelist_H_hi_order = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] if n+'10' in self.linelist_full for u in [str(i+11) for i in range(self.H_lv_up_max-10)]]) 
-            # lv_up from 11 to 40
-            self.linelist_full = np.hstack((self.linelist_full, self.linelist_H_hi_order))
-            for linename in self.linelist_H_hi_order:
-                linename, linerest = self.search_pyneb(linename)
-                self.linename_n = np.hstack((self.linename_n, linename))
-                self.linerest_n = np.hstack((self.linerest_n, linerest))
-                self.lineratio_n = np.hstack((self.lineratio_n, 1.0))
+            # refresh line info with pyneb
+            for i_line in range(len(self.linename_n)):
+                # if np.isin(self.linename_n[i_line], linelist_mismatch): continue
+                linename, linerest = self.search_pyneb(self.linename_n[i_line], verbose=False) # show all message of not supported lines with verbose=True
+                if linename is not None: 
+                    self.linename_n[i_line] = linename
+                    self.linerest_n[i_line] = linerest
+
+            if self.enable_H_hi_order: 
+                H_level_upper_min = 11 # add lines with lv_up from 11 to 40
+                self.linelist_H_hi_order = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] for u in [str(i+H_level_upper_min) for i in range(self.H_level_upper_max-(H_level_upper_min-1))]]) 
+                self.linelist_full = np.hstack((self.linelist_full, self.linelist_H_hi_order))
+                for linename in self.linelist_H_hi_order:
+                    linename, linerest = self.search_pyneb(linename)
+                    self.linename_n  = np.hstack((self.linename_n, linename))
+                    self.linerest_n  = np.hstack((self.linerest_n, linerest))
+                    self.lineratio_n = np.hstack((self.lineratio_n, 1.0))
 
     def search_pyneb(self, name, wave_medium='vacuum', ret_atomlib=False, verbose=True):
         # due to the current coverage of elements and atoms of pyneb, 
         # currently only use pyneb to identify Hydrogen recombination lines
         # add other recombination lines manually
         # also add collisionally excited lines manually if not provided by pyneb        
-        # convert roman numbers
-        def roman_to_int(roman_num):
-            roman_dict = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000,'IV':4,'IX':9,'XL':40,'XC':90,'CD':400,'CM':900}
-            i = 0; int_num = 0
-            while i < len(roman_num):
-                if i+1<len(roman_num) and roman_num[i:i+2] in roman_dict:
-                    int_num+=roman_dict[roman_num[i:i+2]]; i+=2
-                else:
-                    int_num+=roman_dict[roman_num[i]]; i+=1
-            return int_num
 
-        H_lv_low_dict = {}
-        for u in ['a','b','g','d'] + [str(i+1) for i in range(self.H_lv_up_max)]: 
-            H_lv_low_dict['Ly'+u] = 1 # Lyman
-            H_lv_low_dict['H' +u] = 2 # Balmer
-            H_lv_low_dict['Pa'+u] = 3 # Paschen
-            H_lv_low_dict['Br'+u] = 4 # Brackett
-            H_lv_low_dict['Pf'+u] = 5 # Pfund
-
-        if name in H_lv_low_dict:
-            element = 'H'; notation = 1; line_id = name
+        if name in self.H_levels_dict:
+            element = 'H'; notation = 1
             if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
                 atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
                 dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
@@ -439,14 +432,10 @@ class LineFrame(object):
                 def func_emissivity(den, tem, wave_vac): 
                     lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
                     return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
-                self.pyneblib['RecAtom'][element+str(notation)] = {'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
+                self.pyneblib['RecAtom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
             atomlib = self.pyneblib['RecAtom'][element+str(notation)]
-            lv_low = H_lv_low_dict[name]
-            if np.isin(name[-1], ['a','b','g','d']): 
-                lv_up = lv_low + {'a':1,'b':2,'g':3,'d':4}[name[-1]] 
-            else:
-                lv_up = int(name[1:]) if name[1].isdigit() else int(name[2:])
-            wave_vac = atomlib['wave_vac_ij'][lv_up-1, lv_low-1]
+            wave_vac = atomlib['wave_vac_ij'][self.H_levels_dict[name]['upper']-1, self.H_levels_dict[name]['lower']-1]
+            line_id = name
         else:
             ion, wave = name.split(':')
             if ion[0] == '[': 
@@ -465,11 +454,12 @@ class LineFrame(object):
                     def func_emissivity(den, tem, wave_vac): 
                         lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
                         return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
-                    self.pyneblib['RecAtom'][element+str(notation)] = {'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
+                    self.pyneblib['RecAtom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
                 atomlib = self.pyneblib['RecAtom'][element+str(notation)]
             else:
                 if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
-                    if verbose: print_log(f"{name} not provided in pyneb, please add it manually following the github/advanced_usage page.", self.log_message)
+                    if verbose: 
+                        print_log(f"[WARNING] {name} not provided in pyneb, please add it manually with FitFrame.line.add_line(use_pyneb=False).", self.log_message)
                     if ret_atomlib: 
                         return None, None, None
                     else:
@@ -481,12 +471,20 @@ class LineFrame(object):
                     def func_emissivity(den, tem, wave_vac): 
                         lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
                         return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
-                    self.pyneblib['Atom'][element+str(notation)] = {'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
+                    self.pyneblib['Atom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
                 atomlib = self.pyneblib['Atom'][element+str(notation)]
             wave = float(wave[:-2])*1e4 if wave[-2:] == 'um' else float(wave)
             if wave_medium == 'air': wave = lamb_air_to_vac(wave)
             wave_vac = atomlib['wave_vac_ij'].flatten()[np.argmin(np.abs(atomlib['wave_vac_ij'] - wave))]
             line_id = f'{ion}:{round(wave_vac)}'
+            if np.abs(wave_vac - wave)/wave > 5e-4: 
+                if verbose: 
+                    print_log(f"[WARNING] For the input line name {name}, the relative wavelength difference between the input {wave} and the best-match pyneb value {wave_vac} "+
+                              f"is larger than 0.05%. Please add it manually with FitFrame.line.add_line(use_pyneb=False).", self.log_message)
+                if ret_atomlib: 
+                    return None, None, None
+                else:
+                    return None, None
 
         if ret_atomlib: 
             return line_id, wave_vac, atomlib
@@ -499,8 +497,11 @@ class LineFrame(object):
         if not isinstance(lineratios, list): lineratios = [lineratios]
         for (i_line, linename) in enumerate(linenames):
             if use_pyneb:
-                linename, linerest = self.search_pyneb(linename, wave_medium=wave_medium)
+                linename, linerest = self.search_pyneb(linename, wave_medium=wave_medium, verbose=verbose)
                 lineratio = 1.0
+                if linename is None:
+                    # warning message already print in the above search_pyneb
+                    continue # skip the following steps
             else:
                 linerest = linerests[i_line] if wave_medium == 'vacuum' else lamb_air_to_vac(linerests[i_line])
                 lineratio = lineratios[i_line] if lineratios[i_line] is not None else 1.0
@@ -515,9 +516,13 @@ class LineFrame(object):
                 self.lineratio_n = np.hstack((self.lineratio_n, lineratio))
                 self.linelist_full = np.hstack((self.linelist_full, linename))
                 self.linelist_default = np.hstack((self.linelist_default, linename))
-                if verbose: print_log(f"{linename, linerest} with linkratio={lineratio} is added into the line list.", self.log_message)
+                if verbose: 
+                    if use_pyneb | (lineratios[i_line] is None):
+                        print_log(f"{linename} with rest wavelength {linerest} (Angstrom) is added into the line list.", self.log_message)
+                    else:
+                        print_log(f"{linename} with rest wavelength {linerest} (Angstrom) and a fixed flux linkratio={lineratio} is added into the line list.", self.log_message)
             else:
-                if verbose: print_log(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest}, "+
+                if verbose: print_log(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest} (< 1 Angstrom), "+
                                       f"set force=True to add this line forcibly.", self.log_message)
         self.update_linelist()
 
@@ -555,7 +560,7 @@ class LineFrame(object):
         self.linelist_intercombination = np.array([line for line in self.linelist_full if (line[0] != '[') & (line.split(':')[0][-1] == ']')])
         self.linelist_forbidden        = np.array([line for line in self.linelist_full if  line[0] == '['])
 
-        linelist_H = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.H_lv_up_max)]])
+        linelist_H = np.array([n+u for n in ['Ly','H','Pa','Br','Pf'] for u in ['-'+g for g in greek_letters] + [str(i+1) for i in range(self.H_level_upper_max)]])
         linelist_H = linelist_H[np.isin(linelist_H, self.linelist_full)]
         linelist_nonH = self.linelist_full[~np.isin(self.linelist_full, linelist_H)]
 
@@ -665,133 +670,298 @@ class LineFrame(object):
         self.mask_valid_cn = self.mask_valid_cn[:,mask_valid_n]
         self.num_lines = len(self.linename_n)
 
-        # check the relations between lines
-        self.initialize_linelink()
+        # check the relations between lines and count num_coeffs
+        self.update_linelink()
             
-    def initialize_linelink(self):
+    def update_linelink(self):
         # initialize the list of refered line names
-        self.linelink_n = np.zeros_like(self.linename_n); self.linelink_n[:] = 'free'
+        self.linelink_name_cn = np.tile(np.zeros_like(self.linename_n), (self.num_comps, 1)); self.linelink_name_cn[:,:] = 'free'
         # initialize the ratio library dict of tied lines
-        self.linelink_dict = {}
+        self.linelink_dict_cn = [{} for i_comp in range(self.num_comps)]
 
-        if self.use_pyneb & self.verbose:
-            print_log(f"Line tying (if line available) with flux ratios from pyneb under the best-fit (or fixed) electron density and temperature:", self.log_message)
+        if self.verbose:
+            if self.use_pyneb:
+                print_log(f"Ties of lines (if covered) with flux ratios from pyneb under the best-fit (or fixed) electron density and temperature:", self.log_message)
+            else:
+                print_log(f"Ties of lines (if covered) with default (100 cm-3 and 10000 K) or given flux ratios:", self.log_message)
 
-        H_linenames = [n+u for n in ['H','Pa','Br','Pf'] for u in ['a','b','g','d'] + [str(i+1) for i in range(self.H_lv_up_max)]] # do not set 'Ly' due to Lya forest
-        self.tie_line_fluxes(H_linenames, ['Ha','Hb','Hg','Hd', 'Paa','Pab','Pag','Pad']) # use set alternative line is Ha is not covered
+        line_ties_default = ['Hydrogen lines',
+                             ('[Ne V]:3427', '[Ne V]:3347'), 
+                             ('[O II]:3730', '[O II]:3727'), 
+                             ('[Ne III]:3870', '[Ne III]:3969'), 
+                             ('[O III]:5008', '[O III]:4960'), 
+                             ('[N I]:5202', '[N I]:5199'), 
+                             ('[O I]:6302', '[O I]:6366'), 
+                             ('[N II]:6585', '[N II]:6550'), 
+                             ('[S II]:6733', '[S II]:6718', )]
 
-        self.tie_line_fluxes('[Ne V]:3347', '[Ne V]:3427')
-        self.tie_line_fluxes('[O II]:3727', '[O II]:3730')
-        self.tie_line_fluxes('[Ne III]:3969', '[Ne III]:3870')
-        self.tie_line_fluxes('[O III]:4960', '[O III]:5008')
-        self.tie_line_fluxes('[N I]:5199', '[N I]:5202')
-        self.tie_line_fluxes('[O I]:6366', '[O I]:6302')
-        self.tie_line_fluxes('[N II]:6550', '[N II]:6585')
-        self.tie_line_fluxes('[S II]:6718', '[S II]:6733')
+        line_ties_collect = []
+        for i_comp in range(self.num_comps):
+            self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
+            if np.isin(self.cframe.info_c[i_comp]['line_ties'], ['default']).any():
+                self.cframe.info_c[i_comp]['line_ties'].remove('default')
+                self.cframe.info_c[i_comp]['line_ties'] += line_ties_default
+                self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
+            line_ties_collect += self.cframe.info_c[i_comp]['line_ties']
+        line_ties_collect = list(dict.fromkeys(line_ties_collect)) # remove duplicates
+
+        for line_tie in line_ties_collect:
+            components = [self.cframe.comp_c[i_comp] for i_comp in range(self.num_comps) if line_tie in self.cframe.info_c[i_comp]['line_ties']]
+            if isinstance(line_tie, str):
+                if np.isin(line_tie, ['Hydrogen lines', 'Hydrogen_lines']).any():
+                    linelist_H = [l for l in self.linelist_elements['H'].tolist() if l[:2] != 'Ly' ] # do not include Lyman series due to gas obscuration and Lya forest
+                    self.tie_line_fluxes(line_names=linelist_H, components=components) 
+            else:
+                if isinstance(line_tie, tuple): line_tie = list(line_tie)
+                self.tie_line_fluxes(line_names=line_tie, components=components)
+
+        # linelist_H = [l for l in self.linelist_elements['H'].tolist() if l[:2] != 'Ly' ] # do not use 'Ly' due to gas obscuration and Lya forest
+        # self.tie_line_fluxes(line_names=linelist_H) # use set alternative line is H-alpha is not covered
+
+        # self.tie_line_fluxes(line_names=['[Ne V]:3347', '[Ne V]:3427'])
+        # self.tie_line_fluxes(line_names=['[O II]:3727', '[O II]:3730'])
+        # self.tie_line_fluxes(line_names=['[Ne III]:3969', '[Ne III]:3870'])
+        # self.tie_line_fluxes(line_names=['[O III]:4960', '[O III]:5008'])
+        # self.tie_line_fluxes(line_names=['[N I]:5199', '[N I]:5202'])
+        # self.tie_line_fluxes(line_names=['[O I]:6366', '[O I]:6302'])
+        # self.tie_line_fluxes(line_names=['[N II]:6550', '[N II]:6585'])
+        # self.tie_line_fluxes(line_names=['[S II]:6718', '[S II]:6733'])
 
         # update mask of free lines and count num_coeffs
         self.update_mask_free()
-        # update line ratios with default Av, log_e_den, and log_e_tem
-        self.update_lineratio()
+        # update line ratios for each comp with default Av, log_e_den, and log_e_tem
+        self.lineratio_cn = np.tile(np.zeros_like(self.lineratio_n), (self.num_comps, 1))
+        for i_comp in range(self.num_comps): 
+            self.update_lineratio(Av=0, log_e_den=2, log_e_tem=4, i_comp=i_comp)
 
-    def tie_line_fluxes(self, tied_names=None, ref_names=None, ratio=None, use_pyneb=None):
+    def tie_line_fluxes(self, line_names=None, tied_line_name=None, ref_line_name=None, ratio=None, components=None, use_pyneb=None):
         # prebuild the tying ratio libraries between tied lines and the reference line (1st valid one if multi given)
-        if not isinstance(ref_names, list): ref_names = [ref_names]
-        if not isinstance(tied_names, list): tied_names = [tied_names]
+        # two input types:
+        # 1) e.g., line_names = ['[O III]:4960', '[O III]:5008'], use pyneb or lineratio_n to obtain the ratio
+        # 2) e.g., tied_line_name='[O III]:4960', ref_line_name='[O III]:5008', ratio=0.3, manually specify the ratio of tied_line_name/ref_line_name
+
+        if not isinstance(line_names, list): line_names = [line_names]
+        line_names = np.array(line_names)
+        if components is not None:
+            if isinstance(components, str): components = [components]
+        else:
+            components = copy(self.cframe.comp_c)
         if use_pyneb is None: use_pyneb = self.use_pyneb
 
-        ref_valid = False
-        for ref_name in ref_names:
-            if np.isin(ref_name, self.linename_n):
-                i_ref = np.where(self.linename_n == ref_name)[0][0]
-                ref_valid = self.mask_valid_cn[:, i_ref].any() # if ref_name exists in any one comp
-                if ref_valid: break # pick up the 1st valid ref_name
-
-        if not ref_valid:
-            if any(~np.isin(ref_names, self.linelist_full)):
-                print_log(f"[WARNING] The reference line(s), {np.array(ref_names)[~np.isin(ref_names, self.linelist_full)]}, are not available. " + 
-                          f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line()", self.log_message)
-            else: 
-                if self.verbose: print_log(f"The reference line(s), {ref_names}, are not covered by the spectrum. {tied_names} will be fit as free line(s).", self.log_message)
+        if line_names[0] is not None:
+            if any(~np.isin(line_names, self.linelist_full)):
+                print_log(f"[WARNING] The specified line(s), {np.array(ref_names)[~np.isin(ref_names, self.linelist_full)]}, are not available. " + 
+                          f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
+        elif ref_line_name is not None:
+            if np.isin(ref_line_name, self.linelist_full):
+                print_log(f"[WARNING] The reference line, {ref_line_name}, is not available. " + 
+                          f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
+                return # skip the following steps
+        elif tied_line_name is not None:
+            if np.isin(tied_line_name, self.linelist_full):
+                print_log(f"[WARNING] The tied line, {tied_line_name}, is not available. " + 
+                          f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
                 return # skip the following steps
 
-        tied_names_valid = []
-        for tied_name in tied_names:
-            if np.isin(tied_name, self.linename_n) & (tied_name != ref_name):
-                i_tied = np.where(self.linename_n == tied_name)[0][0]
-                tied_valid = self.mask_valid_cn[:, i_tied].any() # if tied_name exists in any one comp
-                if ref_valid & tied_valid: 
-                    self.linelink_n[i_tied] = ref_name
-                    tied_names_valid.append(tied_name)
+        # get reference line for each comp
+        ref_name_c, tied_names_c = [], []
+        for i_comp in range(self.num_comps):
+            ref_name_c.append('None')
+            tied_names_c.append(['None'])
+            if np.isin(self.cframe.comp_c[i_comp], components): 
+                if line_names[0] is not None:
+                    line_names_valid = line_names[np.isin(line_names, self.linename_n[self.mask_valid_cn[i_comp]])].tolist()
+                    if len(line_names_valid) >= 1: ref_name_c[i_comp] = line_names_valid[0]
+                    if len(line_names_valid) >= 2: tied_names_c[i_comp] = line_names_valid[1:]
+                else:
+                    if np.isin(ref_line_name, self.linename_n[self.mask_valid_cn[i_comp]]): ref_name_c[i_comp] = ref_line_name
+                    if np.isin(tied_line_name, self.linename_n[self.mask_valid_cn[i_comp]]): tied_names_c[i_comp] = [tied_line_name]
+
+        mask_finish_c = np.zeros(self.num_comps, dtype='bool')
+        for i_comp in range(self.num_comps):
+            if mask_finish_c[i_comp]: continue
+            ref_name = ref_name_c[i_comp]
+            tied_names = tied_names_c[i_comp]
+            if (ref_name != 'None') & (tied_names != ['None']):
+                mask_sharetie_c = np.array([(ref_name_c[j_comp] == ref_name) & (tied_names_c[j_comp] == tied_names) for j_comp in range(self.num_comps)])
+                mask_finish_c[mask_sharetie_c] = True
+                for tied_name in tied_names:
+                    i_tied = np.where(self.linename_n == tied_name)[0][0]
+                    i_ref  = np.where(self.linename_n ==  ref_name)[0][0]
                     if use_pyneb:
                         tied_wave, tied_atomlib = self.search_pyneb(tied_name, ret_atomlib=True)[1:]
                         ref_wave,   ref_atomlib = self.search_pyneb( ref_name, ret_atomlib=True)[1:]
+                        if tied_atomlib is None:
+                            print_log(f"[WARNING] The tied line, '{tied_name}', is not provided by pyneb. " + 
+                                      f"Please add the tying relation manually with FitFrame.line.tie_line_fluxes(ratio=, use_pyneb=False)", self.log_message)
+                            tied_names.remove(tied_name)
+                            continue
+                        if ref_atomlib is None:
+                            print_log(f"[WARNING] The reference line, '{ref_name}', is not provided by pyneb. " + 
+                                      f"Please add the tying relation manually with FitFrame.line.tie_line_fluxes(ratio=, use_pyneb=False)", self.log_message)
+                            tied_names = []
+                            break
+                        if ref_atomlib['notation'] != tied_atomlib['notation']:
+                            print_log(f"[WARNING] The tied lines, '{ref_name}' and '{tied_name}' are from different ions. Only transitions from the same ion are allowed.", self.log_message)                            
+                            tied_names.remove(tied_name)
+                            continue
                         log_e_dens = np.linspace(0, 12, 25)
                         log_e_tems = np.linspace(np.log10(5e2), np.log10(3e4), 11)
                         tied_emi_td = tied_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int(tied_wave))
                         ref_emi_td  =  ref_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int( ref_wave))
                         ratio_dt = (tied_emi_td / ref_emi_td).T
                         func_ratio_dt = RegularGridInterpolator((log_e_dens, log_e_tems), ratio_dt, method='linear', bounds_error=False)
-                        self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
                     else:                
-                        if tied_name == '[S II]:6718':
+                        if (tied_name == '[S II]:6718') | (tied_name == '[S II]:6733'):
                             # https://ui.adsabs.harvard.edu/abs/2014A&A...561A..10P 
-                            pok14_Rs = np.linspace(1.41, 0.45, 30)
+                            pok14_Rs = np.linspace(1.41, 0.45, 30) # [S II]:6718/6733
                             pok14_log_e_dens = 0.0543*np.tan(-3.0553*pok14_Rs+2.8506)+6.98-10.6905*pok14_Rs+9.9186*pok14_Rs**2-3.5442*pok14_Rs**3
+                            if tied_name == '[S II]:6733': pok14_Rs = 1/pok14_Rs # [S II]:6733/6718
                             def func_ratio_dt(pars): return [np.interp(pars[0], pok14_log_e_dens, pok14_Rs)]
                             if self.verbose:
-                                print_log(f"Line tying: [S II]:6718 is tied to [S II]:6733 with flux ratio from Proxauf et al.(2014) under the best-fit electron density.", self.log_message)
+                                print_log(f"    Line tying: [S II]:6718,6733 are tied with flux ratio from Proxauf et al.(2014) under the best-fit electron density, "+
+                                          f" for the components {self.cframe.comp_c[mask_sharetie_c]}.", self.log_message)
                         else:
                             if ratio is None:
                                 tmp = self.lineratio_n[i_tied] / self.lineratio_n[i_ref] * 1.0 # to avoid overwrite in following updating
                                 if self.verbose:
-                                    print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100 cm-3 and temperature of 10000 K.", self.log_message)
+                                    print_log(f"    Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100 cm-3 and temperature of 10000 K, "+
+                                              f" for the components {self.cframe.comp_c[mask_sharetie_c]}.", self.log_message)
                             else:
                                 if isinstance(ratio, list): raise ValueError((f"Please input a single ratio for {tied_name}, not a list."))
                                 tmp = ratio * 1.0 # force to input value
                                 if self.verbose:
-                                    print_log(f"Line tying: {tied_name} is tied to {ref_name} with the input flux ratio, {tmp}.", self.log_message)
+                                    print_log(f"    Line tying: {tied_name} is tied to {ref_name} with the user input flux ratio, {tmp}, "+
+                                              f" for the components {self.cframe.comp_c[mask_sharetie_c]}.", self.log_message)
                             def func_ratio_dt(pars, ret=tmp): return [ret]
-                        self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
+                
+                    for j_comp in range(self.num_comps):
+                        if mask_sharetie_c[j_comp]: 
+                            self.linelink_name_cn[j_comp,i_tied] = ref_name
+                            self.linelink_dict_cn[j_comp][tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
 
-        if len(tied_names_valid) > 0:
-            if use_pyneb & self.verbose:
-                if len(tied_names_valid)  > 1: print_log(f"    {tied_names_valid} --> {ref_name}", self.log_message)
-                if len(tied_names_valid) == 1: print_log(f"    {tied_names_valid[0]} --> {ref_name}", self.log_message)
-        else:            
-            if any(~np.isin(tied_names, self.linelist_full)):
-                print_log(f"[WARNING] The reference line(s), {np.array(tied_names)[~np.isin(tied_names, self.linelist_full)]}, are not available. " + 
-                          f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line()", self.log_message)
-            else: 
-                if self.verbose: print_log(f"The reference line(s), {tied_names}, are not covered by the spectrum, which will be fit as free line(s).", self.log_message)
+                if use_pyneb & self.verbose:
+                    if len(tied_names)  > 1: print_log(f"    {tied_names} --> {ref_name} for the components {self.cframe.comp_c[mask_sharetie_c]}.", self.log_message)
+                    if len(tied_names) == 1: print_log(f"    {tied_names[0]} --> {ref_name} for the components {self.cframe.comp_c[mask_sharetie_c]}.", self.log_message)
 
-    def untie_line_fluxes(self, tied_names):
+    # def tie_line_fluxes(self, tied_names=None, ref_names=None, ratio=None, i_comp=None, components=None, use_pyneb=None):
+    #     # prebuild the tying ratio libraries between tied lines and the reference line (1st valid one if multi given)
+    #     if not isinstance(ref_names, list): ref_names = [ref_names]
+    #     if not isinstance(tied_names, list): tied_names = [tied_names]
+    #     if i_comp is not None:
+    #         mask_c = np.arange(self.num_comps) == i_comp
+    #     elif components is not None:
+    #         if not isinstance(components, list): components = [components]
+    #         mask_c = np.isin(self.cframe.comp_c, components)
+    #     else:
+    #         mask_c = np.ones(self.num_comps, dtype='bool')
+    #     if use_pyneb is None: use_pyneb = self.use_pyneb
+
+    #     ref_valid = False
+    #     for ref_name in ref_names:
+    #         if np.isin(ref_name, self.linename_n):
+    #             i_ref = np.where(self.linename_n == ref_name)[0][0]
+    #             ref_valid = self.mask_valid_cn[:, i_ref].any() # if ref_name exists in any one comp
+    #             if ref_valid: break # pick up the 1st valid ref_name
+
+    #     if not ref_valid:
+    #         if any(~np.isin(ref_names, self.linelist_full)):
+    #             print_log(f"[WARNING] The reference line(s), {np.array(ref_names)[~np.isin(ref_names, self.linelist_full)]}, are not available. " + 
+    #                       f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
+    #         else: 
+    #             if self.verbose: print_log(f"The reference line(s), {ref_names}, are not covered by the spectrum. {tied_names} will be fit as free line(s).", self.log_message)
+    #             return # skip the following steps
+
+    #     tied_names_valid = []
+    #     for tied_name in tied_names:
+    #         if np.isin(tied_name, self.linename_n) & (tied_name != ref_name):
+    #             i_tied = np.where(self.linename_n == tied_name)[0][0]
+    #             tied_valid = self.mask_valid_cn[:, i_tied].any() # if tied_name exists in any one comp
+    #             if ref_valid & tied_valid: 
+    #                 self.linelink_n[i_tied] = ref_name
+    #                 tied_names_valid.append(tied_name)
+    #                 if use_pyneb:
+    #                     tied_wave, tied_atomlib = self.search_pyneb(tied_name, ret_atomlib=True)[1:]
+    #                     ref_wave,   ref_atomlib = self.search_pyneb( ref_name, ret_atomlib=True)[1:]
+    #                     if tied_atomlib is None:
+    #                         print_log(f"[WARNING] The reference line, '{tied_name}'', is not provided by pyneb. " + 
+    #                                   f"Please add the tying relation manually with FitFrame.line.tie_line_fluxes(ratio=, use_pyneb=False)", self.log_message)
+    #                     if ref_atomlib is None:
+    #                         print_log(f"[WARNING] The tied line, '{ref_name}'', is not provided by pyneb. " + 
+    #                                   f"Please add the tying relation manually with FitFrame.line.tie_line_fluxes(ratio=, use_pyneb=False)", self.log_message)
+    #                     log_e_dens = np.linspace(0, 12, 25)
+    #                     log_e_tems = np.linspace(np.log10(5e2), np.log10(3e4), 11)
+    #                     tied_emi_td = tied_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int(tied_wave))
+    #                     ref_emi_td  =  ref_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int( ref_wave))
+    #                     ratio_dt = (tied_emi_td / ref_emi_td).T
+    #                     func_ratio_dt = RegularGridInterpolator((log_e_dens, log_e_tems), ratio_dt, method='linear', bounds_error=False)
+    #                     self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
+    #                 else:                
+    #                     if tied_name == '[S II]:6718':
+    #                         # https://ui.adsabs.harvard.edu/abs/2014A&A...561A..10P 
+    #                         pok14_Rs = np.linspace(1.41, 0.45, 30)
+    #                         pok14_log_e_dens = 0.0543*np.tan(-3.0553*pok14_Rs+2.8506)+6.98-10.6905*pok14_Rs+9.9186*pok14_Rs**2-3.5442*pok14_Rs**3
+    #                         def func_ratio_dt(pars): return [np.interp(pars[0], pok14_log_e_dens, pok14_Rs)]
+    #                         if self.verbose:
+    #                             print_log(f"Line tying: [S II]:6718 is tied to [S II]:6733 with flux ratio from Proxauf et al.(2014) under the best-fit electron density.", self.log_message)
+    #                     else:
+    #                         if ratio is None:
+    #                             tmp = self.lineratio_n[i_tied] / self.lineratio_n[i_ref] * 1.0 # to avoid overwrite in following updating
+    #                             if self.verbose:
+    #                                 print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100cm-3 and temperature of 10000K.",self.log_message)
+    #                         else:
+    #                             if isinstance(ratio, list): raise ValueError((f"Please input a single ratio for {tied_name}, not a list."))
+    #                             tmp = ratio * 1.0 # force to input value
+    #                             if self.verbose:
+    #                                 print_log(f"Line tying: {tied_name} is tied to {ref_name} with the input flux ratio, {tmp}.", self.log_message)
+    #                         def func_ratio_dt(pars, ret=tmp): return [ret]
+    #                     self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
+
+    #     if len(tied_names_valid) > 0:
+    #         if use_pyneb & self.verbose:
+    #             if len(tied_names_valid)  > 1: print_log(f"    {tied_names_valid} --> {ref_name}", self.log_message)
+    #             if len(tied_names_valid) == 1: print_log(f"    {tied_names_valid[0]} --> {ref_name}", self.log_message)
+    #     else:            
+    #         if any(~np.isin(tied_names, self.linelist_full)):
+    #             print_log(f"[WARNING] The reference line(s), {np.array(tied_names)[~np.isin(tied_names, self.linelist_full)]}, are not available. " + 
+    #                       f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line()", self.log_message)
+    #         else: 
+    #             if self.verbose: print_log(f"The reference line(s), {tied_names}, are not covered by the spectrum, which will be fit as free line(s).", self.log_message)
+
+    def untie_line_fluxes(self, tied_names, components=None):
         if not isinstance(tied_names, list): tied_names = [tied_names]
-        for tied_name in tied_names:
-            if np.isin(tied_name, [*self.linelink_dict]):
-                i_tied = np.where(self.linename_n == tied_name)[0][0]
-                self.linelink_n[i_tied] = 'free'
-                self.linelink_dict.pop(tied_name)
-                if self.verbose: print_log(f"{tied_name} becomes untied.", self.log_message)
-            else:
-                if self.verbose: print_log(f"{tied_name} is not tied or nor covered by the spectrum.", self.log_message)
+        if components is not None:
+            if not isinstance(components, list): components = [components]
+        else:
+            components = copy(self.cframe.comp_c)
+
+        for i_comp in range(self.num_comps):
+            if np.isin(self.cframe.comp_c[i_comp], components): 
+                for tied_name in tied_names:
+                    if np.isin(tied_name, [*self.linelink_dict_cn[i_comp]]):
+                        i_tied = np.where(self.linename_n == tied_name)[0][0]                    
+                        self.linelink_name_cn[i_comp,i_tied] = 'free'
+                        self.linelink_dict_cn[i_comp].pop(tied_name)
+                        if self.verbose: print_log(f"{tied_name} becomes untied for the component {self.cframe.comp_c[i_comp]}.", self.log_message)
+                    else:
+                        if self.verbose: print_log(f"{tied_name} is not tied or nor covered by the spectrum for the component {self.cframe.comp_c[i_comp]}..", self.log_message)
         
-    def update_lineratio(self, Av=0, log_e_den=2, log_e_tem=4):
-        for tied_name in self.linelink_dict:
+    def update_lineratio(self, Av=None, log_e_den=None, log_e_tem=None, i_comp=None):
+        for tied_name in self.linelink_dict_cn[i_comp]:
             i_tied = np.where(self.linename_n == tied_name)[0][0]
             # read flux ratio for given log_e_den and log_e_tem
-            func_ratio_dt = self.linelink_dict[tied_name]['func_ratio_dt']
-            self.lineratio_n[i_tied] = func_ratio_dt(np.array([log_e_den, log_e_tem]))[0]
+            func_ratio_dt = self.linelink_dict_cn[i_comp][tied_name]['func_ratio_dt']
+            self.lineratio_cn[i_comp, i_tied] = func_ratio_dt(np.array([log_e_den, log_e_tem]))[0]
             # reflect extinction
-            ref_name = self.linelink_dict[tied_name]['ref_name']
+            ref_name = self.linelink_dict_cn[i_comp][tied_name]['ref_name']
             i_ref = np.where(self.linename_n == ref_name)[0][0]
             tmp = ExtLaw(self.linerest_n[i_tied]) - ExtLaw(self.linerest_n[i_ref])
-            self.lineratio_n[i_tied] *= 10.0**(-0.4 * Av * tmp)
+            self.lineratio_cn[i_comp, i_tied] *= 10.0**(-0.4 * Av * tmp)
 
     def update_mask_free(self):
         self.mask_free_cn  = np.zeros((self.num_comps, self.num_lines), dtype='bool')
         for i_comp in range(self.num_comps):
-            self.mask_free_cn[i_comp] = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict])
+            self.mask_free_cn[i_comp] = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict_cn[i_comp]])
         self.num_coeffs_c = self.mask_free_cn.sum(axis=1)
         self.num_coeffs = self.mask_free_cn.sum()
         
@@ -848,34 +1018,39 @@ class LineFrame(object):
 
         return model * flux
 
-    def models_single_comp(self, obs_wave_w, par_p, par_index_p, list_valid, list_free, sign, profile):
-        voff      = par_p[par_index_p['voff']]
-        fwhm      = par_p[par_index_p['fwhm']]
-        Av        = par_p[par_index_p['Av']]
-        log_e_den = par_p[par_index_p['log_e_den']]
-        log_e_tem = par_p[par_index_p['log_e_tem']]
+    def models_single_comp(self, obs_wave_w, par_cp, i_comp):
 
-        # update lineratio_n
-        self.update_lineratio(Av, log_e_den, log_e_tem)
+        voff      = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['voff']]
+        fwhm      = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['fwhm']]
+        Av        = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['Av']]
+        log_e_den = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['log_e_den']]
+        log_e_tem = par_cp[i_comp, self.cframe.par_index_cp[i_comp]['log_e_tem']]
+
+        # update lineratio_cn
+        self.update_lineratio(Av, log_e_den, log_e_tem, i_comp)
         
+        list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
+        list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
         models_scomp = []
         for i_free in list_free:
             model_sline = self.single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
-                                           1, self.v0_redshift, self.R_inst_rw, profile) # flux=1
-            list_linked = np.where(self.linelink_n == self.linename_n[i_free])[0]
+                                           1,  # flux=1
+                                           self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
+            list_linked = np.where(self.linelink_name_cn[i_comp] == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
                 model_sline += self.single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
-                                                self.lineratio_n[i_linked], self.v0_redshift, self.R_inst_rw, profile)
+                                                self.lineratio_cn[i_comp, i_linked], 
+                                                self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
             # detect and exclude weak lines
-            int_flux_list = [1] + [self.lineratio_n[i_linked] for i_linked in list_linked]
+            int_flux_list = [1] + [self.lineratio_cn[i_comp, i_linked] for i_linked in list_linked]
             peak_flux_min = min(int_flux_list) / (fwhm / np.sqrt(np.log(256)) * np.sqrt(2*np.pi)) 
             if not any(model_sline > (peak_flux_min * 0.5)): model_sline *= 0 # require to cover half peak height
             
             models_scomp.append(model_sline)
 
         models_scomp = np.array(models_scomp)
-        if sign == 'absorption': models_scomp *= -1 # set negative profile for absorption line
+        if self.cframe.info_c[i_comp]['sign'] == 'absorption': models_scomp *= -1 # set negative profile for absorption line
 
         return models_scomp
     
@@ -891,8 +1066,7 @@ class LineFrame(object):
             list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
             list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
             if len(list_free) >= 1:
-                obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp[i_comp], self.cframe.par_index_cp[i_comp], list_valid, list_free, 
-                                                            self.cframe.info_c[i_comp]['sign'], self.cframe.info_c[i_comp]['profile'])
+                obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp, i_comp)
                 if obs_flux_mcomp_ew is None: 
                     obs_flux_mcomp_ew = obs_flux_scomp_ew
                 else:
@@ -918,10 +1092,12 @@ class LineFrame(object):
 
     def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
 
+        ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
         if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
         if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        ############################################################
 
         if (step is None) | (step == 'best') | (step == 'final'):
             step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
@@ -950,17 +1126,17 @@ class LineFrame(object):
         # extract coefficients of all free lines to matrix
         coeff_lcn = np.zeros((num_loops, num_comps, self.num_lines))
         coeff_lcn[:, self.mask_free_cn] = best_coeff_le[:, fe0:fe1]
-        # update lineratio_n to calculate tied lines        
-        list_linked = np.where(np.isin(self.linename_n, [*self.linelink_dict]))[0]
-        for i_line in list_linked:
-            i_main = np.where(self.linename_n == self.linelink_n[i_line])[0][0]
-            for i_loop in range(num_loops):
-                for i_comp in range(num_comps):
+        # update lineratio_cn to calculate tied lines
+        for i_comp in range(num_comps):
+            list_linked = np.where(np.isin(self.linename_n, [*self.linelink_dict_cn[i_comp]]))[0]
+            for i_line in list_linked:
+                i_main = np.where(self.linename_n == self.linelink_name_cn[i_comp,i_line])[0][0]
+                for i_loop in range(num_loops):
                     Av        = par_lcp[i_loop, i_comp, self.cframe.par_index_cp[i_comp]['Av']]
                     log_e_den = par_lcp[i_loop, i_comp, self.cframe.par_index_cp[i_comp]['log_e_den']]
                     log_e_tem = par_lcp[i_loop, i_comp, self.cframe.par_index_cp[i_comp]['log_e_tem']]
-                    self.update_lineratio(Av, log_e_den, log_e_tem)
-                    coeff_lcn[i_loop, i_comp, i_line] = coeff_lcn[i_loop, i_comp, i_main] * self.lineratio_n[i_line] * self.mask_valid_cn[i_comp, i_line]
+                    self.update_lineratio(Av, log_e_den, log_e_tem, i_comp)
+                    coeff_lcn[i_loop, i_comp, i_line] = coeff_lcn[i_loop, i_comp, i_main] * self.lineratio_cn[i_comp, i_line] * self.mask_valid_cn[i_comp, i_line]
 
         # format of results
         # output_c['comp']['par_lp'][i_l,i_p]: parameters

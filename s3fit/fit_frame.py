@@ -56,6 +56,7 @@ class FitFrame(object):
                  if_save_per_loop=False, output_filename=None, 
                  if_save_test=False, verbose=False, **kwargs): 
 
+        ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if np.isin('inst_calib_ratio_rev', [*kwargs]): if_rev_inst_calib_ratio = kwargs['inst_calib_ratio_rev']
         if np.isin('keep_invalid', [*kwargs]): if_keep_invalid = kwargs['keep_invalid']
@@ -66,12 +67,63 @@ class FitFrame(object):
         if np.isin('plot_step', [*kwargs]): if_plot_step = kwargs['plot_step']
         if np.isin('save_per_loop', [*kwargs]): if_save_per_loop = kwargs['save_per_loop']
         if np.isin('save_test', [*kwargs]): if_save_test = kwargs['save_test']
+        ############################################################
 
-        input_args = {k: v for k, v in locals().items() if k != "self"}
-        if not np.array([isinstance(input_args[k], np.ndarray) for i, k in enumerate(input_args)]).any():
-            if np.array([input_args[k] == self.__init__.__defaults__[i] for i, k in enumerate(input_args)]).all():
-                print('[Note] Please input arguments or use FitFrame.reload() to initialize FitFrame.')
-                return
+        ############################################################
+        # copy and save all input arguments
+        self.input_args = {name: copy(value) for name, value in locals().items() if (name != 'self') & (name != 'kwargs')}
+        # FitFrame class can be reloaded as FF_new = FitFrame(**FF.input_args)
+
+        # check status of input arguments
+        mask_islist_a = [isinstance(self.input_args[name], (list, np.ndarray)) for name in self.input_args] # if inputs are list or array type
+        mask_isdefault_a = []
+        for i_arg, name in enumerate(self.input_args): 
+            if mask_islist_a[i_arg]:
+                mask_isdefault_a.append(False)
+            elif self.input_args[name] == self.__init__.__defaults__[i_arg]: # if inputs have the default values
+                mask_isdefault_a.append(True)
+            else:
+                mask_isdefault_a.append(False)
+        if all(mask_isdefault_a):
+            print('[Note] Please input arguments or use FitFrame.reload() to initialize FitFrame.')
+            return
+        # if not any( isinstance(self.input_args[name], (list, np.ndarray)) for name in self.input_args ): # not any inputs are list or array type
+        #     if all( self.input_args[name] == self.__init__.__defaults__[i_arg] for i_arg, name in enumerate(self.input_args) ): # all inputs have the default values
+
+        # check necessary spectrum arguments
+        spec_arg_names = ['spec_wave_w', 'spec_flux_w', 'spec_ferr_w', 'spec_R_inst_w']
+        for i_arg, name in enumerate(self.input_args):
+            if name in spec_arg_names:
+                if mask_isdefault_a[i_arg]:
+                    raise ValueError((f"The input argument '{name}' is necessary for the fitting."))
+                elif not mask_islist_a[i_arg]:
+                    raise ValueError((f"The format of the input '{name}' should be list or np.ndarray."))
+        if len(set([ len(self.input_args[name]) for i_arg, name in enumerate(self.input_args) if (name in spec_arg_names) & (name != 'spec_R_inst_w') ])) > 1:
+            raise ValueError((f"The input {spec_arg_names} should have the same length."))
+
+        # check necessary photometric-SED arguments
+        phot_arg_names = ['phot_name_b', 'phot_flux_b', 'phot_ferr_b', 'phot_trans_dir']
+        # enable spec+phot fitting if any of the phot_arg_names is input
+        if any( not mask_isdefault_a[i_arg] for i_arg, name in enumerate(self.input_args) if (name in phot_arg_names) & (name != 'phot_trans_dir') ):
+            self.have_phot = True 
+            for i_arg, name in enumerate(self.input_args):
+                if name in phot_arg_names:
+                    if mask_isdefault_a[i_arg]:
+                        raise ValueError((f"The input argument '{name}' is necessary for the fitting with photometric-SED."))
+                    elif (not mask_islist_a[i_arg]) & (name != 'phot_trans_dir'):
+                        raise ValueError((f"The format of the input '{name}' should be list or np.ndarray."))
+            if len(set([ len(self.input_args[name]) for i_arg, name in enumerate(self.input_args) if (name in phot_arg_names) & (name != 'phot_trans_dir') ])) > 1:
+                raise ValueError((f"The input {spec_arg_names} should have the same length."))
+        else:
+            self.have_phot = False
+
+        # check necessary model arguments
+        model_arg_names = ['model_config', 'v0_redshift']
+        for i_arg, name in enumerate(self.input_args):
+            if name in model_arg_names:
+                if mask_isdefault_a[i_arg]:
+                    raise ValueError((f"The input argument '{name}' is necessary for the fitting.")) 
+        ############################################################
 
         # use a list to save message in stdout
         self.log_message = []
@@ -80,32 +132,33 @@ class FitFrame(object):
 
         print_log(center_string('Initialize FitFrame', 80), self.log_message)
         # save spectral data and related properties
-        self.spec_wave_w = np.array(spec_wave_w) if spec_wave_w is not None else None
-        self.spec_flux_w = np.array(spec_flux_w) if spec_flux_w is not None else None
-        self.spec_ferr_w = np.array(spec_ferr_w) if spec_ferr_w is not None else None
-        self.spec_R_inst_w = np.array(spec_R_inst_w) if spec_R_inst_w is not None else None
+        self.spec_wave_w = np.array(spec_wave_w)
+        self.spec_flux_w = np.array(spec_flux_w)
+        self.spec_ferr_w = np.array(spec_ferr_w)
+        self.spec_R_inst_w = np.array(spec_R_inst_w)
         self.spec_valid_range = spec_valid_range
         self.spec_flux_scale = spec_flux_scale # flux_scale is used to avoid too small values
 
-        # save photometric-SED data and related properties
-        self.phot_name_b = np.array(phot_name_b) if phot_name_b is not None else None
-        self.phot_flux_b = np.array(phot_flux_b) if phot_flux_b is not None else None
-        self.phot_ferr_b = np.array(phot_ferr_b) if phot_ferr_b is not None else None
-        self.phot_flux_unit = phot_flux_unit
-        self.phot_trans_dir = phot_trans_dir
-        # generate wavelength grid to convolve spectra within each filter
-        self.sed_wave_w = np.array(sed_wave_w) if sed_wave_w is not None else None
-        self.sed_wave_unit = sed_wave_unit
-        self.sed_wave_num = sed_wave_num
-        self.phot_trans_rsmp = phot_trans_rsmp
+        if self.have_phot:
+            # save photometric-SED data and related properties
+            self.phot_name_b = np.array(phot_name_b)
+            self.phot_flux_b = np.array(phot_flux_b)
+            self.phot_ferr_b = np.array(phot_ferr_b)
+            self.phot_flux_unit = phot_flux_unit
+            self.phot_trans_dir = phot_trans_dir
+            # generate wavelength grid to convolve spectra within each filter
+            self.sed_wave_w = np.array(sed_wave_w) if sed_wave_w is not None else None
+            self.sed_wave_unit = sed_wave_unit
+            self.sed_wave_num = sed_wave_num
+            self.phot_trans_rsmp = phot_trans_rsmp
 
-        # connection between spectral and photometric data
-        self.phot_calib_b = np.array(phot_calib_b) if phot_calib_b is not None else None
-        # initial ratio to estimate calibration error
-        self.inst_calib_ratio = inst_calib_ratio
-        self.if_rev_inst_calib_ratio = if_rev_inst_calib_ratio
-        # smoothing width when creating modified error
-        self.inst_calib_smooth = inst_calib_smooth
+            # connection between spectral and photometric data
+            self.phot_calib_b = np.array(phot_calib_b) if phot_calib_b is not None else None
+            # initial ratio to estimate calibration error
+            self.inst_calib_ratio = inst_calib_ratio
+            self.if_rev_inst_calib_ratio = if_rev_inst_calib_ratio
+            # smoothing width when creating modified error
+            self.inst_calib_smooth = inst_calib_smooth
 
         # whether to keep invalid wavelength range; if true, mock data and models will be created in invalid range
         self.if_keep_invalid = if_keep_invalid
@@ -172,9 +225,9 @@ class FitFrame(object):
         self.if_save_test = if_save_test # if save the iteration tracing for test
         self.verbose = verbose 
 
-        arg_list = list(inspect.signature(self.__init__).parameters.values())
-        self.input_args = {arg.name: copy(getattr(self,arg.name,None)) for arg in arg_list if arg.name != 'self'}
-        # FitFrame class can be copied as FF_1 = FitFrame(**FF_0.input_args)
+        # alternative input_args
+        # arg_list = list(inspect.signature(self.__init__).parameters.values())
+        # self.input_args = {arg.name: copy(getattr(self,arg.name,None)) for arg in arg_list if arg.name != 'self'}
 
         # initialize input formats
         self.init_input_data()
@@ -272,7 +325,7 @@ class FitFrame(object):
             self.norm_wave = med_wave
 
         # create a dictionary for photometric-SED data
-        self.have_phot = True if self.phot_name_b is not None else False
+        # self.have_phot = True if self.phot_name_b is not None else False
         if self.have_phot:
             print_log(center_string('Read photometric data', 80), self.log_message, verbose)
             print_log(f'Data available in bands: {self.phot_name_b}', self.log_message, verbose)
@@ -334,12 +387,14 @@ class FitFrame(object):
         # models init setup
         self.model_dict = {}
 
+        ############################################################
         # update old mod name, 'ssp' and 'el', in model_config to be compatible with old version <= 2.2.4
         for mod in [*self.model_config]:
             if mod == 'ssp': self.model_config['stellar'] = self.model_config.pop('ssp')
             if mod == 'el' : self.model_config['line']    = self.model_config.pop('el')
+        ############################################################
 
-        ###############################
+        ############################################################
         mod = 'stellar'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
@@ -361,7 +416,7 @@ class FitFrame(object):
                                                                    dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
                                                                    verbose=False) 
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-        ###############################
+        ############################################################
         mod = 'agn'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
@@ -383,7 +438,7 @@ class FitFrame(object):
                                                                dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
                                                                verbose=False) 
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-        ###############################
+        ############################################################
         mod = 'torus'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']: 
@@ -399,7 +454,7 @@ class FitFrame(object):
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e6)
-        ###############################
+        ############################################################
         mod = 'line'
         if np.isin(mod, [*self.model_config]):
             if self.model_config[mod]['enable']:
@@ -415,7 +470,7 @@ class FitFrame(object):
                 if self.have_phot:
                     self.model_dict[mod]['sed_mod'] = self.model_dict[mod]['spec_mod'] # just copy, only fit lines in spectral wavelength range
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
-        ###############################
+        ############################################################
 
         print_log(center_string('Model summary', 80), self.log_message)
         print_log(f'S3Fit imports these models: {[*self.model_dict]}.', self.log_message)
@@ -454,6 +509,7 @@ class FitFrame(object):
             self.spec['mask_noline_w'] = copy(self.spec['mask_valid_w'])
         self.archived_input['spec']['mask_noline_w'] = copy(self.spec['mask_noline_w'])
 
+        ############################################################
         # check old mod name, 'ssp' and 'el', in tying relations to be compatible with old version <= 2.2.4
         for mod in [*self.model_dict]:
             for i_comp in range(self.model_dict[mod]['cframe'].num_comps):
@@ -468,6 +524,7 @@ class FitFrame(object):
         for mod in [*self.model_dict]:
             if mod == 'stellar': self.model_dict['ssp'] = self.model_dict['stellar']
             if mod == 'line'   : self.model_dict['el']  = self.model_dict['line']
+        ############################################################
 
         if self.if_rev_v0_redshift:
             print_log(f"The systemic redshift (v0_redshift) will be updated using the model and component: '{self.rev_v0_reference}'.", self.log_message)
@@ -488,7 +545,7 @@ class FitFrame(object):
         self.num_tot_coeffs = 0
         for mod in self.full_model_type.split('+'):
             self.mod_name_p  = np.hstack((self.mod_name_p , np.full(self.model_dict[mod]['cframe'].num_pars_c_tot, mod)))
-            self.comp_name_p = np.hstack((self.comp_name_p, np.tile(self.model_dict[mod]['cframe'].comp_c, (self.model_dict[mod]['cframe'].num_pars_c_max,1)).T.flatten()))
+            self.comp_name_p = np.hstack((self.comp_name_p, np.tile(self.model_dict[mod]['cframe'].comp_c, (self.model_dict[mod]['cframe'].num_pars_c_max, 1)).T.flatten()))
             self.par_name_p  = np.hstack((self.par_name_p , self.model_dict[mod]['cframe'].par_name_cp.flatten()))
             self.num_tot_pars   += self.model_dict[mod]['num_pars']
             self.num_tot_coeffs += self.model_dict[mod]['num_coeffs']
@@ -1576,11 +1633,13 @@ class FitFrame(object):
     ##########################################################################
     ################# Output best-fit spectra and values #####################
 
-    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, num_sed_wave=5000, flux_type='Flam', **kwargs):
+    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=None, if_show_average=False, num_sed_wave=5000, flux_type='Flam', **kwargs):
 
+        ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
         if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
+        ############################################################
 
         if (step is None) | (step == 'best') | (step == 'final'):
             step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
@@ -1621,6 +1680,7 @@ class FitFrame(object):
         self.rev_model_type = rev_model_type # save for indexing output_mc
         print_log(f'The best-fit properties are extracted for the models: {rev_model_type}', self.log_message, self.if_print_step)
 
+        if if_rev_v0_redshift is None: if_rev_v0_redshift = self.if_rev_v0_redshift
         if if_rev_v0_redshift:
             mask_v0_p  = self.par_name_p  == 'voff'
             mask_v0_p &= self.mod_name_p  == self.rev_v0_reference.split(':')[0]
@@ -1783,9 +1843,11 @@ class FitFrame(object):
                 output_mc[mod][comp_c[i_comp]]['values']   = tmp_output_c[comp_c[i_comp]]['values']
             output_mc[mod]['sum']['values'] = tmp_output_c['sum']['values']
 
+        ############################################################
         # allow old mod name, 'ssp' and 'el', in output_mc to be compatible with old version <= 2.2.4
         if np.isin('stellar', self.full_model_type.split('+')): self.output_mc['ssp'] = output_mc['stellar']
         if np.isin('line',    self.full_model_type.split('+')): self.output_mc['el']  = output_mc['line']
+        ############################################################
 
         self.output_mc = output_mc
         if if_return_results: return output_mc

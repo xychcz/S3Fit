@@ -13,7 +13,7 @@ import astropy.constants as const
 class ConfigFrame(object):
     def __init__(self, config):
         self.config = config
-        self.comp_c = [*config]
+        self.comp_c = np.array([*config])
         self.num_comps = len(config)
         self.num_pars_c = [len(config[self.comp_c[i_comp]]['pars']) for i_comp in range(self.num_comps)]
         self.num_pars_c_max = max(self.num_pars_c)
@@ -49,13 +49,12 @@ class ConfigFrame(object):
             self.par_index_cp.append(par_index_p)
                     
             self.info_c.append(config[self.comp_c[i_comp]]['info'])
-            # group used model elements in a list
+
+            # group used model elements in an array
             for item in ['mod_used', 'line_used']:
                 if np.isin(item, [*self.info_c[i_comp]]): 
-                    if isinstance(self.info_c[i_comp][item], list): 
-                        self.info_c[i_comp][item] = np.array(self.info_c[i_comp][item])
-                    else:
-                        self.info_c[i_comp][item] = np.array([self.info_c[i_comp][item]])
+                    if isinstance(self.info_c[i_comp][item], str): self.info_c[i_comp][item] = [self.info_c[i_comp][item]]
+                    self.info_c[i_comp][item] = np.array(self.info_c[i_comp][item])
 
             # rename sign for absorption/emission
             if np.isin('sign', [*self.info_c[i_comp]]):

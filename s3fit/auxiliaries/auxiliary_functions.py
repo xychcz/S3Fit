@@ -9,10 +9,11 @@ np.set_printoptions(linewidth=10000)
 import scipy.sparse as sparse
 from scipy.signal import fftconvolve
 from scipy.interpolate import interp1d
-# from astropy.convolution import Gaussian1DKernel
+import matplotlib.colors as mcolors
+import colorsys
 
 #####################################################################
-####################### printing functions ##########################
+######################### print functions ###########################
 def print_log(message, log=[], display=True):
     if display: print(message)
     log.append(message)
@@ -31,6 +32,44 @@ def center_string(s:str, total_length:int=30, pad:str="#", padding_lmin:int=4) -
     left_pad = pad * pad_units
     right_pad = pad * (pad_units + (extra_chars // len(pad)))  # add extra padding on the left if needed
     return f"{left_pad} {s} {right_pad}"
+
+# convert roman numbers
+def roman_to_int(roman_num):
+    roman_dict = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000,'IV':4,'IX':9,'XL':40,'XC':90,'CD':400,'CM':900}
+    i = 0; int_num = 0
+    while i < len(roman_num):
+        if i+1<len(roman_num) and roman_num[i:i+2] in roman_dict:
+            int_num+=roman_dict[roman_num[i:i+2]]; i+=2
+        else:
+            int_num+=roman_dict[roman_num[i]]; i+=1
+    return int_num
+
+greek_letters = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta',
+                 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'pi', 'rho',
+                 'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega']
+                 
+#####################################################################
+#####################################################################
+
+#####################################################################
+########################## plot functions ###########################
+def get_colors_by_hue(hue_center, hue_width=30, min_s=0.35, max_s=0.95, min_v=0.35, max_v=0.95):
+    color_list = []
+    for name, hexv in mcolors.CSS4_COLORS.items():
+        r, g, b = mcolors.to_rgb(hexv)
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+        h_deg = h * 360
+        dh = min(abs(h_deg - hue_center), 360 - abs(h_deg - hue_center)) # circular distance in hue
+        if dh <= hue_width and s >= min_s and s <= max_s and v >= min_v and v <= max_v: color_list.append(name)
+        # color_list = sorted(color_list)
+    return color_list
+
+color_list_dict = {'red':    get_colors_by_hue(0,   hue_width=20, min_s=0.3,  max_s=1,    min_v=0.6,  max_v=1),
+                   'yellow': get_colors_by_hue(50,  hue_width=25, min_s=0.4,  max_s=1,    min_v=0.5,  max_v=0.99),
+                   'green':  get_colors_by_hue(120, hue_width=50, min_s=0.3,  max_s=1,    min_v=0.51, max_v=0.98),
+                   'blue':   get_colors_by_hue(190, hue_width=35, min_s=0.41, max_s=0.99, min_v=0.3,  max_v=0.99),
+                   'purple': get_colors_by_hue(300, hue_width=50, min_s=0.1,  max_s=0.8,  min_v=0.55, max_v=1),
+                  }
 #####################################################################
 #####################################################################
 
@@ -70,7 +109,8 @@ def lamb_air_to_vac(lamb_air, extrapolate=True):
         # obtained via fitting lamb_vac/lamb_air in 2500-5000 AA
         lamb_vac[mask] = lamb_air[mask] * r
         
-    return lamb_vac#####################################################################
+    return lamb_vac
+#####################################################################
 #####################################################################
 
 #####################################################################
