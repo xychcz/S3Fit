@@ -13,18 +13,20 @@ from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-from ..auxiliaries.auxiliary_functions import print_log, color_list_dict, convolve_fix_width_fft, convolve_var_width_fft
+from ..auxiliaries.auxiliary_frames import ConfigFrame
+from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict, convolve_fix_width_fft, convolve_var_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
-    def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, R_inst_rw=None, 
+    def __init__(self, fframe=None, config=None, filename=None, 
+                 v0_redshift=None, R_inst_rw=None, 
                  w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
-        self.filename = filename
-        self.cframe = cframe
         self.fframe = fframe
+        self.config = config
+        self.filename = filename
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.w_min = w_min
@@ -37,6 +39,7 @@ class StellarFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.cframe=ConfigFrame(self.config)
         self.num_comps = self.cframe.num_comps
 
         ############################################################
@@ -45,13 +48,13 @@ class StellarFrame(object):
             self.cframe.par_name_cp = np.array([['voff', 'fwhm', 'Av', 'log_csp_age', 'log_csp_tau'] for i_comp in range(self.num_comps)])
             self.cframe.par_index_cp = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_csp_age': 3, 'log_csp_tau': 4} for i_comp in range(self.num_comps)]
         for i_comp in range(self.num_comps):
-            if np.isin('age_min', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['log_ssp_age_min'] = self.cframe.info_c[i_comp]['age_min']
-            if np.isin('age_max', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['log_ssp_age_max'] = self.cframe.info_c[i_comp]['age_max']
-            if np.isin('met_sel', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['ssp_metallicity'] = self.cframe.info_c[i_comp]['met_sel']
+            if 'age_min' in [*self.cframe.info_c[i_comp]]: self.cframe.info_c[i_comp]['log_ssp_age_min'] = self.cframe.info_c[i_comp]['age_min']
+            if 'age_max' in [*self.cframe.info_c[i_comp]]: self.cframe.info_c[i_comp]['log_ssp_age_max'] = self.cframe.info_c[i_comp]['age_max']
+            if 'met_sel' in [*self.cframe.info_c[i_comp]]: self.cframe.info_c[i_comp]['ssp_metallicity'] = self.cframe.info_c[i_comp]['met_sel']
         ############################################################
 
         # read SFH setup from input config file
-        self.sfh_names = np.array([d['sfh_name'] for d in self.cframe.info_c])
+        self.sfh_names = casefold(np.array([d['sfh_name'] for d in self.cframe.info_c]))
         if self.num_comps > 1:
             if np.sum(self.sfh_names == 'nonparametric') >= 1:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
@@ -362,11 +365,11 @@ class StellarFrame(object):
             # mask for all SSP elements, for an individual comp
             log_age_min, log_age_max = self.cframe.info_c[i_comp]['log_ssp_age_min'], self.cframe.info_c[i_comp]['log_ssp_age_max']
             age_min = self.age_e.min() if log_age_min is None else 10.0**log_age_min
-            age_max = cosmo.age(self.v0_redshift).value if log_age_max == 'universe' else 10.0**log_age_max
+            age_max = cosmo.age(self.v0_redshift).value if log_age_max in ['universe', 'Universe'] else 10.0**log_age_max
             mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
             met_sel = self.cframe.info_c[i_comp]['ssp_metallicity']
             if met_sel != 'all':
-                if met_sel == 'solar':
+                if met_sel in ['solar', 'Solar']:
                     mask_lite_ssp_e &= self.met_e == 0.02
                 else:
                     mask_lite_ssp_e &= np.isin(self.met_e, met_sel)
@@ -443,15 +446,14 @@ class StellarFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
-        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
-        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        if 'print_results'  in [*kwargs]: if_print_results = kwargs['print_results']
+        if 'return_results' in [*kwargs]: if_return_results = kwargs['return_results']
+        if 'show_average'   in [*kwargs]: if_show_average = kwargs['show_average']
         ############################################################
 
-        if (step is None) | (step == 'best') | (step == 'final'):
-            step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if (step == 'spec+SED'):  step = 'joint_fit_3'
-        if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
+        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
+        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
         
         best_chi_sq_l = copy(self.fframe.output_s[step]['chi_sq_l'])
         best_par_lp   = copy(self.fframe.output_s[step]['par_lp'])
@@ -623,18 +625,18 @@ class StellarFrame(object):
                 msg += f" +/- {tmp_values_vl['fwhm'].std()/np.sqrt(np.log(256)):<8.4f}|\n"
                 msg += f"| Extinction (Av)                           = {tmp_values_vl['Av'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['Av'].std():<8.4f}|\n"
-                if np.isin(self.sfh_names[i_comp], ['exponential', 'delayed', 'constant', 'user']):
+                if self.sfh_names[i_comp] in ['exponential', 'delayed', 'constant', 'user']:
                     msg += f"| Max age of composite star.pop. (log Gyr)  = {tmp_values_vl['log_csp_age'][mask_l].mean():10.4f}"
                     msg += f" +/- {tmp_values_vl['log_csp_age'].std():<8.4f}|\n"
-                if np.isin(self.sfh_names[i_comp], ['exponential', 'delayed']):
+                if self.sfh_names[i_comp] in ['exponential', 'delayed']:
                     msg += f"| Declining timescale of SFH (log Gyr)      = {tmp_values_vl['log_csp_tau'][mask_l].mean():10.4f}"
                     msg += f" +/- {tmp_values_vl['log_csp_tau'].std():<8.4f}|\n"
-                if np.isin(self.sfh_names[i_comp], ['user']):
+                if self.sfh_names[i_comp] in ['user']:
                     # for par_name in [*tmp_values_vl]:
                     #     if par_name[:3] != 'sfh': continue
                     #     if par_name == 'sfh_par0': continue
                     for par_name in self.cframe.par_name_cp[i_comp]:
-                        if ~np.isin(par_name, ['voff', 'fwhm', 'Av', 'log_csp_age']): 
+                        if not (par_name in ['voff', 'fwhm', 'Av', 'log_csp_age']): 
                             msg += f"| {par_name} " + ' '*(40-len(par_name)) + f" = {tmp_values_vl[par_name][mask_l].mean():10.4f}"
                             msg += f" +/- {tmp_values_vl[par_name].std():<8.4f}|\n"
             else:
@@ -672,9 +674,9 @@ class StellarFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if np.isin('plot', [*kwargs]): if_plot_sfh = kwargs['plot']
-        if np.isin('return_sfh', [*kwargs]): if_return_sfh = kwargs['return_sfh']
-        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        if 'plot'         in [*kwargs]: if_plot_sfh = kwargs['plot']
+        if 'return_sfh'   in [*kwargs]: if_return_sfh = kwargs['return_sfh']
+        if 'show_average' in [*kwargs]: if_show_average = kwargs['show_average']
         ############################################################
 
         mask_l = np.ones(self.num_loops, dtype='bool')

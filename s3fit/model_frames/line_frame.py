@@ -8,17 +8,19 @@ np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliaries.auxiliary_functions import print_log, greek_letters, roman_to_int, color_list_dict, lamb_air_to_vac, convolve_fix_width_fft
+from ..auxiliaries.auxiliary_frames import ConfigFrame
+from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters, roman_to_int, color_list_dict, lamb_air_to_vac, convolve_fix_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
-    def __init__(self, use_pyneb=False, cframe=None, fframe=None, v0_redshift=0, R_inst_rw=None, 
+    def __init__(self, fframe=None, config=None, use_pyneb=False, 
+                 v0_redshift=0, R_inst_rw=None, 
                  w_min=None, w_max=None, mask_valid_rw=None, 
                  verbose=True, log_message=[]):
 
-        self.use_pyneb = use_pyneb
-        self.cframe = cframe
         self.fframe = fframe
+        self.config = config
+        self.use_pyneb = use_pyneb
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.w_min = w_min
@@ -27,6 +29,7 @@ class LineFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.cframe=ConfigFrame(self.config)
         self.num_comps = len(self.cframe.info_c)
 
         ############################################################
@@ -40,11 +43,11 @@ class LineFrame(object):
 
         for i_comp in range(self.num_comps):
             # set default info if not specified in config
-            if ~np.isin('line_used', [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
-            if ~np.isin('line_ties', [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_ties'] = ['default']
-            if ~np.isin('H_hi_order', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['H_hi_order'] = False
-            if ~np.isin('sign', [*self.cframe.info_c[i_comp]])      : self.cframe.info_c[i_comp]['sign'] = 'emission'
-            if ~np.isin('profile', [*self.cframe.info_c[i_comp]])   : self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
+            if not ('line_used'  in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
+            if not ('line_ties'  in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_ties'] = ['default']
+            if not ('H_hi_order' in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['H_hi_order'] = False
+            if not ('sign'       in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['sign'] = 'emission'
+            if not ('profile'    in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
             # group line info to a list
             if isinstance(self.cframe.info_c[i_comp]['line_used'], str): self.cframe.info_c[i_comp]['line_used'] = [self.cframe.info_c[i_comp]['line_used']]
             self.cframe.info_c[i_comp]['line_used'] = np.array(self.cframe.info_c[i_comp]['line_used'])
@@ -425,7 +428,6 @@ class LineFrame(object):
 
             # refresh line info with pyneb
             for i_line in range(len(self.linename_n)):
-                # if np.isin(self.linename_n[i_line], linelist_mismatch): continue
                 linename, linerest = self.search_pyneb(self.linename_n[i_line], verbose=False) # show all message of not supported lines with verbose=True
                 if linename is not None: 
                     self.linename_n[i_line] = linename
@@ -449,7 +451,7 @@ class LineFrame(object):
 
         if name in self.H_levels_dict:
             element = 'H'; notation = 1
-            if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
+            if not (element+str(notation) in [*self.pyneblib['RecAtom']]):
                 atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
                 dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                 wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -470,8 +472,8 @@ class LineFrame(object):
                 else:
                     element, notation = ion.split(' ')
             notation = roman_to_int(notation)
-            if np.isin(element+str(notation), ['H1', 'He2']):
-                if ~np.isin(element+str(notation), [*self.pyneblib['RecAtom']]):
+            if element+str(notation) in ['H1', 'He2']:
+                if not (element+str(notation) in [*self.pyneblib['RecAtom']]):
                     atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -481,14 +483,14 @@ class LineFrame(object):
                     self.pyneblib['RecAtom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
                 atomlib = self.pyneblib['RecAtom'][element+str(notation)]
             else:
-                if ~np.isin(element+str(notation), self.pyneblib['Atom']['list']):
+                if not (element+str(notation) in self.pyneblib['Atom']['list']):
                     if verbose: 
                         print_log(f"[WARNING] {name} not provided in pyneb, please add it manually with FitFrame.line.add_line(use_pyneb=False).", self.log_message)
                     if ret_atomlib: 
                         return None, None, None
                     else:
                         return None, None
-                if ~np.isin(element+str(notation), [*self.pyneblib['Atom']]):
+                if not (element+str(notation) in [*self.pyneblib['Atom']]):
                     atomdata = self.pyneb.Atom(element, notation) # , noExtrapol=True
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -529,7 +531,7 @@ class LineFrame(object):
             else:
                 linerest = linerests[i_line] if wave_medium == 'vacuum' else lamb_air_to_vac(linerests[i_line])
                 lineratio = lineratios[i_line] if lineratios[i_line] is not None else 1.0
-            if np.isin(linename, self.linelist_full): 
+            if linename in self.linelist_full: 
                 if verbose: print_log(f"There is already the same line {linename} in the line list, set force=True to add this line forcibly.", self.log_message)
                 continue # skip the following steps
 
@@ -592,7 +594,7 @@ class LineFrame(object):
         spectra_full = spectra_full[~np.isin(spectra_full, linelist_H)]
         spectra_uniq = []
         for spectrum in spectra_full:
-            if ~np.isin(spectrum, spectra_uniq): spectra_uniq.append(str(spectrum))
+            if not (spectrum in spectra_uniq): spectra_uniq.append(str(spectrum))
         spectra_uniq = np.array(spectra_uniq)
         self.linelist_spectra = {}
         self.linelist_spectra['H I'] = linelist_H
@@ -604,7 +606,7 @@ class LineFrame(object):
             if notations_full[i][-1] == ']': notations_full[i] = notations_full[i][:-1]
         notations_uniq = []
         for notation in notations_full:
-            if ~np.isin(notation, notations_uniq): notations_uniq.append(str(notation))
+            if not (notation in notations_uniq): notations_uniq.append(str(notation))
         notations_uniq = np.array(notations_uniq)
         self.linelist_notations = {}
         self.linelist_notations['H I'] = linelist_H
@@ -615,7 +617,7 @@ class LineFrame(object):
             elements_full[i] = elements_full[i].split(' ')[0]
         elements_uniq = []
         for element in elements_full:
-            if ~np.isin(element, elements_uniq): elements_uniq.append(str(element))
+            if not (element in elements_uniq): elements_uniq.append(str(element))
         elements_uniq = np.array(elements_uniq)
         self.linelist_elements = {}
         self.linelist_elements['H'] = linelist_H
@@ -631,18 +633,18 @@ class LineFrame(object):
                 self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_full))
             else:
                 enable_all_lines = False
-                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['default', 'NLR', 'AGN_NLR', 'HII', 'outflow']).any():
+                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), casefold(['default', 'NLR', 'AGN_NLR', 'AGN NLR', 'HII', 'outflow'])).any():
                     self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_default))
-                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['BLR', 'AGN_BLR']).any():
+                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), casefold(['BLR', 'AGN_BLR', 'AGN BLR'])).any():
                     self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  
                                                                         self.linelist_allowed[np.isin(self.linelist_allowed, self.linelist_default)],
                                                                         self.linelist_intercombination[np.isin(self.linelist_intercombination, self.linelist_default)],
                                                                         self.linelist_elements['H']))
-                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['allowed', 'permitted']).any():
+                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), ['allowed', 'permitted']).any():
                     self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_allowed))
-                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['intercombination', 'semiforbidden', 'semi-forbidden', 'semipermitted', 'semi-permitted']).any():
+                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), ['intercombination', 'semiforbidden', 'semi-forbidden', 'semipermitted', 'semi-permitted']).any():
                     self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_intercombination))
-                if np.isin(self.cframe.info_c[i_comp]['line_used'], ['forbidden']).any():
+                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), ['forbidden']).any():
                     self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_forbidden))  
                 if np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_elements]).any():
                     for element in self.cframe.info_c[i_comp]['line_used'][np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_elements])]:
@@ -722,17 +724,18 @@ class LineFrame(object):
         line_ties_collect = []
         for i_comp in range(self.num_comps):
             self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
-            if np.isin(self.cframe.info_c[i_comp]['line_ties'], ['default']).any():
-                self.cframe.info_c[i_comp]['line_ties'].remove('default')
+            if np.isin(self.cframe.info_c[i_comp]['line_ties'], ['default', 'Default']).any():
+                # self.cframe.info_c[i_comp]['line_ties'].remove('default')
                 self.cframe.info_c[i_comp]['line_ties'] += line_ties_default
                 self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
             line_ties_collect += self.cframe.info_c[i_comp]['line_ties']
         line_ties_collect = list(dict.fromkeys(line_ties_collect)) # remove duplicates
 
         for line_tie in line_ties_collect:
+            if line_tie in ['default', 'Default']: continue
             components = [self.cframe.comp_c[i_comp] for i_comp in range(self.num_comps) if line_tie in self.cframe.info_c[i_comp]['line_ties']]
             if isinstance(line_tie, str):
-                if np.isin(line_tie, ['Hydrogen lines', 'Hydrogen_lines']).any():
+                if casefold(line_tie) in ['hydrogen', 'hydrogen lines', 'hydrogen_lines']:
                     linelist_H = [l for l in self.linelist_elements['H'].tolist() if l[:2] != 'Ly' ] # do not include Lyman series due to gas obscuration and Lya forest
                     self.tie_line_fluxes(line_names=linelist_H, components=components) 
             else:
@@ -777,12 +780,12 @@ class LineFrame(object):
                 print_log(f"[WARNING] The specified line(s), {np.array(ref_names)[~np.isin(ref_names, self.linelist_full)]}, are not available. " + 
                           f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
         elif ref_line_name is not None:
-            if np.isin(ref_line_name, self.linelist_full):
+            if not (ref_line_name in self.linelist_full):
                 print_log(f"[WARNING] The reference line, {ref_line_name}, is not available. " + 
                           f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
                 return # skip the following steps
         elif tied_line_name is not None:
-            if np.isin(tied_line_name, self.linelist_full):
+            if not (tied_line_name in self.linelist_full):
                 print_log(f"[WARNING] The tied line, {tied_line_name}, is not available. " + 
                           f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
                 return # skip the following steps
@@ -792,14 +795,14 @@ class LineFrame(object):
         for i_comp in range(self.num_comps):
             ref_name_c.append('None')
             tied_names_c.append(['None'])
-            if np.isin(self.cframe.comp_c[i_comp], components): 
+            if self.cframe.comp_c[i_comp] in components: 
                 if line_names[0] is not None:
                     line_names_valid = line_names[np.isin(line_names, self.linename_n[self.mask_valid_cn[i_comp]])].tolist()
                     if len(line_names_valid) >= 1: ref_name_c[i_comp] = line_names_valid[0]
                     if len(line_names_valid) >= 2: tied_names_c[i_comp] = line_names_valid[1:]
                 else:
-                    if np.isin(ref_line_name, self.linename_n[self.mask_valid_cn[i_comp]]): ref_name_c[i_comp] = ref_line_name
-                    if np.isin(tied_line_name, self.linename_n[self.mask_valid_cn[i_comp]]): tied_names_c[i_comp] = [tied_line_name]
+                    if ref_line_name  in self.linename_n[self.mask_valid_cn[i_comp]]: ref_name_c[i_comp] = ref_line_name
+                    if tied_line_name in self.linename_n[self.mask_valid_cn[i_comp]]: tied_names_c[i_comp] = [tied_line_name]
 
         mask_finish_c = np.zeros(self.num_comps, dtype='bool')
         for i_comp in range(self.num_comps):
@@ -868,90 +871,6 @@ class LineFrame(object):
                     if len(tied_names)  > 1: print_log(f"    {tied_names} --> {ref_name} for the components {self.cframe.comp_c[mask_sharetie_c]}.", self.log_message)
                     if len(tied_names) == 1: print_log(f"    {tied_names[0]} --> {ref_name} for the components {self.cframe.comp_c[mask_sharetie_c]}.", self.log_message)
 
-    # def tie_line_fluxes(self, tied_names=None, ref_names=None, ratio=None, i_comp=None, components=None, use_pyneb=None):
-    #     # prebuild the tying ratio libraries between tied lines and the reference line (1st valid one if multi given)
-    #     if not isinstance(ref_names, list): ref_names = [ref_names]
-    #     if not isinstance(tied_names, list): tied_names = [tied_names]
-    #     if i_comp is not None:
-    #         mask_c = np.arange(self.num_comps) == i_comp
-    #     elif components is not None:
-    #         if not isinstance(components, list): components = [components]
-    #         mask_c = np.isin(self.cframe.comp_c, components)
-    #     else:
-    #         mask_c = np.ones(self.num_comps, dtype='bool')
-    #     if use_pyneb is None: use_pyneb = self.use_pyneb
-
-    #     ref_valid = False
-    #     for ref_name in ref_names:
-    #         if np.isin(ref_name, self.linename_n):
-    #             i_ref = np.where(self.linename_n == ref_name)[0][0]
-    #             ref_valid = self.mask_valid_cn[:, i_ref].any() # if ref_name exists in any one comp
-    #             if ref_valid: break # pick up the 1st valid ref_name
-
-    #     if not ref_valid:
-    #         if any(~np.isin(ref_names, self.linelist_full)):
-    #             print_log(f"[WARNING] The reference line(s), {np.array(ref_names)[~np.isin(ref_names, self.linelist_full)]}, are not available. " + 
-    #                       f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
-    #         else: 
-    #             if self.verbose: print_log(f"The reference line(s), {ref_names}, are not covered by the spectrum. {tied_names} will be fit as free line(s).", self.log_message)
-    #             return # skip the following steps
-
-    #     tied_names_valid = []
-    #     for tied_name in tied_names:
-    #         if np.isin(tied_name, self.linename_n) & (tied_name != ref_name):
-    #             i_tied = np.where(self.linename_n == tied_name)[0][0]
-    #             tied_valid = self.mask_valid_cn[:, i_tied].any() # if tied_name exists in any one comp
-    #             if ref_valid & tied_valid: 
-    #                 self.linelink_n[i_tied] = ref_name
-    #                 tied_names_valid.append(tied_name)
-    #                 if use_pyneb:
-    #                     tied_wave, tied_atomlib = self.search_pyneb(tied_name, ret_atomlib=True)[1:]
-    #                     ref_wave,   ref_atomlib = self.search_pyneb( ref_name, ret_atomlib=True)[1:]
-    #                     if tied_atomlib is None:
-    #                         print_log(f"[WARNING] The reference line, '{tied_name}'', is not provided by pyneb. " + 
-    #                                   f"Please add the tying relation manually with FitFrame.line.tie_line_fluxes(ratio=, use_pyneb=False)", self.log_message)
-    #                     if ref_atomlib is None:
-    #                         print_log(f"[WARNING] The tied line, '{ref_name}'', is not provided by pyneb. " + 
-    #                                   f"Please add the tying relation manually with FitFrame.line.tie_line_fluxes(ratio=, use_pyneb=False)", self.log_message)
-    #                     log_e_dens = np.linspace(0, 12, 25)
-    #                     log_e_tems = np.linspace(np.log10(5e2), np.log10(3e4), 11)
-    #                     tied_emi_td = tied_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int(tied_wave))
-    #                     ref_emi_td  =  ref_atomlib['func_emissivity'](den=10.0**log_e_dens, tem=10.0**log_e_tems, wave_vac=int( ref_wave))
-    #                     ratio_dt = (tied_emi_td / ref_emi_td).T
-    #                     func_ratio_dt = RegularGridInterpolator((log_e_dens, log_e_tems), ratio_dt, method='linear', bounds_error=False)
-    #                     self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
-    #                 else:                
-    #                     if tied_name == '[S II]:6718':
-    #                         # https://ui.adsabs.harvard.edu/abs/2014A&A...561A..10P 
-    #                         pok14_Rs = np.linspace(1.41, 0.45, 30)
-    #                         pok14_log_e_dens = 0.0543*np.tan(-3.0553*pok14_Rs+2.8506)+6.98-10.6905*pok14_Rs+9.9186*pok14_Rs**2-3.5442*pok14_Rs**3
-    #                         def func_ratio_dt(pars): return [np.interp(pars[0], pok14_log_e_dens, pok14_Rs)]
-    #                         if self.verbose:
-    #                             print_log(f"Line tying: [S II]:6718 is tied to [S II]:6733 with flux ratio from Proxauf et al.(2014) under the best-fit electron density.", self.log_message)
-    #                     else:
-    #                         if ratio is None:
-    #                             tmp = self.lineratio_n[i_tied] / self.lineratio_n[i_ref] * 1.0 # to avoid overwrite in following updating
-    #                             if self.verbose:
-    #                                 print_log(f"Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100cm-3 and temperature of 10000K.",self.log_message)
-    #                         else:
-    #                             if isinstance(ratio, list): raise ValueError((f"Please input a single ratio for {tied_name}, not a list."))
-    #                             tmp = ratio * 1.0 # force to input value
-    #                             if self.verbose:
-    #                                 print_log(f"Line tying: {tied_name} is tied to {ref_name} with the input flux ratio, {tmp}.", self.log_message)
-    #                         def func_ratio_dt(pars, ret=tmp): return [ret]
-    #                     self.linelink_dict[tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
-
-    #     if len(tied_names_valid) > 0:
-    #         if use_pyneb & self.verbose:
-    #             if len(tied_names_valid)  > 1: print_log(f"    {tied_names_valid} --> {ref_name}", self.log_message)
-    #             if len(tied_names_valid) == 1: print_log(f"    {tied_names_valid[0]} --> {ref_name}", self.log_message)
-    #     else:            
-    #         if any(~np.isin(tied_names, self.linelist_full)):
-    #             print_log(f"[WARNING] The reference line(s), {np.array(tied_names)[~np.isin(tied_names, self.linelist_full)]}, are not available. " + 
-    #                       f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line()", self.log_message)
-    #         else: 
-    #             if self.verbose: print_log(f"The reference line(s), {tied_names}, are not covered by the spectrum, which will be fit as free line(s).", self.log_message)
-
     def untie_line_fluxes(self, tied_names, components=None):
         if not isinstance(tied_names, list): tied_names = [tied_names]
         if components is not None:
@@ -960,9 +879,9 @@ class LineFrame(object):
             components = copy(self.cframe.comp_c)
 
         for i_comp in range(self.num_comps):
-            if np.isin(self.cframe.comp_c[i_comp], components): 
+            if self.cframe.comp_c[i_comp] in components: 
                 for tied_name in tied_names:
-                    if np.isin(tied_name, [*self.linelink_dict_cn[i_comp]]):
+                    if tied_name in [*self.linelink_dict_cn[i_comp]]:
                         i_tied = np.where(self.linename_n == tied_name)[0][0]                    
                         self.linelink_name_cn[i_comp,i_tied] = 'free'
                         self.linelink_dict_cn[i_comp].pop(tied_name)
@@ -1025,15 +944,15 @@ class LineFrame(object):
             local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
         fwhm_inst = 1 / local_R_inst * lamb_c_obs
 
-        if np.isin(profile, ['gaussian', 'Gaussian', 'gauss', 'Gauss']):
+        if casefold(profile) in ['gaussian', 'gauss']:
             fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
             sigma_tot = fwhm_tot / np.sqrt(np.log(256))
             model = np.exp(-0.5 * ((obs_wave_w-mu) / sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
-        elif np.isin(profile, ['lorentzian', 'Lorentzian', 'lorentz', 'Lorentz']):
+        elif casefold(profile) in ['lorentzian', 'lorentz']:
             gamma_line = fwhm_line / 2
             model = 1 / (1 + ((obs_wave_w-mu) / gamma_line)**2) / (gamma_line * np.pi)
             model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
-        elif np.isin(profile, ['exponential', 'Exponential', 'exp', 'Exp', 'laplace', 'Laplace']):
+        elif casefold(profile) in ['exponential', 'exp', 'laplace']:
             b_line = fwhm_line / np.log(4)
             model = np.exp(-np.abs(obs_wave_w-mu) / b_line) / (b_line * 2)
             model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
@@ -1118,15 +1037,14 @@ class LineFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
-        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
-        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        if 'print_results'  in [*kwargs]: if_print_results = kwargs['print_results']
+        if 'return_results' in [*kwargs]: if_return_results = kwargs['return_results']
+        if 'show_average'   in [*kwargs]: if_show_average = kwargs['show_average']
         ############################################################
 
-        if (step is None) | (step == 'best') | (step == 'final'):
-            step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if (step == 'spec+SED'):  step = 'joint_fit_3'
-        if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
+        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
+        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
         
         best_chi_sq_l = copy(self.fframe.output_s[step]['chi_sq_l'])
         best_par_lp   = copy(self.fframe.output_s[step]['par_lp'])

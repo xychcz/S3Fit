@@ -12,16 +12,19 @@ import astropy.constants as const
 from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import RegularGridInterpolator
 
-from ..auxiliaries.auxiliary_functions import print_log, color_list_dict
+from ..auxiliaries.auxiliary_frames import ConfigFrame
+from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict
 
 class TorusFrame(object): 
-    def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, 
-                 w_min=None, w_max=None, lum_norm=None, flux_scale=None, 
+    def __init__(self, fframe=None, config=None, filename=None, 
+                 v0_redshift=None, 
+                 w_min=None, w_max=None, 
+                 lum_norm=None, flux_scale=None, 
                  verbose=True, log_message=[]): 
 
-        self.filename = filename        
-        self.cframe = cframe 
         self.fframe = fframe
+        self.config = config 
+        self.filename = filename        
         self.v0_redshift = v0_redshift        
         self.w_min = w_min # currently not used
         self.w_max = w_max # currently not used
@@ -30,6 +33,7 @@ class TorusFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.cframe=ConfigFrame(self.config)
         self.num_comps = self.cframe.num_comps
 
         ############################################################
@@ -157,20 +161,20 @@ class TorusFrame(object):
             fun_logdisc = self.skirtor['fun_logdisc']
             fun_logtorus = self.skirtor['fun_logtorus']
             gen_pars = np.array([[tau, oa, rratio, incl, w] for w in ini_logwave]) # gen: generated
-            if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']):
+            if 'disc' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                 gen_logdisc = fun_logdisc(gen_pars)
-            if np.isin('dust', self.cframe.info_c[i_comp]['mod_used']):
+            if 'dust' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                 gen_logtorus = fun_logtorus(gen_pars)    
 
             # redshifted to obs-frame
             ret_logwave = np.log10(wavelength) # in AA
             z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)            
             ini_logwave += np.log10(z_ratio)
-            if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']):
+            if 'disc' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                 gen_logdisc -= np.log10(z_ratio)
                 ret_logdisc  = np.interp(ret_logwave, ini_logwave, gen_logdisc, 
                                          left=np.minimum(gen_logdisc.min(),-100), right=np.minimum(gen_logdisc.min(),-100))
-            if np.isin('dust', self.cframe.info_c[i_comp]['mod_used']):
+            if 'dust' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                 gen_logtorus -= np.log10(z_ratio)
                 ret_logtorus = np.interp(ret_logwave, ini_logwave, gen_logtorus, 
                                          left=np.minimum(gen_logtorus.min(),-100), right=np.minimum(gen_logtorus.min(),-100))
@@ -178,23 +182,23 @@ class TorusFrame(object):
             # extended to longer wavelength
             mask_w = ret_logwave > ini_logwave[-1]
             if np.sum(mask_w) > 0:
-                if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']):
+                if 'disc' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                     index = (gen_logdisc[-2]-gen_logdisc[-1]) / (ini_logwave[-2]-ini_logwave[-1])
                     ret_logdisc[mask_w] = gen_logdisc[-1] + index * (ret_logwave[mask_w]-ini_logwave[-1])
-                if np.isin('dust', self.cframe.info_c[i_comp]['mod_used']):
+                if 'dust' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                     index = (gen_logtorus[-2]-gen_logtorus[-1]) / (ini_logwave[-2]-ini_logwave[-1])
                     ret_logtorus[mask_w] = gen_logtorus[-1] + index * (ret_logwave[mask_w]-ini_logwave[-1])
                     
-            if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']):
+            if 'disc' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                 ret_disc = 10.0**ret_logdisc
                 ret_disc[ret_logdisc <= -100] = 0
-            if np.isin('dust', self.cframe.info_c[i_comp]['mod_used']):
+            if 'dust' in casefold(self.cframe.info_c[i_comp]['mod_used']):
                 ret_torus = 10.0**ret_logtorus
                 ret_torus[ret_logtorus <= -100] = 0
                 
             obs_flux_scomp_ew = np.zeros_like(ret_logwave)
-            if np.isin('disc', self.cframe.info_c[i_comp]['mod_used']): obs_flux_scomp_ew += ret_disc
-            if np.isin('dust', self.cframe.info_c[i_comp]['mod_used']): obs_flux_scomp_ew += ret_torus
+            if 'disc' in casefold(self.cframe.info_c[i_comp]['mod_used']): obs_flux_scomp_ew += ret_disc
+            if 'dust' in casefold(self.cframe.info_c[i_comp]['mod_used']): obs_flux_scomp_ew += ret_torus
                 
             obs_flux_scomp_ew = np.vstack((obs_flux_scomp_ew))
             obs_flux_scomp_ew = obs_flux_scomp_ew.T # add .T for a uniform format with other models with n_coeffs > 1
@@ -216,15 +220,14 @@ class TorusFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
-        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
-        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        if 'print_results'  in [*kwargs]: if_print_results = kwargs['print_results']
+        if 'return_results' in [*kwargs]: if_return_results = kwargs['return_results']
+        if 'show_average'   in [*kwargs]: if_show_average = kwargs['show_average']
         ############################################################
 
-        if (step is None) | (step == 'best') | (step == 'final'):
-            step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if (step == 'spec+SED'):  step = 'joint_fit_3'
-        if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
+        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
+        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
         
         best_chi_sq_l = copy(self.fframe.output_s[step]['chi_sq_l'])
         best_par_lp   = copy(self.fframe.output_s[step]['par_lp'])

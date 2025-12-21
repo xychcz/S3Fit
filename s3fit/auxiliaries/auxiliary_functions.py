@@ -33,6 +33,15 @@ def center_string(s:str, total_length:int=30, pad:str="#", padding_lmin:int=4) -
     right_pad = pad * (pad_units + (extra_chars // len(pad)))  # add extra padding on the left if needed
     return f"{left_pad} {s} {right_pad}"
 
+def casefold(x):
+    if isinstance(x, str): 
+        return x.casefold()
+    elif isinstance(x, list): 
+        return [i.casefold() for i in x]
+    elif isinstance(x, np.ndarray): 
+        if x.ndim == 1: return np.array([i.casefold() for i in x])
+    raise ValueError((f"casefold() only supports string, list, or 1-d np.ndarray."))
+        
 # convert roman numbers
 def roman_to_int(roman_num):
     roman_dict = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000,'IV':4,'IX':9,'XL':40,'XC':90,'CD':400,'CM':900}

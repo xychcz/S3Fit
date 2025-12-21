@@ -27,8 +27,8 @@ else:
     __version__ = '2.3.0+local'
     ##################################
 
-from .auxiliaries.auxiliary_frames import ConfigFrame, PhotFrame
-from .auxiliaries.auxiliary_functions import print_log, center_string, convolve_var_width_fft
+from .auxiliaries.auxiliary_frames import PhotFrame
+from .auxiliaries.auxiliary_functions import print_log, center_string, casefold, convolve_var_width_fft
 
 class FitFrame(object):
     def __init__(self, 
@@ -37,7 +37,7 @@ class FitFrame(object):
                  spec_R_inst_w=None, spec_valid_range=None, spec_flux_scale=None, 
                  # photometirc data
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
-                 sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, phot_trans_rsmp=10, 
+                 sed_wave_w=None, sed_wave_unit='Angstrom', sed_wave_num=None, phot_trans_rsmp=10, 
                  # connection between spectral and photometric data
                  phot_calib_b=None, inst_calib_ratio=0.1, if_rev_inst_calib_ratio=True, inst_calib_smooth=1e4, 
                  if_keep_invalid=False, 
@@ -58,15 +58,15 @@ class FitFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if np.isin('inst_calib_ratio_rev', [*kwargs]): if_rev_inst_calib_ratio = kwargs['inst_calib_ratio_rev']
-        if np.isin('keep_invalid', [*kwargs]): if_keep_invalid = kwargs['keep_invalid']
-        if np.isin('use_multi_thread', [*kwargs]): if_use_multi_thread = kwargs['use_multi_thread']
-        if np.isin('examine_result', [*kwargs]): if_examine_result = kwargs['examine_result']
-        if np.isin('init_annealing', [*kwargs]): if_run_init_annealing = kwargs['init_annealing']
-        if np.isin('print_step', [*kwargs]): if_print_step = kwargs['print_step']
-        if np.isin('plot_step', [*kwargs]): if_plot_step = kwargs['plot_step']
-        if np.isin('save_per_loop', [*kwargs]): if_save_per_loop = kwargs['save_per_loop']
-        if np.isin('save_test', [*kwargs]): if_save_test = kwargs['save_test']
+        if 'inst_calib_ratio_rev' in [*kwargs]: if_rev_inst_calib_ratio = kwargs['inst_calib_ratio_rev']
+        if 'keep_invalid'         in [*kwargs]: if_keep_invalid = kwargs['keep_invalid']
+        if 'use_multi_thread'     in [*kwargs]: if_use_multi_thread = kwargs['use_multi_thread']
+        if 'examine_result'       in [*kwargs]: if_examine_result = kwargs['examine_result']
+        if 'init_annealing'       in [*kwargs]: if_run_init_annealing = kwargs['init_annealing']
+        if 'print_step'           in [*kwargs]: if_print_step = kwargs['print_step']
+        if 'plot_step'            in [*kwargs]: if_plot_step = kwargs['plot_step']
+        if 'save_per_loop'        in [*kwargs]: if_save_per_loop = kwargs['save_per_loop']
+        if 'save_test'            in [*kwargs]: if_save_test = kwargs['save_test']
         ############################################################
 
         ############################################################
@@ -186,7 +186,7 @@ class FitFrame(object):
 
         # basic fitting control
         # fitting grid in linear process
-        self.fit_grid = fit_grid
+        self.fit_grid = casefold(fit_grid)
         print_log(f"Perform fitting in {self.fit_grid} space.", self.log_message)
         if self.fit_grid == 'log':
             print_log(f"[Note] Pure line fitting (i.e., after subtracting continuum), if enabled, is always in linear space.", self.log_message)
@@ -396,21 +396,19 @@ class FitFrame(object):
 
         ############################################################
         mod = 'stellar'
-        if np.isin(mod, [*self.model_config]):
+        if mod in [*self.model_config]:
             if self.model_config[mod]['enable']: 
                 print_log(center_string('Initialize stellar continuum models', 80), self.log_message)
                 from .model_frames.stellar_frame import StellarFrame
                 self.model_dict[mod] = {}
-                self.model_dict[mod]['spec_mod'] = StellarFrame(filename=self.model_config[mod]['file'], 
-                                                                cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                self.model_dict[mod]['spec_mod'] = StellarFrame(fframe=self, config=self.model_config[mod]['config'], filename=self.model_config[mod]['file'], 
                                                                 v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                                 w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                 Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                 log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = StellarFrame(filename=self.model_config[mod]['file'], 
-                                                                   cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                    self.model_dict[mod]['sed_mod'] = StellarFrame(fframe=self, config=self.model_config[mod]['config'], filename=self.model_config[mod]['file'], 
                                                                    v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                    w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                    dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
@@ -418,21 +416,19 @@ class FitFrame(object):
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
         ############################################################
         mod = 'agn'
-        if np.isin(mod, [*self.model_config]):
+        if mod in [*self.model_config]:
             if self.model_config[mod]['enable']: 
                 print_log(center_string('Initialize AGN UV/optical continuum models', 80), self.log_message)
                 from .model_frames.agn_frame import AGNFrame
                 self.model_dict[mod] = {}
-                self.model_dict[mod]['spec_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
-                                                            cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                self.model_dict[mod]['spec_mod'] = AGNFrame(fframe=self, config=self.model_config[mod]['config'], filename=self.model_config[mod]['file'], 
                                                             v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
                                                             w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                             Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                             log_message=self.log_message) 
                 self.model_dict[mod]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict[mod]['sed_mod'] = AGNFrame(filename=self.model_config[mod]['file'], 
-                                                               cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                    self.model_dict[mod]['sed_mod'] = AGNFrame(fframe=self, config=self.model_config[mod]['config'], filename=self.model_config[mod]['file'], 
                                                                v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
@@ -440,13 +436,12 @@ class FitFrame(object):
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
         ############################################################
         mod = 'torus'
-        if np.isin(mod, [*self.model_config]):
+        if mod in [*self.model_config]:
             if self.model_config[mod]['enable']: 
                 print_log(center_string('Initialize AGN torus models', 80), self.log_message)
                 from .model_frames.torus_frame import TorusFrame
                 self.model_dict[mod] = {}
-                self.model_dict[mod]['spec_mod'] = TorusFrame(filename=self.model_config[mod]['file'], 
-                                                              cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                self.model_dict[mod]['spec_mod'] = TorusFrame(fframe=self, config=self.model_config[mod]['config'], filename=self.model_config[mod]['file'], 
                                                               v0_redshift=self.v0_redshift, 
                                                               flux_scale=self.spec_flux_scale, 
                                                               log_message=self.log_message) 
@@ -456,13 +451,12 @@ class FitFrame(object):
                     self.model_dict[mod]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e6)
         ############################################################
         mod = 'line'
-        if np.isin(mod, [*self.model_config]):
+        if mod in [*self.model_config]:
             if self.model_config[mod]['enable']:
                 print_log(center_string('Initialize line models', 80), self.log_message)
                 from .model_frames.line_frame import LineFrame
                 self.model_dict[mod] = {}
-                self.model_dict[mod]['spec_mod'] = LineFrame(use_pyneb=self.model_config[mod]['use_pyneb'], 
-                                                             cframe=ConfigFrame(self.model_config[mod]['config']), fframe=self, 
+                self.model_dict[mod]['spec_mod'] = LineFrame(fframe=self, config=self.model_config[mod]['config'], use_pyneb=self.model_config[mod]['use_pyneb'], 
                                                              v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                              w_min=self.spec_wmin, w_max=self.spec_wmax, mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']], 
                                                              log_message=self.log_message) 
@@ -496,7 +490,7 @@ class FitFrame(object):
                 self.model_dict[mod]['sed_func'] = self.model_dict[mod]['sed_mod'].models_unitnorm_obsframe
 
         # create non-line mask if line is enabled
-        if np.isin('line', [*self.model_dict]): 
+        if 'line' in [*self.model_dict]: 
             linerest_default = self.line.linerest_n[np.isin(self.line.linename_n, self.line.linelist_default)] 
             line_center_n = linerest_default * (1 + self.v0_redshift)
             vel_win = np.array([-3000, 3000])
@@ -532,9 +526,9 @@ class FitFrame(object):
                 raise ValueError((f"Please input the reference of systemic redshift, e.g., rev_v0_reference='model:component'; otherwise set if_rev_v0_redshift=False."))
             elif len(self.rev_v0_reference.split(':')) != 2:
                 raise ValueError((f"Please correct for the reference of systemic redshift with the format, rev_v0_reference='model:component'."))
-            elif ~np.isin(self.rev_v0_reference.split(':')[0], [*self.model_dict]):
+            elif not (self.rev_v0_reference.split(':')[0] in [*self.model_dict]):
                 raise ValueError((f"The reference model of systemic redshift, '{self.rev_v0_reference.split(':')[0]}', is not available in the imported models: {[*self.model_dict]}."))
-            elif ~np.isin(self.rev_v0_reference.split(':')[1], self.model_dict[self.rev_v0_reference.split(':')[0]]['cframe'].comp_c):
+            elif not (self.rev_v0_reference.split(':')[1] in self.model_dict[self.rev_v0_reference.split(':')[0]]['cframe'].comp_c):
                 raise ValueError((f"The reference component of systemic redshift, '{self.rev_v0_reference.split(':')[1]}', is not available in the model: '{self.rev_v0_reference.split(':')[0]}'."))
 
     def init_par_constraints(self):
@@ -581,7 +575,7 @@ class FitFrame(object):
     def search_model_index(self, sel_mods, model_type, mask_lite_dict=None):
         rev_model_type = ''
         for mod in self.full_model_type.split('+'):
-            if np.isin(mod, model_type.split('+')): rev_model_type += mod+'+'
+            if mod in model_type.split('+'): rev_model_type += mod+'+'
         rev_model_type = rev_model_type[:-1] # re-sort the input model_type to fit the order in self.full_model_type
         if rev_model_type.split(sel_mods)[0] == rev_model_type: raise ValueError((f"No such model combination: {sel_mods} in {rev_model_type}"))
 
@@ -646,7 +640,7 @@ class FitFrame(object):
                     else:
                         raise ValueError((f"The format of the tying relation {single_tie} is wrong."))
 
-                    if np.isin(ref_mod, model_type.split('+')):
+                    if ref_mod in model_type.split('+'):
                         mp0, mp1 = self.search_model_index(ref_mod, model_type)[0:2]
 
                         ref_i_comp = np.where(np.array(self.model_dict[ref_mod]['cframe'].comp_c) == ref_comp)[0]
@@ -659,7 +653,7 @@ class FitFrame(object):
                             ref_i_par_in_comp = int(ref_par) # use par index in tying relation
                         else: 
                             ref_par_index_cp = self.model_dict[ref_mod]['cframe'].par_index_cp[ref_i_comp]
-                            if np.isin(ref_par, [*ref_par_index_cp]):
+                            if ref_par in [*ref_par_index_cp]:
                                 ref_i_par_in_comp = self.model_dict[ref_mod]['cframe'].par_index_cp[ref_i_comp][ref_par]
                             else:
                                 raise ValueError((f"The reference par, {ref_par}, is not available in the parameter list, {[*ref_par_index_cp]}, of the reference component, {ref_mod}:{ref_comp}."))
@@ -788,7 +782,7 @@ class FitFrame(object):
                 specphot_reverr_w = np.sqrt(specphot_ferr_w**2 + specphot_flux_w**2 * self.inst_calib_ratio**2)
             else:
                 # create smoothed spectrum
-                if ~np.isin('joint_fit_1', [*self.output_s]):
+                if not ('joint_fit_1' in [*self.output_s]):
                     # if not fit yet
                     spec_flux_smoothed_w = convolve_var_width_fft(spec_wave_w[mask_valid_w], spec_flux_w[mask_valid_w], dv_fwhm_obj=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
                     spec_flux_smoothed_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_flux_smoothed_w)
@@ -926,7 +920,7 @@ class FitFrame(object):
         # re-sort the input model_type to fit the order in self.full_model_type
         rev_model_type = ''
         for mod in self.full_model_type.split('+'):
-            if np.isin(mod, model_type.split('+')): rev_model_type += mod+'+'
+            if mod in model_type.split('+'): rev_model_type += mod+'+'
         rev_model_type = rev_model_type[:-1] 
 
         par_p, n_freepars = self.update_tied_pars(model_type=rev_model_type, input_par_p=input_par_p)
@@ -1231,7 +1225,7 @@ class FitFrame(object):
         # save the best-fit results to the FitFrame class
         if save_best_fit:
             step_id = fit_message.split(':')[0]
-            if ~np.isin(step_id, [*self.output_s]):
+            if not (step_id in [*self.output_s]):
                 # copy the format template
                 self.output_s[step_id] = copy(self.output_s['empty_step'])
 
@@ -1296,7 +1290,7 @@ class FitFrame(object):
         print_log(f'Continuum models used in spectral fitting: {cont_type}', self.log_message, self.if_print_step)
         ########################################
         # obtain a rough fit of continuum with emission line wavelength ranges masked out
-        if np.isin('stellar', cont_type.split('+')): 
+        if 'stellar' in cont_type.split('+'): 
             mask_lite_stellar = self.stellar.mask_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.if_print_step)
             mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar)
         else:
@@ -1306,7 +1300,7 @@ class FitFrame(object):
                                                annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                fit_message='cont_fit_init: spectral fitting, initialize continuum models', i_loop=i_loop)
         ########################################
-        if np.isin('line', self.full_model_type.split('+')): 
+        if 'line' in self.full_model_type.split('+'): 
             # obtain a rough fit of emission lines with continuum of cont_fit_init subtracted
             line_fit_init = self.nonlinear_process(None, (spec_fmock_w - cont_fit_init['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                    'line', mask_lite_dict, fit_phot=False, fit_grid='linear', conv_nbin=None,
@@ -1322,7 +1316,7 @@ class FitFrame(object):
         ####################################################
         ################## 1st fit cycle ###################
         # obtain a better fit of stellar continuum after subtracting emission lines of line_fit_init
-        if np.isin('stellar', cont_type.split('+')): 
+        if 'stellar' in cont_type.split('+'): 
             mask_lite_stellar = self.stellar.mask_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.if_print_step)
             mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar)
         else:
@@ -1332,7 +1326,7 @@ class FitFrame(object):
                                             annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                             fit_message='cont_fit_1: spectral fitting, update continuum models', i_loop=i_loop)
         ########################################
-        if np.isin('line', self.full_model_type.split('+')): 
+        if 'line' in self.full_model_type.split('+'): 
             # examine if absorption line components are necessary
             line_disabled_comps = [self.line.cframe.comp_c[i_comp] for i_comp in range(self.line.num_comps) if self.line.cframe.info_c[i_comp]['sign'] == 'absorption']
             if len(line_disabled_comps) > 0:
@@ -1358,7 +1352,7 @@ class FitFrame(object):
             self.output_s['line_fit_1'] = self.output_s['cont_fit_1']
         ########################################
         # joint fit of continuum models and emission lines with best-fit parameters of cont_fit_1 and line_fit_1
-        model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
+        model_type = cont_type+'+line' if 'line' in self.full_model_type.split('+') else cont_type
         joint_fit_1 = self.nonlinear_process(line_fit_1['final_par_p'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
                                              model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
                                              annealing=False, perturb_scale=self.perturb_scale, accept_chi_sq=max(cont_fit_1['chi_sq'], line_fit_1['chi_sq']),
@@ -1394,11 +1388,11 @@ class FitFrame(object):
             # fix the parameters of disabled models (to reduce number of free parameters)
             for mod in joint_fit_1['model_type'].split('+'):
                 if mod == 'line': continue
-                if ~np.isin(mod, cont_type.split('+')): self.model_dict[mod]['cframe'].par_tie_cp[:,:] = 'fix'
+                if not (mod in cont_type.split('+')): self.model_dict[mod]['cframe'].par_tie_cp[:,:] = 'fix'
             ########################################
             print_log(center_string(f'Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
                       self.log_message, self.if_print_step)
-            if np.isin('line', joint_fit_1['model_type'].split('+')): 
+            if 'line' in joint_fit_1['model_type'].split('+'): 
                 mp0, mp1, me0, me1 = self.search_model_index('line', joint_fit_1['model_type'], joint_fit_1['mask_lite_dict'])
                 line_spec_fmod_ew = self.model_dict['line']['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_dict']['line'])
                 line_comps = [] 
@@ -1419,7 +1413,7 @@ class FitFrame(object):
                     print_log(f'#### Emission lines are too faint, only {line_comps} is enabled.', self.log_message, self.if_print_step)                    
                 # fix the parameters of disabled components (to reduce number of free parameters)
                 for i_comp in range(self.line.num_comps):
-                    if ~np.isin(self.line.cframe.comp_c[i_comp], line_comps): self.model_dict['line']['cframe'].par_tie_cp[i_comp,:] = 'fix'                
+                    if not (self.line.cframe.comp_c[i_comp] in line_comps): self.model_dict['line']['cframe'].par_tie_cp[i_comp,:] = 'fix'                
                 # update mask_lite_dict with emission line examination results, i.e., only keep enabled line components
                 mask_lite_dict = self.update_mask_lite_dict('line', self.line.mask_lite_with_comps(enabled_comps=line_comps), dict=mask_lite_dict)
             ########################################
@@ -1441,7 +1435,7 @@ class FitFrame(object):
             ########################################
             # in steps above, stellar models in a sparse grid of ages (and metalicities) are used, now update continuum fitting with all allowed stellar models
             # initialize parameters using best-fit of cont_fit_2a
-            if np.isin('stellar', cont_type.split('+')): 
+            if 'stellar' in cont_type.split('+'): 
                 mask_lite_stellar = self.stellar.mask_lite_allowed(csp=(self.stellar.sfh_names[0]!='nonparametric'))
                 mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
                 cont_fit_2b = self.nonlinear_process(cont_fit_2a['final_par_p'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
@@ -1455,7 +1449,7 @@ class FitFrame(object):
             else:
                 cont_fit_2b = cont_fit_2a
             ########################################
-            if np.isin('line', self.full_model_type.split('+')): 
+            if 'line' in self.full_model_type.split('+'): 
                 # update emission line with the latest mask_lite_dict for el
                 # initialize parameters from best-fit of joint_fit_1 and subtract continuum models from cont_fit_2b
                 line_fit_2 = self.nonlinear_process(cont_fit_2b['final_par_p'], (spec_fmock_w - cont_fit_2b['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
@@ -1468,7 +1462,7 @@ class FitFrame(object):
                 self.output_s['line_fit_2'] = self.output_s['cont_fit_2b']
             ########################################
             # joint fit of continuum and emission lines with initial values from best-fit of cont_fit_2b and line_fit_2
-            model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
+            model_type = cont_type+'+line' if 'line' in self.full_model_type.split('+') else cont_type
             joint_fit_2 = self.nonlinear_process(line_fit_2['final_par_p'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
                                                  model_type, mask_lite_dict, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
                                                  annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_2b['chi_sq'], line_fit_2['chi_sq']),
@@ -1511,7 +1505,7 @@ class FitFrame(object):
             # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
             ########################################
             # update mask_lite_dict for stellar models for spectrum+SED continuum fitting
-            if np.isin('stellar', cont_type.split('+')): 
+            if 'stellar' in cont_type.split('+'): 
                 mask_lite_stellar = self.stellar.mask_lite_allowed(csp=(self.stellar.sfh_names[0]!='nonparametric'))
                 mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
             # update scaled error based on chi_sq of cont_fit_3a and re-create mock data
@@ -1523,13 +1517,13 @@ class FitFrame(object):
                                                  annealing=False, perturb_scale=self.perturb_scale, 
                                                  fit_message='cont_fit_3b: spectrum+SED fitting, update continuum models', i_loop=i_loop)
             # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
-            if np.isin('stellar', cont_type.split('+')): 
+            if 'stellar' in cont_type.split('+'): 
                 # create new mask_lite_stellar with new coeffs; do not use full allowed stellar model elements to save time
                 mp0, mp1, me0, me1 = self.search_model_index('stellar', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_dict'])
                 mask_lite_stellar = self.stellar.mask_lite_with_coeffs(cont_fit_3b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.if_print_step)
                 mask_lite_dict = self.update_mask_lite_dict('stellar', mask_lite_stellar, dict=mask_lite_dict)
             ########################################
-            if np.isin('line', self.full_model_type.split('+')): 
+            if 'line' in self.full_model_type.split('+'): 
                 # update emission line after subtracting the lastest continuum models from cont_fit_3b
                 # initialize parameters from best-fit of joint_fit_2 (transfer via cont_fit_3b)
                 # update scaled error based on chi_sq of cont_fit_3b and re-create mock data
@@ -1547,7 +1541,7 @@ class FitFrame(object):
             # joint fit of continuum models and emission lines with initial values from best-fit of cont_fit_3b and line_fit_3
             # update scaled error based on chi_sq of line_fit_3 and re-create mock data
             specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=line_fit_3['chi_sq'])
-            model_type = cont_type+'+line' if np.isin('line', self.full_model_type.split('+')) else cont_type
+            model_type = cont_type+'+line' if 'line' in self.full_model_type.split('+') else cont_type
             joint_fit_3 = self.nonlinear_process(line_fit_3['final_par_p'], specphot_fmock_w, specphot_reverr_w, specphot_mask_w, 
                                                  model_type, mask_lite_dict, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=2, 
                                                  annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_3b['chi_sq'], line_fit_3['chi_sq']),
@@ -1584,7 +1578,7 @@ class FitFrame(object):
 
         # restore the fitting status if it is reloaded
         step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
-        if np.isin(step, [*self.output_s]): 
+        if step in [*self.output_s]: 
             if not refit:
                 print_log(center_string(f'Reload the results from the finished fitting loops', 80), self.log_message)
                 success_count = self.examine_fit_quality() # self.fit_quality_l updated
@@ -1624,27 +1618,26 @@ class FitFrame(object):
 
         # self.output_s is the core results of the fitting
         # delete the format template with empty values
-        if np.isin('empty_step', [*self.output_s]): hide_return = self.output_s.pop('empty_step') 
+        if 'empty_step' in [*self.output_s]: hide_return = self.output_s.pop('empty_step') 
         # extract results
         self.extract_results(step='final', if_print_results=True, if_rev_v0_redshift=self.if_rev_v0_redshift)
 
         print_log(center_string(f'S3Fit all processes finish', 80), self.log_message)
 
     ##########################################################################
-    ################# Output best-fit spectra and values #####################
+    ################# Extract best-fit spectra and values ####################
 
     def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=None, if_show_average=False, num_sed_wave=5000, flux_type='Flam', **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
-        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
+        if 'print_results'  in [*kwargs]: if_print_results = kwargs['print_results']
+        if 'return_results' in [*kwargs]: if_return_results = kwargs['return_results']
         ############################################################
 
-        if (step is None) | (step == 'best') | (step == 'final'):
-            step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
-        if (step == 'spec+SED'):  step = 'joint_fit_3'
-        if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
+        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
+        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
 
         best_chi_sq_l   = copy(self.output_s[step]['chi_sq_l'])
         best_par_lp     = copy(self.output_s[step]['par_lp'])
@@ -1673,8 +1666,8 @@ class FitFrame(object):
         rev_model_type = ''
         for mod in self.full_model_type.split('+'):
             for i_loop in range(self.num_loops): 
-                if np.isin(mod, best_ret_dict_l[i_loop]['model_type'].split('+')):
-                    if ~np.isin(mod, rev_model_type.split('+')):
+                if mod in best_ret_dict_l[i_loop]['model_type'].split('+'):
+                    if not (mod in rev_model_type.split('+')):
                         rev_model_type += mod+'+'
         rev_model_type = rev_model_type[:-1] # remove the last '+'
         self.rev_model_type = rev_model_type # save for indexing output_mc
@@ -1802,11 +1795,11 @@ class FitFrame(object):
         if flux_type in ['Fnu', 'fnu']:
             for mod in [*output_mc]:
                 for comp in [*output_mc[mod]]:
-                    if np.isin('spec_lw', [*output_mc[mod][comp]]): 
+                    if 'spec_lw' in [*output_mc[mod][comp]]: 
                         output_mc[mod][comp]['spec_lw'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w) # None is for 'self' in PhotFrame definition
-                    if np.isin('sed_lw', [*output_mc[mod][comp]]): 
+                    if 'sed_lw' in [*output_mc[mod][comp]]: 
                         output_mc[mod][comp]['sed_lw']  *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,sed_wave_w)
-                    if np.isin('phot_lb', [*output_mc[mod][comp]]): 
+                    if 'phot_lb' in [*output_mc[mod][comp]]: 
                         output_mc[mod][comp]['phot_lb'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
             self.spec['flux_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
             self.spec['ferr_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
@@ -1845,14 +1838,15 @@ class FitFrame(object):
 
         ############################################################
         # allow old mod name, 'ssp' and 'el', in output_mc to be compatible with old version <= 2.2.4
-        if np.isin('stellar', self.full_model_type.split('+')): self.output_mc['ssp'] = output_mc['stellar']
-        if np.isin('line',    self.full_model_type.split('+')): self.output_mc['el']  = output_mc['line']
+        if 'stellar' in self.full_model_type.split('+'): self.output_mc['ssp'] = output_mc['stellar']
+        if 'line'    in self.full_model_type.split('+'): self.output_mc['el']  = output_mc['line']
         ############################################################
 
         self.output_mc = output_mc
         if if_return_results: return output_mc
 
     ##########################################################################
+    ############################ Plot functions ##############################
 
     def plot_step(self, flux_w, model_w, ferr_w, mask_w, fit_phot, fit_message, chi_sq, i_loop):
         if self.canvas is None:
@@ -1860,53 +1854,57 @@ class FitFrame(object):
             plt.subplots_adjust(bottom=0.15, top=0.9, hspace=0, wspace=0)
         else:
             fig, axs = self.canvas
-        ax1, ax2 = axs; ax1.clear(); ax2.clear()
+        ax0, ax1 = axs; ax0.clear(); ax1.clear()
 
         tmp_z = (1+self.v0_redshift)
         rest_wave_w = self.spec['wave_w']/tmp_z
         mask_spec_w = mask_w[:self.num_spec_wave]
-        # ax1.plot(rest_wave_w, self.spec['flux_w'], c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
-        ax1.plot(self.spec_wave_w/tmp_z, self.spec_flux_w, c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
-        ax1.plot(rest_wave_w[mask_spec_w], flux_w[:self.num_spec_wave][mask_spec_w], c='C0', label='Data used for fitting (spec)')
-        ax1.plot(rest_wave_w, model_w[:self.num_spec_wave], c='C1', label='Best-fit model (spec)')
-        ax2.plot(rest_wave_w[mask_spec_w], (flux_w-model_w)[:self.num_spec_wave][mask_spec_w], c='C2', alpha=0.6, label='Residuals (spec)')
-        # ax2.fill_between(rest_wave_w, -ferr_w[:self.num_spec_wave], ferr_w[:self.num_spec_wave], color='C5', alpha=0.2, label=r'1$\sigma$ error')
-        ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec_ferr_w[:len(self.spec_wave_w)], self.spec_ferr_w[:len(self.spec_wave_w)], color='C5', alpha=0.2, label=r'1$\sigma$ error')
-        ax1.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
+        # ax0.plot(rest_wave_w, self.spec['flux_w'], c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
+        ax0.plot(self.spec_wave_w/tmp_z, self.spec_flux_w, c='C7', lw=0.3, alpha=0.75, label='Original spectrum')
+        ax0.plot(rest_wave_w[mask_spec_w], flux_w[:self.num_spec_wave][mask_spec_w], c='C0', label='Data used for fitting (spec)')
+        ax0.plot(rest_wave_w, model_w[:self.num_spec_wave], c='C1', label='Best-fit model (spec)')
+        ax1.plot(rest_wave_w[mask_spec_w], (flux_w-model_w)[:self.num_spec_wave][mask_spec_w], c='C2', alpha=0.6, label='Residuals (spec)')
+        ax1.fill_between(rest_wave_w, -3*ferr_w[:self.num_spec_wave], 3*ferr_w[:self.num_spec_wave], color='C5', alpha=0.2, label=r'$\pm 3\sigma$ error') # modified error
+        ax1.fill_between(self.spec_wave_w/tmp_z, -3*self.spec_ferr_w, 3*self.spec_ferr_w, color='C5', alpha=0.1) # original error
+        ax0.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 2*self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
-        ax2.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
+        ax1.fill_between(rest_wave_w, -self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 2*self.spec['flux_w'].max()*~mask_w[:self.num_spec_wave], 
                          hatch='////', fc='None', ec='C5', alpha=0.25)
         if not self.if_keep_invalid:
-            ax1.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
+            ax0.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 2*self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
                              hatch='////', fc='None', ec='C5', alpha=0.25)
-            ax2.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
+            ax1.fill_between(self.spec_wave_w/tmp_z, -self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 2*self.spec['flux_w'].max()*~self.mask_valid_w[:len(self.spec_wave_w)], 
                              hatch='////', fc='None', ec='C5', alpha=0.25)
+        ax0.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+100)
         ax1.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+100)
-        ax2.set_xlim(rest_wave_w.min()-50, rest_wave_w.max()+100)
         if fit_phot:
             rest_wave_b = self.phot['wave_b']/tmp_z
             mask_phot_b = mask_w[-self.num_phot_band:]
             ind_o_b = np.argsort(rest_wave_b)
             ind_m_b = np.argsort(rest_wave_b[mask_phot_b])
-            ax1.plot(rest_wave_b[ind_o_b], self.phot['flux_b'][ind_o_b], '--o', c='C7', label='Original phot-SED')
-            ax1.plot(rest_wave_b[mask_phot_b][ind_m_b], flux_w[-self.num_phot_band:][mask_phot_b][ind_m_b],'--o',c='C9',label='Data used for fitting (phot)')
-            ax1.plot(rest_wave_b[ind_o_b], model_w[-self.num_phot_band:][ind_o_b], '--s', c='C3', label='Best-fit model (phot)')
-            ax2.plot(rest_wave_b[ind_o_b],  ferr_w[-self.num_phot_band:][ind_o_b], '--o', c='C5')
-            ax2.plot(rest_wave_b[ind_o_b], -ferr_w[-self.num_phot_band:][ind_o_b], '--o', c='C5')
-            ax2.plot(rest_wave_b[mask_phot_b][ind_m_b], (flux_w-model_w)[-self.num_phot_band:][mask_phot_b][ind_m_b], '--s', c='C6',label='Residuals (phot)')
-            ax1.set_xscale('log'); ax2.set_xscale('log')
+            ax0.plot(rest_wave_b[ind_o_b], self.phot['flux_b'][ind_o_b], '--o', c='C7', label='Original phot-SED')
+            ax0.plot(rest_wave_b[mask_phot_b][ind_m_b], flux_w[-self.num_phot_band:][mask_phot_b][ind_m_b],'--o',c='C9',label='Data used for fitting (phot)')
+            ax0.plot(rest_wave_b[ind_o_b], model_w[-self.num_phot_band:][ind_o_b], '--s', c='C3', label='Best-fit model (phot)')
+            # ax1.plot(rest_wave_b[ind_o_b],  ferr_w[-self.num_phot_band:][ind_o_b], '--o', c='C5')
+            # ax1.plot(rest_wave_b[ind_o_b], -ferr_w[-self.num_phot_band:][ind_o_b], '--o', c='C5')
+            ax1.errorbar(rest_wave_b, rest_wave_b*0, yerr=3*ferr_w[-self.num_phot_band:], fmt='.', markersize=0.1, linewidth=10, color='C5', alpha=0.4)
+            ax1.plot(rest_wave_b[mask_phot_b][ind_m_b], (flux_w-model_w)[-self.num_phot_band:][mask_phot_b][ind_m_b], '--s', c='C6',label='Residuals (phot)')
+            ax0.set_xscale('log'); ax1.set_xscale('log')
+            ax0.set_xlim(np.hstack((rest_wave_w,rest_wave_b)).min()*0.9, np.hstack((rest_wave_w,rest_wave_b)).max()*1.1)
             ax1.set_xlim(np.hstack((rest_wave_w,rest_wave_b)).min()*0.9, np.hstack((rest_wave_w,rest_wave_b)).max()*1.1)
-            ax2.set_xlim(np.hstack((rest_wave_w,rest_wave_b)).min()*0.9, np.hstack((rest_wave_w,rest_wave_b)).max()*1.1)
 
-        ax1.legend(ncol=2); ax2.legend(ncol=3, loc='lower right')
-        ax1.set_ylim(flux_w[mask_w].min()-0.05*(flux_w[mask_w].max()-flux_w[mask_w].min()), flux_w[mask_w].max()*1.05)
-        tmp_ylim = np.percentile(np.abs(flux_w-model_w)[mask_w], 90) * 1.5
-        ax2.set_ylim(-tmp_ylim, tmp_ylim)
-        ax1.set_xticks([]); ax2.set_xlabel(r'Wavelength ($\AA$)', labelpad=0)
-        ax1.set_ylabel('Flux ('+str(self.spec_flux_scale)+r' $erg/s/cm2/\AA$)'); ax2.set_ylabel('Res.')
+        ax0.legend(ncol=2); ax1.legend(ncol=3, loc='lower right')
+        ax0.set_ylim(flux_w[mask_w].min()-0.05*(flux_w[mask_w].max()-flux_w[mask_w].min()), flux_w[mask_w].max()*1.05)
+        # tmp_ylim = np.percentile(np.abs(flux_w-model_w)[mask_w], 90) * 1.5
+        tmp_ylim = np.median(ferr_w) * 3 * 3 # x3 times of median 3-sigma 
+        ax1.set_ylim(-tmp_ylim, tmp_ylim)
+
+        ax0.set_xticks([]); ax1.set_xlabel(r'Rest wavelength ($\AA$)', labelpad=0)
+        ax0.set_ylabel(f'Flux ({self.spec_flux_scale:.0e}'+r' erg/s/cm2/$\AA$)')
+        ax1.set_ylabel('Res.')
         title = fit_message + r' ($\chi^2_{\nu}$ = ' + f'{chi_sq:.3f}, '
         title += f'loop {i_loop+1}/{self.num_loops}, ' + ('original data)' if i_loop == 0 else 'mock data)')
-        ax1.set_title(title)
+        ax0.set_title(title)
 
         # attach SEFI cat
         if self.if_plot_icon:
@@ -1915,18 +1913,19 @@ class FitFrame(object):
             icon = plt.imread(icon_file)
             zoom = min(0.02 * fig.get_figheight(), 0.1)
             abox = AnnotationBbox(OffsetImage(icon, zoom=zoom), (1, -1/fig.get_figheight()), xycoords='axes fraction', box_alignment=(0.5, 0.5), frameon=False)
-            ax2.add_artist(abox)
+            ax1.add_artist(abox)
 
         if self.canvas is not None:
             fig.canvas.draw(); fig.canvas.flush_events() # refresh plot in the given window
         plt.pause(0.0001)  # forces immediate update
 
+    ##################################################
 
     def plot_results(self, step=None, if_plot_phot=False, if_plot_comp=True, 
                      plot_range=None, wave_type='rest', wave_unit='Angstrom', 
                      flux_type='Flam', res_type='residual', ferr_num=3, 
-                     xyscale=('log','log'), figsize=(10, 6), legend_loc=None, 
-                     output_plotname=None, **kwargs):
+                     xyscale=('log','log'), figsize=(10, 6), dpi=300, legend_loc=None, 
+                     output_plotname=None, if_plot_icon=False, **kwargs):
         # step: 'spec', 'pure-spec', 'spec+SED'
         # plot_range = ('spec', 'pure-spec'), 'SED'; check if 'SED'
         # flux_type: ('Flam'), 'Fnu'; check if 'Fnu'
@@ -1936,9 +1935,13 @@ class FitFrame(object):
         # ferr_num: n-sigma error
         # xyscale: 'linear', 'log'
 
+        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
+        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
+
         output_mc = self.extract_results(step=step, if_return_results=True, flux_type=flux_type, **kwargs) # if_print_results=False, if_rev_v0_redshift=None
 
-        if step in ['spec', 'pure-spec']: 
+        if step == 'joint_fit_2': 
             if_plot_phot = False # forcibly
             plot_range = 'spec' # forcibly
 
@@ -1980,16 +1983,18 @@ class FitFrame(object):
                 fres_lb = output_mc['tot']['fres']['phot_lb'] / output_mc['tot']['fmod']['phot_lb']
                 ferr_b  = output_mc['tot']['ferr']['phot_lb'][0]*ferr_num / output_mc['tot']['fmod']['phot_lb'][0]
 
+        #####################
         fig, axs = plt.subplots(2, 1, figsize=figsize, dpi=100, gridspec_kw={'height_ratios':[3,1]})
-        plt.subplots_adjust(bottom=0.12, top=0.92, left=0.08, right=0.98, hspace=0, wspace=0)
+        plt.subplots_adjust(bottom=0.08, top=0.98, left=0.08, right=0.98, hspace=0, wspace=0)
         ax0, ax1 = axs
+        #####################
 
         #####################
         # plot original data
         ax0.errorbar(self.spec['wave_w']/z_ratio_wave, self.spec['flux_w']*z_ratio_flux, c='C7', linewidth=1.5, label='Observed spec.', zorder=1)
         if if_plot_phot:
             ax0.errorbar(wave_b, self.phot['flux_b']*z_ratio_flux, output_mc['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
-                         fmt='o', markersize=8, color='k', alpha=.5, label='Observed phot.', zorder=3)
+                         fmt='o', markersize=8, color='k', alpha=.5, label='Observed phot.'+r' ($\pm 3\sigma$)', zorder=3)
         #####################
 
         #####################
@@ -2032,24 +2037,30 @@ class FitFrame(object):
 
         #####################
         # plot residuals
-        ax1.plot([0], [0], '-', linewidth=1, color='C7', alpha=1, label='Residuals spec.') # make obvious label
+        ax1.plot(wave_w, wave_w*0, '--', c='C7', alpha=0.3, zorder=0)
+        ax1.plot([0], [0], '-', linewidth=1, color='C2', alpha=1, label='Residuals spec.') # make obvious label
         for i_loop in range(self.num_loops): 
-            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C7', alpha=0.1/(self.num_loops/10), zorder=1)
+            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C2', alpha=0.1/(self.num_loops/10), zorder=1)
             # if i_loop == 0: line.set_label('Residuals spec.')
             if if_plot_phot:
-                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='k', alpha=0.1/(self.num_loops/10), zorder=1)
-                if i_loop == 0: line.set_label('Residuals phot.')
+                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='C6', alpha=0.25/(self.num_loops/10), zorder=3)
+                # if i_loop == 0: line.set_label('Residuals phot.')
+        if if_plot_phot:
+            ind_o_b = np.argsort(wave_b)
+            ax1.plot(wave_b[ind_o_b], fres_lb[0][ind_o_b], '--o', color='C6', alpha=0.75, label='Residuals phot.', zorder=3)
         #####################
 
         #####################
         # plot flux errors
         ax0.fill_between(self.spec['wave_w']/z_ratio_wave, -output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, 
-                         fc='C5', ec='C5', alpha=0.25, label=f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+                         fc='C5', ec='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
         ax1.fill_between(self.spec['wave_w']/z_ratio_wave, -ferr_w, ferr_w, 
-                         fc='C5', ec='C5', alpha=0.25, label=f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+                         fc='C5', ec='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
         if if_plot_phot:
-            ax1.errorbar(wave_b, wave_b*0, yerr=ferr_b, fmt='.', markersize=8, linewidth=10, color='C5', alpha=0.6, 
-                         label=f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=0)
+            # ax0.errorbar(wave_b, wave_b*0, yerr=output_mc['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
+            #              fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=0)
+            ax1.errorbar(wave_b, wave_b*0, yerr=ferr_b, 
+                         fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=2)
         #####################
 
         #####################
@@ -2073,7 +2084,7 @@ class FitFrame(object):
         ymax_fres = np.median(ferr_w) * 3
         if if_plot_phot:
             ymax_fres = max(ymax_fres, np.median(ferr_b) * 3)
-        ax1.set_ylim(-ymax_fres*z_ratio_flux, ymax_fres*z_ratio_flux)
+        ax1.set_ylim(-ymax_fres, ymax_fres) # ferr_w/b is already *z_ratio_flux
         for ax in axs:
             ax.fill_between(self.spec['wave_w']/z_ratio_wave, -ymax_fres*z_ratio_flux*~self.spec['mask_valid_w'], ymax_flux*z_ratio_flux*~self.spec['mask_valid_w'], 
                             hatch='////', fc='None', ec='C5', alpha=0.5, zorder=0) 
@@ -2094,11 +2105,20 @@ class FitFrame(object):
         ax1.set_ylabel(ax1_ylabel)
         ax1.set_xlabel(('Rest' if wave_type == 'rest' else 'Observed')+' wavelength '+(r'($\mu$m)' if wave_unit in ['um', 'micron'] else r'($\AA$)')) # , labelpad=0
         
+        # attach SEFI cat
+        if if_plot_icon:
+            icon_dir = str(Path(__file__).parent)+'/auxiliaries/'
+            icon_file = icon_dir + ('icon_s3fit.dat' if step == 'joint_fit_3' else 'icon_s1fit.dat')
+            icon = plt.imread(icon_file)
+            zoom = 0.01 * fig.get_figheight()
+            abox = AnnotationBbox(OffsetImage(icon, zoom=zoom), (0.99, 0.01), xycoords='figure fraction', box_alignment=(1, 0), frameon=False)
+            ax1.add_artist(abox)
+
         if output_plotname is not None:
             if output_plotname.split('.')[-1] in ['pdf', 'PDF']:
-                plt.savefig('./tmp.svg', dpi='figure', transparent=False)
+                plt.savefig('./tmp.svg', dpi=dpi, transparent=False)
                 _ = os.system('svg42pdf ./tmp.svg ' + output_plotname)
                 _ = os.system('rm ./tmp.svg')
             else:
-                plt.savefig(output_plotname, dpi='figure', transparent=False)
+                plt.savefig(output_plotname, dpi=dpi, transparent=False) # dpi='figure'
 

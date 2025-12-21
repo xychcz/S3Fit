@@ -10,6 +10,8 @@ from copy import deepcopy as copy
 import astropy.units as u
 import astropy.constants as const
 
+from .auxiliary_functions import casefold
+
 class ConfigFrame(object):
     def __init__(self, config):
         self.config = config
@@ -52,15 +54,15 @@ class ConfigFrame(object):
 
             # group used model elements in an array
             for item in ['mod_used', 'line_used']:
-                if np.isin(item, [*self.info_c[i_comp]]): 
+                if item in [*self.info_c[i_comp]]: 
                     if isinstance(self.info_c[i_comp][item], str): self.info_c[i_comp][item] = [self.info_c[i_comp][item]]
                     self.info_c[i_comp][item] = np.array(self.info_c[i_comp][item])
 
             # rename sign for absorption/emission
-            if np.isin('sign', [*self.info_c[i_comp]]):
-                if np.isin(self.info_c[i_comp]['sign'], ['absorption', 'negative', '-']):
+            if 'sign' in [*self.info_c[i_comp]]:
+                if casefold(self.info_c[i_comp]['sign']) in ['absorption', 'negative', '-']:
                     self.info_c[i_comp]['sign'] = 'absorption'
-                if np.isin(self.info_c[i_comp]['sign'], ['emission', 'positive', '+']):
+                if casefold(self.info_c[i_comp]['sign']) in ['emission', 'positive', '+']:
                     self.info_c[i_comp]['sign'] = 'emission'
             else:
                 self.info_c[i_comp]['sign'] = 'emission' # default
@@ -91,7 +93,7 @@ class PhotFrame(object):
 
         self.wave_w = copy(wave_w)
         self.wave_unit = wave_unit
-        if (self.wave_w is not None) & (self.wave_unit == 'micron'): self.wave_w *= 1e4 # convert to AA
+        if (self.wave_w is not None) & (self.wave_unit in ['micron', 'um']): self.wave_w *= 1e4 # convert to AA
         self.wave_num = wave_num
                 
         self.trans_dict, self.trans_bw, self.wave_w = self.read_transmission(name_b=self.name_b, 

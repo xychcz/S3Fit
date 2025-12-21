@@ -12,24 +12,26 @@ import astropy.constants as const
 from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 
-from ..auxiliaries.auxiliary_functions import print_log, color_list_dict, convolve_var_width_fft
+from ..auxiliaries.auxiliary_frames import ConfigFrame
+from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict, convolve_var_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
-# alternative component names
-powerlaw_names = ['powerlaw', 'pl', 'Powerlaw', 'PL']
+# alternative component names after casefold
+powerlaw_names = ['powerlaw', 'pl']
 bending_powerlaw_names = ['bending_powerlaw', 'bending-powerlaw', 'bending powerlaw', 'bending_pl', 'bending-pl', 'bending pl']
-iron_names = ['iron', 'fe ii', 'feii', 'Iron', 'Fe II', 'FeII']
-bac_names = ['bac', 'balmer continuum', 'Balmer continuum']
+iron_names = ['iron', 'fe ii', 'feii']
+bac_names = ['bac', 'balmer cont.', 'balmer_cont.', 'balmer continuum', 'balmer_continuum']
 
 class AGNFrame(object):
-    def __init__(self, filename=None, cframe=None, fframe=None, v0_redshift=None, R_inst_rw=None, 
+    def __init__(self, fframe=None, config=None, filename=None, 
+                 v0_redshift=None, R_inst_rw=None, 
                  w_min=None, w_max=None, w_norm=5100, dw_norm=25, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
-        self.filename = filename
-        self.cframe = cframe
         self.fframe = fframe
+        self.config = config
+        self.filename = filename
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw        
         self.w_min = w_min
@@ -42,7 +44,13 @@ class AGNFrame(object):
         self.verbose = verbose
         self.log_message = log_message
 
+        self.cframe=ConfigFrame(self.config)
         self.num_comps = self.cframe.num_comps
+
+        if self.verbose:
+            print_log(f"AGN UV/optical continuum components: {[self.cframe.info_c[i_comp]['mod_used'].tolist() for i_comp in range(self.num_comps)]}", self.log_message)
+        for i_comp in range(self.num_comps): 
+            self.cframe.info_c[i_comp]['mod_used'] = casefold(self.cframe.info_c[i_comp]['mod_used']) # make names case insensitive
 
         ############################################################
         # to be compatible with old version <= 2.2.4
@@ -67,7 +75,7 @@ class AGNFrame(object):
             if np.isin(powerlaw_names+bending_powerlaw_names+bac_names, self.cframe.info_c[i_comp]['mod_used']).any():
                 self.num_coeffs_c[i_comp] = 1 # one independent element per component
             if np.isin(iron_names, self.cframe.info_c[i_comp]['mod_used']).any():
-                if ~np.isin('segment', [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['segment'] = False
+                if not ('segment' in [*self.cframe.info_c[i_comp]]): self.cframe.info_c[i_comp]['segment'] = False
                 if self.cframe.info_c[i_comp]['segment']: 
                     self.num_coeffs_c[i_comp] = 8 # 8 independent segments
                 else:
@@ -102,9 +110,6 @@ class AGNFrame(object):
                 self.plot_style_c[str(self.cframe.comp_c[i_comp])] = {'color': 'None', 'alpha': 0.5, 'linestyle': '-', 'linewidth': 0.75}
                 self.plot_style_c[self.cframe.comp_c[i_comp]]['color'] = str(np.take(color_list_dict['yellow'], i_yellow, mode="wrap"))
                 i_yellow += 1
-
-        if self.verbose:
-            print_log(f"AGN UV/optical continuum components: {np.array([self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
 
     ##############################
 
@@ -163,25 +168,38 @@ class AGNFrame(object):
 
         return pl
 
-    def bac_func(self, wavelength, log_e_tem=4.0, log_tau_be=1.0, wave_norm=3000):
-        # parameters: electron temperature (K), optical depth at balmer edge (3646)
-        # normalize at rest 3000 AA
+    def bb_func(self, wavelength, log_tem=None, if_norm=True, wave_norm=3000):
+        # parameters: temperature (K)
+        # normalize at rest 3000 AA (default)
 
-        # Planck function for the given electron temperature
-        C1 = 1.1910429723971885e27   # 2 h c^2 * 1e40 * 1e3
-        C2 = 1.4387768775039336e8    # hc/k * 1e10
-        tmp = C2 / (wavelength * 10.0**log_e_tem)
-        planck_flux_w = C1 / wavelength**5 / np.expm1(tmp) # in erg/s/cm2/AA/sr
+        def get_bb(wavelength):
+            # Planck function for the given temperature
+            C1 = 1.1910429723971885e27   # 2 h c^2 * 1e40 * 1e3
+            C2 = 1.4387768775039336e8    # hc/k * 1e10
+            tmp = C2 / (wavelength * 10.0**log_tem)
+            return C1 / wavelength**5 / np.expm1(tmp) # in erg/s/cm2/AA/sr
         
-        # calculate the optical depth at each wavelength
-        # τ_λ = τ_BE * (λ_BE / λ)^3  (as in Grandi 1982)
-        # the exponent can vary depending on the specific model
-        balmer_edge = 3646.0
-        optical_depth = 10.0**log_tau_be * (balmer_edge / wavelength)**3
+        bb_flux_w = get_bb(wavelength) 
+        if if_norm: bb_flux_w /= get_bb(wave_norm)
 
-        # calculate the Balmer continuum flux
-        bac_flux_w = planck_flux_w * (1 - np.exp(-optical_depth))
-        bac_flux_w /= np.interp(wave_norm, wavelength, bac_flux_w)
+        return bb_flux_w
+
+    def bac_func(self, wavelength, log_e_tem=None, log_tau_be=None, wave_norm=3000):
+        # parameters: electron temperature (K), optical depth at balmer edge (3646)
+        # normalize at rest 3000 AA (default)
+
+        balmer_edge = 3646.0
+
+        def get_bac(wavelength):
+            planck_flux_w = self.bb_func(wavelength, log_tem=log_e_tem, if_norm=False)
+            # calculate the optical depth at each wavelength
+            # τ_λ = τ_BE * (λ_BE / λ)^3  (as in Grandi 1982)
+            # the exponent can vary depending on the specific model
+            optical_depth = 10.0**log_tau_be * (balmer_edge / wavelength)**3
+            # return the Balmer continuum flux
+            return planck_flux_w * (1 - np.exp(-optical_depth))
+
+        bac_flux_w = get_bac(wavelength) / get_bac(wave_norm)
         bac_flux_w[wavelength >= balmer_edge] = 0
 
         return bac_flux_w
@@ -346,15 +364,14 @@ class AGNFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if np.isin('print_results', [*kwargs]): if_print_results = kwargs['print_results']
-        if np.isin('return_results', [*kwargs]): if_return_results = kwargs['return_results']
-        if np.isin('show_average', [*kwargs]): if_show_average = kwargs['show_average']
+        if 'print_results'  in [*kwargs]: if_print_results = kwargs['print_results']
+        if 'return_results' in [*kwargs]: if_return_results = kwargs['return_results']
+        if 'show_average'   in [*kwargs]: if_show_average = kwargs['show_average']
         ############################################################
 
-        if (step is None) | (step == 'best') | (step == 'final'):
-            step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if (step == 'spec+SED'):  step = 'joint_fit_3'
-        if (step == 'spec') | (step == 'pure-spec'): step = 'joint_fit_2'
+        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
+        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
 
         best_chi_sq_l = copy(self.fframe.output_s[step]['chi_sq_l'])
         best_par_lp   = copy(self.fframe.output_s[step]['par_lp'])
@@ -500,7 +517,7 @@ class AGNFrame(object):
                     msg += f" +/- {tmp_values_vl['log_lambLum_3000'].std():<8.4f}|\n"
                     msg += f"| λL5100 (rest,intrinsic) (log Lsun)                  = {tmp_values_vl['log_lambLum_5100'][mask_l].mean():10.4f}"
                     msg += f" +/- {tmp_values_vl['log_lambLum_5100'].std():<8.4f}|\n"
-                    if ~np.isin(self.w_norm, [3000,5100]):
+                    if not (self.w_norm in [3000,5100]):
                         msg += f"| λL{self.w_norm} (rest,intrinsic) (log Lsun)                  = {tmp_values_vl['log_lambLum_wavenorm'][mask_l].mean():10.4f}"
                         msg += f" +/- {tmp_values_vl['log_lambLum_wavenorm'].std():<8.4f}|\n"
                 if np.isin(bending_powerlaw_names, self.cframe.info_c[i_comp]['mod_used']).any():
@@ -534,7 +551,7 @@ class AGNFrame(object):
             msg += f" +/- {tmp_values_vl['flux_3000'].std():<8.4f}|\n"
             msg += f"| F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl['flux_5100'][mask_l].mean():10.4f}"
             msg += f" +/- {tmp_values_vl['flux_5100'].std():<8.4f}|"
-            if ~np.isin(self.w_norm, [3000,5100]):
+            if not (self.w_norm in [3000,5100]):
                 msg += '\n'
                 msg += f"| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)            = {tmp_values_vl['flux_wavenorm'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['flux_wavenorm'].std():<8.4f}|"
