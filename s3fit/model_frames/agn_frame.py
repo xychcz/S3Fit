@@ -383,7 +383,7 @@ class AGNFrame(object):
         output_c = {}
         i_e0 = 0; i_e1 = 0
         for i_comp in range(num_comps): 
-            output_c[comp_c[i_comp]] = {} # init results for each comp
+            output_c[str(comp_c[i_comp])] = {} # init results for each comp
             output_c[comp_c[i_comp]]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
             i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
             i_e1 += num_coeffs_c[i_comp]

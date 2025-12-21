@@ -52,6 +52,7 @@ dependencies = [
 
 [project.optional-dependencies]
 pyneb = ['pyneb>=1.1.23']
+full = ['pyneb>=1.1.23', 'svg42pdf>=0.2.2']
 # install with pyneb:
 # pip install s3fit[pyneb] 
 

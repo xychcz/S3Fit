@@ -486,7 +486,7 @@ class StellarFrame(object):
         # output_c['comp']['values']['name_l'][i_l]: calculated values
         output_c = {}
         for i_comp in range(num_comps): 
-            output_c[comp_c[i_comp]] = {} # init results for each comp
+            output_c[str(comp_c[i_comp])] = {} # init results for each comp
             output_c[comp_c[i_comp]]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['values'] = {}

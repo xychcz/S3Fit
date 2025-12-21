@@ -1170,17 +1170,17 @@ class LineFrame(object):
         output_c['sum'] = {}
         output_c['sum']['values'] = {} # only init values for sum of all comp
         for line_name in self.linename_n:
-            output_c['sum']['values'][line_name] = np.zeros(num_loops, dtype='float')
+            output_c['sum']['values'][str(line_name)] = np.zeros(num_loops, dtype='float')
 
         for i_comp in range(num_comps): 
-            output_c[comp_c[i_comp]] = {} # init results for each comp
+            output_c[str(comp_c[i_comp])] = {} # init results for each comp
             output_c[comp_c[i_comp]]['par_lp']   = par_lcp[:, i_comp, :]
             output_c[comp_c[i_comp]]['coeff_le'] = coeff_lcn[:, i_comp, :]
             output_c[comp_c[i_comp]]['values'] = {}
             for (i_par, par_name) in enumerate(par_name_cp[i_comp]):
-                output_c[comp_c[i_comp]]['values'][par_name] = par_lcp[:, i_comp, i_par]
+                output_c[comp_c[i_comp]]['values'][str(par_name)] = par_lcp[:, i_comp, i_par]
             for (i_line, line_name) in enumerate(self.linename_n):
-                output_c[comp_c[i_comp]]['values'][line_name] = coeff_lcn[:, i_comp, i_line]
+                output_c[comp_c[i_comp]]['values'][str(line_name)] = coeff_lcn[:, i_comp, i_line]
                 output_c['sum']['values'][line_name] += coeff_lcn[:, i_comp, i_line]
 
         output_c['sum'] = output_c.pop('sum') # move sum to the end

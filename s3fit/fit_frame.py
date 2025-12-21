@@ -3,7 +3,7 @@
 # Repository: https://github.com/xychcz/S3Fit
 # Contact: s3fit@xychen.me
 
-import sys, time, traceback, inspect, pickle, gzip
+import os, sys, time, traceback, inspect, pickle, gzip
 import numpy as np
 np.set_printoptions(linewidth=10000)
 from copy import deepcopy as copy
@@ -72,7 +72,7 @@ class FitFrame(object):
         ############################################################
         # copy and save all input arguments
         self.input_args = {name: copy(value) for name, value in locals().items() if (name != 'self') & (name != 'kwargs')}
-        # FitFrame class can be reloaded as FF_new = FitFrame(**FF.input_args)
+        # FitFrame class can be reloaded as self = FitFrame(**FF.input_args)
 
         # check status of input arguments
         mask_islist_a = [isinstance(self.input_args[name], (list, np.ndarray)) for name in self.input_args] # if inputs are list or array type
@@ -1104,7 +1104,7 @@ class FitFrame(object):
 
                     if self.if_plot_step: 
                         par_p, coeff_e, model_w, chi_sq = self.linear_process(da_solution.x, *args, ret_par_coeff=True)
-                        self.plot_canvas(flux_w, model_w, ferr_w, mask_w, fit_phot, '[DA] '+fit_message, chi_sq, i_loop)
+                        self.plot_step(flux_w, model_w, ferr_w, mask_w, fit_phot, '[DA] '+fit_message, chi_sq, i_loop)
                     else:
                         print_log(f'Non-linear fitting cycle {i_fit+1}/{nlfit_ntry_max}, Dual Annealing returns chi_sq = {da_solution.fun:.3f}.', 
                                   self.log_message, self.if_print_step)
@@ -1182,7 +1182,7 @@ class FitFrame(object):
                 best_fit = ls_solution # use the solution in the final try if all tries failed
 
         par_p, coeff_e, model_w, chi_sq = self.linear_process(best_fit.x, *args, ret_par_coeff=True)
-        if self.if_plot_step: self.plot_canvas(flux_w, model_w, ferr_w, mask_w, fit_phot, '[LS] '+fit_message, chi_sq, i_loop)
+        if self.if_plot_step: self.plot_step(flux_w, model_w, ferr_w, mask_w, fit_phot, '[LS] '+fit_message, chi_sq, i_loop)
         ##############################################################
 
         ##############################################################
@@ -1699,11 +1699,11 @@ class FitFrame(object):
                     self.model_dict[mod]['spec_mod'].v0_redshift = self.rev_v0_redshift
                     if self.have_phot: self.model_dict[mod]['sed_mod'].v0_redshift = self.rev_v0_redshift
                 print_log(f"The systemic redshift (v0_redshift) is updated to {self.rev_v0_redshift:.6f}+/-{self.rev_v0_redshift_std:.6f} (from the input {self.v0_redshift}) " + 
-                          f"referring to the model and component: '{self.rev_v0_reference}'.", self.log_message)
-                print_log(f"The related best-fit results (e.g., shifted velocities) are also updated.", self.log_message)
+                          f"referring to the model and component: '{self.rev_v0_reference}'.", self.log_message, self.if_print_step)
+                print_log(f"The related best-fit results (e.g., shifted velocities) are also updated.", self.log_message, self.if_print_step)
             else:
                 self.rev_v0_redshift = None
-                print_log(f"[WARNING] The specified reference component of systemic redshift, '{self.rev_v0_reference}', is not available. The redshift is skipped.", self.log_message)
+                print_log(f"[WARNING] The specified reference component of systemic redshift, '{self.rev_v0_reference}', is not available. The redshift is skipped.", self.log_message, self.if_print_step)
         else:
             self.rev_v0_redshift = None
             # recover un-updated v0_redshift, if it is changed, in each model frame
@@ -1747,7 +1747,7 @@ class FitFrame(object):
         # init zero formats for models        
         for mod in rev_model_type.split('+'): 
             output_mc[mod] = {} # init results for mod
-            comp_c = self.model_dict[mod]['cframe'].comp_c
+            comp_c = self.model_dict[mod]['cframe'].comp_c.tolist()
             num_comps = self.model_dict[mod]['cframe'].num_comps            
             for i_comp in range(num_comps): # init results for each comp of mod
                 output_mc[mod][comp_c[i_comp]] = {}
@@ -1799,7 +1799,7 @@ class FitFrame(object):
         self.output_mc = output_mc
 
         # convert to flux in mJy if required
-        if flux_type == 'Fnu':
+        if flux_type in ['Fnu', 'fnu']:
             for mod in [*output_mc]:
                 for comp in [*output_mc[mod]]:
                     if np.isin('spec_lw', [*output_mc[mod][comp]]): 
@@ -1854,7 +1854,7 @@ class FitFrame(object):
 
     ##########################################################################
 
-    def plot_canvas(self, flux_w, model_w, ferr_w, mask_w, fit_phot, fit_message, chi_sq, i_loop):
+    def plot_step(self, flux_w, model_w, ferr_w, mask_w, fit_phot, fit_message, chi_sq, i_loop):
         if self.canvas is None:
             fig, axs = plt.subplots(2, 1, figsize=(9, 3), dpi=100, gridspec_kw={'height_ratios':[2,1]})
             plt.subplots_adjust(bottom=0.15, top=0.9, hspace=0, wspace=0)
@@ -1921,4 +1921,184 @@ class FitFrame(object):
             fig.canvas.draw(); fig.canvas.flush_events() # refresh plot in the given window
         plt.pause(0.0001)  # forces immediate update
 
+
+    def plot_results(self, step=None, if_plot_phot=False, if_plot_comp=True, 
+                     plot_range=None, wave_type='rest', wave_unit='Angstrom', 
+                     flux_type='Flam', res_type='residual', ferr_num=3, 
+                     xyscale=('log','log'), figsize=(10, 6), legend_loc=None, 
+                     output_plotname=None, **kwargs):
+        # step: 'spec', 'pure-spec', 'spec+SED'
+        # plot_range = ('spec', 'pure-spec'), 'SED'; check if 'SED'
+        # flux_type: ('Flam'), 'Fnu'; check if 'Fnu'
+        # wave_type: 'rest', ('obs', 'observed'); check if 'rest'
+        # wave_unit: ('Angstrom'), 'um', 'micron'; check if 'um' or 'micron'
+        # res_type: 'residual', 'residual/data', 'residual/model'
+        # ferr_num: n-sigma error
+        # xyscale: 'linear', 'log'
+
+        output_mc = self.extract_results(step=step, if_return_results=True, flux_type=flux_type, **kwargs) # if_print_results=False, if_rev_v0_redshift=None
+
+        if step in ['spec', 'pure-spec']: 
+            if_plot_phot = False # forcibly
+            plot_range = 'spec' # forcibly
+
+        if wave_type == 'rest':
+            z_sys = self.rev_v0_redshift if self.rev_v0_redshift is not None else self.v0_redshift
+            z_ratio_wave = (1+z_sys)
+            z_ratio_flux = 1 # do not correct flux
+        elif wave_type in ['obs', 'observed']:
+            z_ratio_wave = 1
+            z_ratio_flux = 1
+        if wave_unit in ['um', 'micron']: z_ratio_wave *= 1e4
+
+        wave_w = self.spec['wave_w']/z_ratio_wave
+        flux_grid = 'spec_lw'
+        if if_plot_phot: 
+            wave_b = self.phot['wave_b']/z_ratio_wave
+            if plot_range == 'SED':
+                wave_w = self.sed['wave_w']/z_ratio_wave
+                flux_grid = 'sed_lw'
+
+        if res_type == 'residual': 
+            ax1_ylabel = 'Residuals'
+            fres_lw = output_mc['tot']['fres']['spec_lw']*z_ratio_flux
+            ferr_w  = output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux
+            if if_plot_phot:
+                fres_lb = output_mc['tot']['fres']['phot_lb']*z_ratio_flux
+                ferr_b  = output_mc['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux
+        elif res_type == 'residual/data':
+            ax1_ylabel = 'Residuals / Data'
+            fres_lw = np.divide(output_mc['tot']['fres']['spec_lw'], output_mc['tot']['flux']['spec_lw'], where=output_mc['tot']['flux']['spec_lw']>0)
+            ferr_w  = np.divide(output_mc['tot']['ferr']['spec_lw'][0]*ferr_num, output_mc['tot']['flux']['spec_lw'][0], where=output_mc['tot']['flux']['spec_lw'][0]>0)
+            if if_plot_phot:
+                fres_lb = np.divide(output_mc['tot']['fres']['phot_lb'], output_mc['tot']['flux']['phot_lb'], where=output_mc['tot']['flux']['phot_lb']>0)
+                ferr_b  = np.divide(output_mc['tot']['ferr']['phot_lb'][0]*ferr_num, output_mc['tot']['flux']['phot_lb'][0], where=output_mc['tot']['flux']['phot_lb'][0]>0)
+        elif res_type == 'residual/model':
+            ax1_ylabel = 'Residuals / Model'
+            fres_lw = output_mc['tot']['fres']['spec_lw'] / output_mc['tot']['fmod']['spec_lw']
+            if if_plot_phot:
+                fres_lb = output_mc['tot']['fres']['phot_lb'] / output_mc['tot']['fmod']['phot_lb']
+                ferr_b  = output_mc['tot']['ferr']['phot_lb'][0]*ferr_num / output_mc['tot']['fmod']['phot_lb'][0]
+
+        fig, axs = plt.subplots(2, 1, figsize=figsize, dpi=100, gridspec_kw={'height_ratios':[3,1]})
+        plt.subplots_adjust(bottom=0.12, top=0.92, left=0.08, right=0.98, hspace=0, wspace=0)
+        ax0, ax1 = axs
+
+        #####################
+        # plot original data
+        ax0.errorbar(self.spec['wave_w']/z_ratio_wave, self.spec['flux_w']*z_ratio_flux, c='C7', linewidth=1.5, label='Observed spec.', zorder=1)
+        if if_plot_phot:
+            ax0.errorbar(wave_b, self.phot['flux_b']*z_ratio_flux, output_mc['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
+                         fmt='o', markersize=8, color='k', alpha=.5, label='Observed phot.', zorder=3)
+        #####################
+
+        #####################
+        # plot model spectra
+        for i_loop in range(self.num_loops): 
+            line, = ax0.plot(wave_w, output_mc['tot']['fmod'][flux_grid][i_loop]*z_ratio_flux, 
+                             '-', linewidth=1.5, color='C1', alpha=1/(self.num_loops/10), zorder=2)
+            if i_loop == 0: line.set_label('Total models spec.')
+
+        if if_plot_phot:
+            for i_loop in range(self.num_loops):
+                line = ax0.scatter(wave_b, output_mc['tot']['fmod']['phot_lb'][i_loop]*z_ratio_flux, 
+                                   marker='o', color='None', ec='C5', alpha=0.5/(self.num_loops/10), s=200, linewidth=2, zorder=3)
+                if i_loop == 0: line.set_label('Total models phot.')
+
+        for mod in self.rev_model_type.split('+'): 
+            comp_c = copy([*output_mc[mod]])
+            if if_plot_comp:
+                # plot each comp
+                if len(comp_c) > 2:
+                    comp_c = comp_c[-1:]+comp_c[:-1] # move 'sum' to the begining
+                else:
+                    comp_c = comp_c[:-1] # hide 'sum' if only one comp
+            else:
+                comp_c = comp_c[-1:] # only plot 'sum'
+            for comp in comp_c:
+                for i_loop in range(self.num_loops): 
+                    line, = ax0.plot(wave_w, output_mc[mod][comp][flux_grid][i_loop]*z_ratio_flux, 
+                                     linestyle=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linestyle'], 
+                                     linewidth=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linewidth'], 
+                                     color=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['color'], 
+                                     alpha=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['alpha']/(self.num_loops/10), zorder=3)
+                    # if i_loop == 0: line.set_label(mod+':'+comp)
+                ax0.plot([0], [0], 
+                         linestyle=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linestyle'], 
+                         linewidth=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linewidth'], 
+                         color=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['color'], 
+                         alpha=1, label=(mod+':'+comp) if if_plot_comp else mod) # make obvious labels
+        #####################
+
+        #####################
+        # plot residuals
+        ax1.plot([0], [0], '-', linewidth=1, color='C7', alpha=1, label='Residuals spec.') # make obvious label
+        for i_loop in range(self.num_loops): 
+            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C7', alpha=0.1/(self.num_loops/10), zorder=1)
+            # if i_loop == 0: line.set_label('Residuals spec.')
+            if if_plot_phot:
+                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='k', alpha=0.1/(self.num_loops/10), zorder=1)
+                if i_loop == 0: line.set_label('Residuals phot.')
+        #####################
+
+        #####################
+        # plot flux errors
+        ax0.fill_between(self.spec['wave_w']/z_ratio_wave, -output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, 
+                         fc='C5', ec='C5', alpha=0.25, label=f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+        ax1.fill_between(self.spec['wave_w']/z_ratio_wave, -ferr_w, ferr_w, 
+                         fc='C5', ec='C5', alpha=0.25, label=f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+        if if_plot_phot:
+            ax1.errorbar(wave_b, wave_b*0, yerr=ferr_b, fmt='.', markersize=8, linewidth=10, color='C5', alpha=0.6, 
+                         label=f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=0)
+        #####################
+
+        #####################
+        # x- and -y ranges
+        xmin = self.spec['wave_w'][self.spec['mask_valid_w']].min() * 0.98
+        xmax = self.spec['wave_w'][self.spec['mask_valid_w']].max() * 1.01
+        if if_plot_phot & (plot_range == 'SED'):
+            xmin = min(xmin, self.phot['wave_b'].min() * 0.9)
+            xmax = max(xmax, self.phot['wave_b'].max() * 1.1)
+        for ax in axs: ax.set_xlim(xmin/z_ratio_wave, xmax/z_ratio_wave)
+
+        ymax_flux = output_mc['tot']['fmod'][flux_grid][0].max() * 1.03
+        if xyscale[1] == 'linear':
+            ymin_flux = -0.03 * ymax_flux
+            if 'line' in output_mc:
+                ymin_flux = min(ymin_flux, output_mc['line']['sum'][flux_grid][0].min() * 1.02) # for absorption lines
+        elif xyscale[1] == 'log':
+            ymin_flux = np.median(output_mc['tot']['ferr']['spec_lw'][0])
+        ax0.set_ylim(ymin_flux*z_ratio_flux, ymax_flux*z_ratio_flux)
+
+        ymax_fres = np.median(ferr_w) * 3
+        if if_plot_phot:
+            ymax_fres = max(ymax_fres, np.median(ferr_b) * 3)
+        ax1.set_ylim(-ymax_fres*z_ratio_flux, ymax_fres*z_ratio_flux)
+        for ax in axs:
+            ax.fill_between(self.spec['wave_w']/z_ratio_wave, -ymax_fres*z_ratio_flux*~self.spec['mask_valid_w'], ymax_flux*z_ratio_flux*~self.spec['mask_valid_w'], 
+                            hatch='////', fc='None', ec='C5', alpha=0.5, zorder=0) 
+            ax.set_xscale(xyscale[0])
+        ax0.set_yscale(xyscale[1])
+        #####################
+
+        if legend_loc is None:
+            ax0.legend(ncol=4); ax1.legend(ncol=4, loc=4)
+        else:
+            ax0.legend(ncol=4, loc=legend_loc[0]); ax1.legend(ncol=4, loc=legend_loc[1])
+        ax0.tick_params(axis='x', which='both', labelbottom=False)
+        # ax0.set_title('The best-fit spectra in the wavelength range of the data spectrum.')
+        if flux_type in ['Fnu', 'fnu']:
+            ax0.set_ylabel(f'Flux (mJy)')
+        else:
+            ax0.set_ylabel(f'Flux ({self.spec_flux_scale:.0e}'+r' erg s$^{-1}$cm$^{-2}\AA^{-1}$)')
+        ax1.set_ylabel(ax1_ylabel)
+        ax1.set_xlabel(('Rest' if wave_type == 'rest' else 'Observed')+' wavelength '+(r'($\mu$m)' if wave_unit in ['um', 'micron'] else r'($\AA$)')) # , labelpad=0
+        
+        if output_plotname is not None:
+            if output_plotname.split('.')[-1] in ['pdf', 'PDF']:
+                plt.savefig('./tmp.svg', dpi='figure', transparent=False)
+                _ = os.system('svg42pdf ./tmp.svg ' + output_plotname)
+                _ = os.system('rm ./tmp.svg')
+            else:
+                plt.savefig(output_plotname, dpi='figure', transparent=False)
 
