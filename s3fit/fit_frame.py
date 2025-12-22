@@ -1983,7 +1983,7 @@ class FitFrame(object):
                 fres_lb = output_mc['tot']['fres']['phot_lb'] / output_mc['tot']['fmod']['phot_lb']
                 ferr_b  = output_mc['tot']['ferr']['phot_lb'][0]*ferr_num / output_mc['tot']['fmod']['phot_lb'][0]
 
-        alpha_ratio = min(1, 10 /self.num_loops)
+        alpha_ratio = 10/self.num_loops
 
         #####################
         fig, axs = plt.subplots(2, 1, figsize=figsize, dpi=100, gridspec_kw={'height_ratios':[3,1]})
@@ -2004,12 +2004,12 @@ class FitFrame(object):
         # plot total model spectra
         for i_loop in range(self.num_loops): 
             line, = ax0.plot(wave_w, output_mc['tot']['fmod'][flux_grid][i_loop]*z_ratio_flux, 
-                             '-', linewidth=1.5, color='C1', alpha=1*alpha_ratio, zorder=2)
+                             '-', linewidth=1.5, color='C1', alpha=min(1, 1*alpha_ratio), zorder=2)
             if i_loop == 0: line.set_label('Total models spec.')
         if if_plot_phot:
             for i_loop in range(self.num_loops):
                 line = ax0.scatter(wave_b, output_mc['tot']['fmod']['phot_lb'][i_loop]*z_ratio_flux, 
-                                   marker='o', s=200, linewidth=2, facecolor='None', edgecolor='C5', alpha=0.5*alpha_ratio, zorder=3)
+                                   marker='o', s=200, linewidth=2, facecolor='None', edgecolor='C5', alpha=min(1, 0.5*alpha_ratio), zorder=3)
                 if i_loop == 0: line.set_label('Total models phot.')
         # plot each model spectra
         for mod in self.rev_model_type.split('+'): 
@@ -2028,7 +2028,7 @@ class FitFrame(object):
                                      linestyle=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linestyle'], 
                                      linewidth=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linewidth'], 
                                      color=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['color'], 
-                                     alpha=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['alpha']*alpha_ratio, zorder=3)
+                                     alpha=min(1, self.model_dict[mod]['spec_mod'].plot_style_c[comp]['alpha']*alpha_ratio), zorder=3)
                     # if i_loop == 0: line.set_label(mod+':'+comp)
                 # make obvious labels
                 ax0.plot([0], [0], 
@@ -2043,10 +2043,10 @@ class FitFrame(object):
         ax1.plot(wave_w, wave_w*0, '--', color='C7', alpha=0.3, zorder=0)
         ax1.plot([0], [0], '-', linewidth=1, color='C2', alpha=1, label='Residuals spec.') # make obvious label
         for i_loop in range(self.num_loops): 
-            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C2', alpha=0.1*alpha_ratio, zorder=1)
+            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C2', alpha=min(1, 0.1*alpha_ratio), zorder=1)
             # if i_loop == 0: line.set_label('Residuals spec.')
             if if_plot_phot:
-                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='C6', alpha=0.25*alpha_ratio, zorder=3)
+                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='C6', alpha=min(1, 0.25*alpha_ratio), zorder=3)
                 # if i_loop == 0: line.set_label('Residuals phot.')
         if if_plot_phot:
             ind_o_b = np.argsort(wave_b)
