@@ -1983,6 +1983,8 @@ class FitFrame(object):
                 fres_lb = output_mc['tot']['fres']['phot_lb'] / output_mc['tot']['fmod']['phot_lb']
                 ferr_b  = output_mc['tot']['ferr']['phot_lb'][0]*ferr_num / output_mc['tot']['fmod']['phot_lb'][0]
 
+        alpha_ratio = min(1, 10 /self.num_loops)
+
         #####################
         fig, axs = plt.subplots(2, 1, figsize=figsize, dpi=100, gridspec_kw={'height_ratios':[3,1]})
         plt.subplots_adjust(bottom=0.08, top=0.98, left=0.08, right=0.98, hspace=0, wspace=0)
@@ -1991,25 +1993,25 @@ class FitFrame(object):
 
         #####################
         # plot original data
-        ax0.errorbar(self.spec['wave_w']/z_ratio_wave, self.spec['flux_w']*z_ratio_flux, c='C7', linewidth=1.5, label='Observed spec.', zorder=1)
+        ax0.errorbar(self.spec['wave_w']/z_ratio_wave, self.spec['flux_w']*z_ratio_flux, 
+                     linewidth=1.5, color='C7', alpha=1, label='Observed spec.', zorder=1)
         if if_plot_phot:
             ax0.errorbar(wave_b, self.phot['flux_b']*z_ratio_flux, output_mc['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
-                         fmt='o', markersize=8, color='k', alpha=.5, label='Observed phot.'+r' ($\pm 3\sigma$)', zorder=3)
+                         fmt='o', markersize=8, color='k', alpha=0.5, label='Observed phot.'+r' ($\pm 3\sigma$)', zorder=3)
         #####################
 
         #####################
-        # plot model spectra
+        # plot total model spectra
         for i_loop in range(self.num_loops): 
             line, = ax0.plot(wave_w, output_mc['tot']['fmod'][flux_grid][i_loop]*z_ratio_flux, 
-                             '-', linewidth=1.5, color='C1', alpha=1/(self.num_loops/10), zorder=2)
+                             '-', linewidth=1.5, color='C1', alpha=1*alpha_ratio, zorder=2)
             if i_loop == 0: line.set_label('Total models spec.')
-
         if if_plot_phot:
             for i_loop in range(self.num_loops):
                 line = ax0.scatter(wave_b, output_mc['tot']['fmod']['phot_lb'][i_loop]*z_ratio_flux, 
-                                   marker='o', color='None', ec='C5', alpha=0.5/(self.num_loops/10), s=200, linewidth=2, zorder=3)
+                                   marker='o', s=200, linewidth=2, facecolor='None', edgecolor='C5', alpha=0.5*alpha_ratio, zorder=3)
                 if i_loop == 0: line.set_label('Total models phot.')
-
+        # plot each model spectra
         for mod in self.rev_model_type.split('+'): 
             comp_c = copy([*output_mc[mod]])
             if if_plot_comp:
@@ -2026,24 +2028,25 @@ class FitFrame(object):
                                      linestyle=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linestyle'], 
                                      linewidth=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linewidth'], 
                                      color=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['color'], 
-                                     alpha=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['alpha']/(self.num_loops/10), zorder=3)
+                                     alpha=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['alpha']*alpha_ratio, zorder=3)
                     # if i_loop == 0: line.set_label(mod+':'+comp)
+                # make obvious labels
                 ax0.plot([0], [0], 
                          linestyle=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linestyle'], 
                          linewidth=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['linewidth'], 
                          color=self.model_dict[mod]['spec_mod'].plot_style_c[comp]['color'], 
-                         alpha=1, label=(mod+':'+comp) if if_plot_comp else mod) # make obvious labels
+                         alpha=1, label=(mod+':'+comp) if if_plot_comp else mod)
         #####################
 
         #####################
         # plot residuals
-        ax1.plot(wave_w, wave_w*0, '--', c='C7', alpha=0.3, zorder=0)
+        ax1.plot(wave_w, wave_w*0, '--', color='C7', alpha=0.3, zorder=0)
         ax1.plot([0], [0], '-', linewidth=1, color='C2', alpha=1, label='Residuals spec.') # make obvious label
         for i_loop in range(self.num_loops): 
-            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C2', alpha=0.1/(self.num_loops/10), zorder=1)
+            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C2', alpha=0.1*alpha_ratio, zorder=1)
             # if i_loop == 0: line.set_label('Residuals spec.')
             if if_plot_phot:
-                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='C6', alpha=0.25/(self.num_loops/10), zorder=3)
+                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='C6', alpha=0.25*alpha_ratio, zorder=3)
                 # if i_loop == 0: line.set_label('Residuals phot.')
         if if_plot_phot:
             ind_o_b = np.argsort(wave_b)
@@ -2053,9 +2056,9 @@ class FitFrame(object):
         #####################
         # plot flux errors
         ax0.fill_between(self.spec['wave_w']/z_ratio_wave, -output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, 
-                         fc='C5', ec='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
         ax1.fill_between(self.spec['wave_w']/z_ratio_wave, -ferr_w, ferr_w, 
-                         fc='C5', ec='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
         if if_plot_phot:
             # ax0.errorbar(wave_b, wave_b*0, yerr=output_mc['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
             #              fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=0)
@@ -2087,7 +2090,7 @@ class FitFrame(object):
         ax1.set_ylim(-ymax_fres, ymax_fres) # ferr_w/b is already *z_ratio_flux
         for ax in axs:
             ax.fill_between(self.spec['wave_w']/z_ratio_wave, -ymax_fres*z_ratio_flux*~self.spec['mask_valid_w'], ymax_flux*z_ratio_flux*~self.spec['mask_valid_w'], 
-                            hatch='////', fc='None', ec='C5', alpha=0.5, zorder=0) 
+                            hatch='////', facecolor='None', edgecolor='C5', alpha=0.5, zorder=0) 
             ax.set_xscale(xyscale[0])
         ax0.set_yscale(xyscale[1])
         #####################
