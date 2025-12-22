@@ -2055,10 +2055,17 @@ class FitFrame(object):
 
         #####################
         # plot flux errors
+        if self.have_phot:
+            if if_plot_phot:
+                error_type = '(modified)'
+            else:
+                error_type = '(original)'
+        else:
+            error_type = ''
         ax0.fill_between(self.spec['wave_w']/z_ratio_wave, -output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, output_mc['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, 
-                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+error_type, zorder=0)
         ax1.fill_between(self.spec['wave_w']/z_ratio_wave, -ferr_w, ferr_w, 
-                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+ ('(modified)' if if_plot_phot else '(original)'), zorder=0)
+                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+error_type, zorder=0)
         if if_plot_phot:
             # ax0.errorbar(wave_b, wave_b*0, yerr=output_mc['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
             #              fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=0)
