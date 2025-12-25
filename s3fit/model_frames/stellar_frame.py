@@ -442,7 +442,7 @@ class StellarFrame(object):
     ##########################################################################
     ########################## Output functions ##############################
 
-    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
+    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, lum_unit='Lsun', **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
@@ -521,41 +521,45 @@ class StellarFrame(object):
                 output_c['sum']['values']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
 
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
-                unitconv = 4*np.pi*dist_lum**2 / const.L_sun.to('erg/s').value * spec_flux_scale # convert intrinsic flux5500(rest) to L5500 
+                unitconv = 4*np.pi*dist_lum**2 * spec_flux_scale # convert intrinsic flux to Lum, in erg/s
+                if lum_unit == 'Lsun': unitconv /= const.L_sun.to('erg/s').value
+
                 if self.sfh_names[i_comp] != 'nonparametric':
                     sfh_factor_e = self.sfh_factor(i_comp, par_p) 
                     # sfh_factor_e means lum(5500) of each ssp model element per unit SFR (of the peak SFH epoch in this case)
                     # if use csp with a sfh, coeff_e*unitconv means the value of SFH of this csp element in Mun/yr at the peak SFH epoch
                     # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element
                     coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e 
-                Lum_e = coeff_e * unitconv # intrinsic L5500, in Lsun/AA
-                lambLum_e = Lum_e * 5500 # intrinsic λL5500, in Lsun
-                Mass_formed_e = Lum_e * self.mtol_e
+                Lum_5500_e = coeff_e * unitconv # intrinsic L5500, in Lsun/AA
+                lambLum_5500_e = Lum_5500_e * 5500
+                lambLum_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.w_norm
+                if lum_unit == 'erg/s': Lum_5500_e /= const.L_sun.to('erg/s').value
+                Mass_formed_e = Lum_5500_e * self.mtol_e # mtol_e is in unit of Msun/(Lsun/AA)
                 Mass_remaining_e = Mass_formed_e * self.remainmassfrac_e
 
-                output_c[comp_c[i_comp]]['values']['log_lambLum_5500'][i_loop]   = np.log10(lambLum_e.sum())
-                output_c[comp_c[i_comp]]['values']['log_lambLum_wavenorm'][i_loop]   = np.log10((lambLum_e * self.flux_norm_ratio_e).sum())
+                output_c[comp_c[i_comp]]['values']['log_lambLum_5500'][i_loop]   = np.log10(lambLum_5500_e.sum())
+                output_c[comp_c[i_comp]]['values']['log_lambLum_wavenorm'][i_loop]   = np.log10(lambLum_wavenorm_e.sum())
                 output_c[comp_c[i_comp]]['values']['log_Mass_formed'][i_loop]    = np.log10(Mass_formed_e.sum())
                 output_c[comp_c[i_comp]]['values']['log_Mass_remaining'][i_loop] = np.log10(Mass_remaining_e.sum())
-                output_c[comp_c[i_comp]]['values']['log_MtoL'][i_loop]   = np.log10(Mass_remaining_e.sum() / lambLum_e.sum())
-                output_c[comp_c[i_comp]]['values']['log_Age_Lweight'][i_loop] = (lambLum_e * np.log10(self.age_e)).sum() / lambLum_e.sum()
+                output_c[comp_c[i_comp]]['values']['log_MtoL'][i_loop]   = np.log10(Mass_remaining_e.sum() / lambLum_5500_e.sum())
+                output_c[comp_c[i_comp]]['values']['log_Age_Lweight'][i_loop] = (lambLum_5500_e * np.log10(self.age_e)).sum() / lambLum_5500_e.sum()
                 output_c[comp_c[i_comp]]['values']['log_Age_Mweight'][i_loop] = (Mass_remaining_e * np.log10(self.age_e)).sum() / Mass_remaining_e.sum()
-                output_c[comp_c[i_comp]]['values']['log_Z_Lweight'][i_loop] = (lambLum_e * np.log10(self.met_e)).sum() / lambLum_e.sum()
+                output_c[comp_c[i_comp]]['values']['log_Z_Lweight'][i_loop] = (lambLum_5500_e * np.log10(self.met_e)).sum() / lambLum_5500_e.sum()
                 output_c[comp_c[i_comp]]['values']['log_Z_Mweight'][i_loop] = (Mass_remaining_e * np.log10(self.met_e)).sum() / Mass_remaining_e.sum()
 
-                output_c['sum']['values']['log_lambLum_5500'][i_loop]   += lambLum_e.sum() # keep in linear for sum
-                output_c['sum']['values']['log_lambLum_wavenorm'][i_loop]   += (lambLum_e * self.flux_norm_ratio_e).sum() # keep in linear for sum
+                output_c['sum']['values']['log_lambLum_5500'][i_loop]   += lambLum_5500_e.sum() # keep in linear for sum
+                output_c['sum']['values']['log_lambLum_wavenorm'][i_loop]   += lambLum_wavenorm_e.sum() # keep in linear for sum
                 output_c['sum']['values']['log_Mass_formed'][i_loop]    += Mass_formed_e.sum() # keep in linear for sum
                 output_c['sum']['values']['log_Mass_remaining'][i_loop] += Mass_remaining_e.sum() # keep in linear for sum
-                output_c['sum']['values']['log_Age_Lweight'][i_loop] += (lambLum_e * np.log10(self.age_e)).sum()
+                output_c['sum']['values']['log_Age_Lweight'][i_loop] += (lambLum_5500_e * np.log10(self.age_e)).sum()
                 output_c['sum']['values']['log_Age_Mweight'][i_loop] += (Mass_remaining_e * np.log10(self.age_e)).sum()
-                output_c['sum']['values']['log_Z_Lweight'][i_loop] += (lambLum_e * np.log10(self.met_e)).sum()
+                output_c['sum']['values']['log_Z_Lweight'][i_loop] += (lambLum_5500_e * np.log10(self.met_e)).sum()
                 output_c['sum']['values']['log_Z_Mweight'][i_loop] += (Mass_remaining_e * np.log10(self.met_e)).sum()
 
-        output_c['sum']['values']['log_MtoL'] = np.log10(output_c['sum']['values']['log_Mass_remaining'] / output_c['sum']['values']['log_lambLum_wavenorm'])
-        output_c['sum']['values']['log_Age_Lweight'] = output_c['sum']['values']['log_Age_Lweight'] / output_c['sum']['values']['log_lambLum_wavenorm']
+        output_c['sum']['values']['log_MtoL'] = np.log10(output_c['sum']['values']['log_Mass_remaining'] / output_c['sum']['values']['log_lambLum_5500'])
+        output_c['sum']['values']['log_Age_Lweight'] = output_c['sum']['values']['log_Age_Lweight'] / output_c['sum']['values']['log_lambLum_5500']
         output_c['sum']['values']['log_Age_Mweight'] = output_c['sum']['values']['log_Age_Mweight'] / output_c['sum']['values']['log_Mass_remaining']
-        output_c['sum']['values']['log_Z_Lweight'] = output_c['sum']['values']['log_Z_Lweight'] / output_c['sum']['values']['log_lambLum_wavenorm']
+        output_c['sum']['values']['log_Z_Lweight'] = output_c['sum']['values']['log_Z_Lweight'] / output_c['sum']['values']['log_lambLum_5500']
         output_c['sum']['values']['log_Z_Mweight'] = output_c['sum']['values']['log_Z_Mweight'] / output_c['sum']['values']['log_Mass_remaining']
         output_c['sum']['values']['log_lambLum_5500']       = np.log10(output_c['sum']['values']['log_lambLum_5500'])
         output_c['sum']['values']['log_lambLum_wavenorm']   = np.log10(output_c['sum']['values']['log_lambLum_wavenorm'])
@@ -570,12 +574,13 @@ class StellarFrame(object):
         self.num_loops = num_loops # for reconstruct_sfh and print_results
         self.spec_flux_scale = spec_flux_scale # for reconstruct_sfh and print_results
 
-        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average)
+        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
         if if_return_results: return output_c
 
-    def print_results(self, log=[], if_show_average=False):
+    def print_results(self, log=[], if_show_average=False, lum_unit='Lsun'):
         mask_l = np.ones(self.num_loops, dtype='bool')
         if not if_show_average: mask_l[1:] = False
+        lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
         if self.cframe.num_comps > 1:
             num_comps = len([*self.output_c])
@@ -621,7 +626,7 @@ class StellarFrame(object):
                 msg += f" +/- {tmp_values_vl['redshift'].std():<8.4f}|\n"
                 msg += f"| Velocity shift in relative to z_sys (km/s)= {tmp_values_vl['voff'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['voff'].std():<8.4f}|\n"
-                msg += f"| Velocity dispersion (σ,km/s)              = {tmp_values_vl['fwhm'][mask_l].mean()/np.sqrt(np.log(256)):10.4f}"
+                msg += f"| Velocity dispersion (σ) (km/s)            = {tmp_values_vl['fwhm'][mask_l].mean()/np.sqrt(np.log(256)):10.4f}"
                 msg += f" +/- {tmp_values_vl['fwhm'].std()/np.sqrt(np.log(256)):<8.4f}|\n"
                 msg += f"| Extinction (Av)                           = {tmp_values_vl['Av'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['Av'].std():<8.4f}|\n"
@@ -644,12 +649,12 @@ class StellarFrame(object):
             msg += f"| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl['flux_5500'][mask_l].mean():10.4f}"
             msg += f" +/- {tmp_values_vl['flux_5500'].std():<8.4f}|\n"
             if self.w_norm != 5500:
-                msg += f"| F{self.w_norm} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl['flux_wavenorm'][mask_l].mean():10.4f}"
+                msg += f"| F{self.w_norm:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl['flux_wavenorm'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['flux_wavenorm'].std():<8.4f}|\n"
-            msg += f"| λL5500 (rest,intrinsic) (log Lsun)        = {tmp_values_vl['log_lambLum_5500'][mask_l].mean():10.4f}"
+            msg += f"| λL5500 (rest,intrinsic) "+lum_unit_str+f"       = {tmp_values_vl['log_lambLum_5500'][mask_l].mean():10.4f}"
             msg += f" +/- {tmp_values_vl['log_lambLum_5500'].std():<8.4f}|\n"
             if self.w_norm != 5500:
-                msg += f"| λL{self.w_norm} (rest,intrinsic) (log Lsun)        = {tmp_values_vl['log_lambLum_wavenorm'][mask_l].mean():10.4f}"
+                msg += f"| λL{self.w_norm:.0f} (rest,intrinsic) "+lum_unit_str+f"       = {tmp_values_vl['log_lambLum_wavenorm'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['log_lambLum_wavenorm'].std():<8.4f}|\n"
             msg += f"| Mass (all formed) (log Msun)              = {tmp_values_vl['log_Mass_formed'][mask_l].mean():10.4f}"
             msg += f" +/- {tmp_values_vl['log_Mass_formed'].std():<8.4f}|\n"

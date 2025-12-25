@@ -51,8 +51,11 @@ class LineFrame(object):
             # group line info to a list
             if isinstance(self.cframe.info_c[i_comp]['line_used'], str): self.cframe.info_c[i_comp]['line_used'] = [self.cframe.info_c[i_comp]['line_used']]
             self.cframe.info_c[i_comp]['line_used'] = np.array(self.cframe.info_c[i_comp]['line_used'])
-            if isinstance(self.cframe.info_c[i_comp]['line_ties'], str): self.cframe.info_c[i_comp]['line_ties'] = [self.cframe.info_c[i_comp]['line_ties']]
+            if isinstance(self.cframe.info_c[i_comp]['line_ties'], str): self.cframe.info_c[i_comp]['line_ties'] = [self.cframe.info_c[i_comp]['line_ties']] # to allow pure hydrogen
             if isinstance(self.cframe.info_c[i_comp]['line_ties'], tuple): self.cframe.info_c[i_comp]['line_ties'] = [self.cframe.info_c[i_comp]['line_ties']]
+            if isinstance(self.cframe.info_c[i_comp]['line_ties'], list):
+                if all( isinstance(i, str) for i in self.cframe.info_c[i_comp]['line_ties'] ):
+                    if len(self.cframe.info_c[i_comp]['line_ties']) > 1: self.cframe.info_c[i_comp]['line_ties'] = [tuple(self.cframe.info_c[i_comp]['line_ties'])] # to allow pure hydrogen
 
         self.initialize_linelist()
         self.update_linelist()
@@ -724,7 +727,7 @@ class LineFrame(object):
         line_ties_collect = []
         for i_comp in range(self.num_comps):
             self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
-            if np.isin(self.cframe.info_c[i_comp]['line_ties'], ['default', 'Default']).any():
+            if any(n in self.cframe.info_c[i_comp]['line_ties'] for n in ['default', 'Default']):
                 # self.cframe.info_c[i_comp]['line_ties'].remove('default')
                 self.cframe.info_c[i_comp]['line_ties'] += line_ties_default
                 self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
@@ -1033,7 +1036,7 @@ class LineFrame(object):
     ##########################################################################
     ########################## Output functions ##############################
 
-    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
+    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, lum_unit=None, **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
@@ -1107,12 +1110,13 @@ class LineFrame(object):
         self.num_loops = num_loops # for print_results
         self.spec_flux_scale = self.fframe.spec_flux_scale # for print_results
 
-        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average)
+        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
         if if_return_results: return output_c
 
-    def print_results(self, log=[], if_show_average=False):
+    def print_results(self, log=[], if_show_average=False, lum_unit=None):
         mask_l = np.ones(self.num_loops, dtype='bool')
         if not if_show_average: mask_l[1:] = False
+        # lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
         print_log('', log)
         print_log('Best-fit emission line components', log)

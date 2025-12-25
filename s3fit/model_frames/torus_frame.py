@@ -43,6 +43,15 @@ class TorusFrame(object):
             self.cframe.par_index_cp = [{'voff': 0, 'opt_depth_9.7': 1, 'opening_angle': 2, 'radii_ratio': 3, 'inclination': 4} for i_comp in range(self.num_comps)]
         ############################################################
 
+        for i_comp in range(self.num_comps):
+            # set default info if not specified in config
+            if not ('lum_range' in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['lum_range'] = [(5,38), (8,1000), (1,1000)]
+            # group line info to a list
+            if isinstance(self.cframe.info_c[i_comp]['lum_range'], tuple): self.cframe.info_c[i_comp]['lum_range'] = [self.cframe.info_c[i_comp]['lum_range']]
+            if isinstance(self.cframe.info_c[i_comp]['lum_range'], list):
+                if all( isinstance(i, (int,float)) for i in self.cframe.info_c[i_comp]['lum_range'] ):
+                    if len(self.cframe.info_c[i_comp]['lum_range']) == 2: self.cframe.info_c[i_comp]['lum_range'] = [self.cframe.info_c[i_comp]['lum_range']]
+
         # one independent element per component since disc and torus are tied
         self.num_coeffs_c = np.ones(self.num_comps, dtype='int')
         self.num_coeffs = self.num_coeffs_c.sum()
@@ -216,7 +225,7 @@ class TorusFrame(object):
     ##########################################################################
     ########################### Output functions #############################
 
-    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
+    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, lum_unit='Lsun', **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
@@ -240,15 +249,17 @@ class TorusFrame(object):
 
         mod = 'torus'
         fp0, fp1, fe0, fe1 = self.fframe.search_model_index(mod, self.fframe.full_model_type)
+        spec_flux_scale = self.fframe.spec_flux_scale
         num_loops = self.fframe.num_loops
         comp_c = self.cframe.comp_c
         par_name_cp = self.cframe.par_name_cp
         num_comps = self.cframe.num_comps
         num_pars_per_comp = self.cframe.num_pars_c_max
+        num_coeffs_c = self.num_coeffs_c
         num_coeffs_per_comp = self.num_coeffs_c[0] # components share the same num_coeffs
 
         # list the properties to be output
-        val_names = ['log_lum']
+        val_names = ['log_Lum_total']
 
         # format of results
         # output_c['comp']['par_lp'][i_l,i_p]: parameters
@@ -260,33 +271,60 @@ class TorusFrame(object):
             output_c[comp_c[i_comp]]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['values'] = {}
-            for val_name in par_name_cp[i_comp].tolist() + val_names:
+            for val_name in par_name_cp[i_comp].tolist() + val_names + [f"log_Lum_{lum_range[0]}_{lum_range[1]}" for lum_range in self.cframe.info_c[i_comp]['lum_range']]:
                 output_c[comp_c[i_comp]]['values'][val_name] = np.zeros(num_loops, dtype='float')
         output_c['sum'] = {}
         output_c['sum']['values'] = {} # only init values for sum of all comp
         for val_name in val_names:
             output_c['sum']['values'][val_name] = np.zeros(num_loops, dtype='float')
 
+        i_e0 = 0; i_e1 = 0
         for i_comp in range(num_comps): 
+            i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
+            i_e1 += num_coeffs_c[i_comp]
             for i_par in range(num_pars_per_comp):
                 output_c[comp_c[i_comp]]['values'][par_name_cp[i_comp,i_par]] = output_c[comp_c[i_comp]]['par_lp'][:, i_par]
             for i_loop in range(num_loops):
-                # par_p = output_c[comp_c[i_comp]]['par_lp'][i_loop]
+                par_p = output_c[comp_c[i_comp]]['par_lp'][i_loop]
                 coeff_e = output_c[comp_c[i_comp]]['coeff_le'][i_loop]
-                output_c[comp_c[i_comp]]['values']['log_lum'][i_loop] = np.log10(coeff_e[0]*self.lum_norm)
-                output_c['sum']['values']['log_lum'][i_loop] = coeff_e[0]*self.lum_norm
-        output_c['sum']['values']['log_lum'] = np.log10(output_c['sum']['values']['log_lum'])
+
+                lum_0 = coeff_e[0]*self.lum_norm
+                if lum_unit == 'erg/s': lum_0 *= const.L_sun.to('erg/s').value
+                output_c[comp_c[i_comp]]['values']['log_Lum_total'][i_loop] = np.log10(lum_0)
+                output_c['sum']['values']['log_Lum_total'][i_loop] += lum_0
+
+                voff = par_p[self.cframe.par_index_cp[i_comp]['voff']]
+                rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
+                dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
+                unitconv = 4*np.pi*dist_lum**2 * spec_flux_scale # convert intrinsic flux to Lum, in erg/s
+                if lum_unit == 'Lsun': unitconv /= const.L_sun.to('erg/s').value
+
+                for lum_range in self.cframe.info_c[i_comp]['lum_range']: 
+                    tmp_wave_w = np.logspace(np.log10(lum_range[0]*1e4), np.log10(lum_range[1]*1e4), num=10000) # rest frame grid
+                    tmp_torus_ew = self.models_unitnorm_obsframe(tmp_wave_w * (1+rev_redshift), best_par_lp[i_loop, fp0:fp1])
+                    tmp_torus_w  = best_coeff_le[i_loop, fe0:fe1][i_e0:i_e1] @ tmp_torus_ew[i_e0:i_e1] # redshifted flux
+                    tmp_torus_w *= 1+rev_redshift # to rest frame, in erg/s/cm2/AA
+                    tmp_lum = np.trapezoid(tmp_torus_w, x=tmp_wave_w) * unitconv
+                    tmp_name = f"log_Lum_{lum_range[0]}_{lum_range[1]}"
+                    output_c[comp_c[i_comp]]['values'][tmp_name][i_loop] = np.log10(tmp_lum)
+                    # output_c['sum']['values'][tmp_name][i_loop] += tmp_lum
+
+        output_c['sum']['values']['log_Lum_total'] = np.log10(output_c['sum']['values']['log_Lum_total'])
+        # for lum_range in self.cframe.info_c[i_comp]['lum_range']: 
+        #     tmp_name = f"log_Lum_{lum_range[0]}_{lum_range[1]}"
+        #     output_c['sum']['values'][tmp_name] = np.log10(output_c['sum']['values'][tmp_name])
 
         self.output_c = output_c # save to model frame
         self.num_loops = num_loops # for print_results
         self.spec_flux_scale = self.fframe.spec_flux_scale # to calculate luminosity in printing
 
-        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average)
+        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
         if if_return_results: return output_c
 
-    def print_results(self, log=[], if_show_average=False):
+    def print_results(self, log=[], if_show_average=False, lum_unit='Lsun'):
         mask_l = np.ones(self.num_loops, dtype='bool')
         if not if_show_average: mask_l[1:] = False
+        lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
         if self.cframe.num_comps > 1:
             num_comps = len([*self.output_c])
@@ -300,20 +338,26 @@ class TorusFrame(object):
             if i_comp < self.cframe.num_comps:
                 print_log(f"Best-fit properties of torus component: <{self.cframe.comp_c[i_comp]}>", log)
                 print_log(f"[Note] velocity shift (i.e., redshift) is tied following the input model_config.", log)
-                # msg  = f"| Voff (km/s)           = {tmp_values_vl['voff'][mask_l].mean():10.4f}'
+                # msg  = f"| Voff (km/s)                          = {tmp_values_vl['voff'][mask_l].mean():10.4f}'
                 # msg += f" +/- {tmp_values_vl['voff'].std():<8.4f}|\n'
-                msg += f"| Optical depth at 9.7 um = {tmp_values_vl['opt_depth_9.7'][mask_l].mean():10.4f}"
+                msg += f"| Optical depth at 9.7 µm                = {tmp_values_vl['opt_depth_9.7'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['opt_depth_9.7'].std():<8.4f}|\n"
-                msg += f"| Out/in radii ratio      = {tmp_values_vl['radii_ratio'][mask_l].mean():10.4f}"
+                msg += f"| Outer/inner radii ratio                = {tmp_values_vl['radii_ratio'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['radii_ratio'].std():<8.4f}|\n"
-                msg += f"| Half OpenAng (degree)   = {tmp_values_vl['opening_angle'][mask_l].mean():10.4f}"
+                msg += f"| Half opening angle (degree)            = {tmp_values_vl['opening_angle'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['opening_angle'].std():<8.4f}|\n"
-                msg += f"| Inclination (degree)    = {tmp_values_vl['inclination'][mask_l].mean():10.4f}"
+                msg += f"| Inclination (degree)                   = {tmp_values_vl['inclination'][mask_l].mean():10.4f}"
                 msg += f" +/- {tmp_values_vl['inclination'].std():<8.4f}|\n"
             else:
                 print_log(f"Best-fit stellar properties of the sum of all components.", log)
-            msg += f"| log Lum of torus (Lsun) = {tmp_values_vl['log_lum'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_lum'].std():<8.4f}|"
+            for lum_range in self.cframe.info_c[i_comp]['lum_range']: 
+                tmp_name = f"log_Lum_{lum_range[0]}_{lum_range[1]}"
+                tmp_msg = f"({lum_range[0]}-{lum_range[1]} µm) "+lum_unit_str
+                msg += f"| Torus Lum "+tmp_msg+' '*(28-len(tmp_msg))+f" = {tmp_values_vl[tmp_name][mask_l].mean():10.4f}"
+                msg += f" +/- {tmp_values_vl[tmp_name].std():<8.4f}|\n"
+            msg += f"| Torus Lum (total) "+lum_unit_str+f"          = {tmp_values_vl['log_Lum_total'][mask_l].mean():10.4f}"
+            msg += f" +/- {tmp_values_vl['log_Lum_total'].std():<8.4f}|"
+
             bar = '=' * len(msg.split('|\n')[-1])
             print_log(bar, log)
             print_log(msg, log)
