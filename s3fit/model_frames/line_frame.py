@@ -1101,8 +1101,9 @@ class LineFrame(object):
             for (i_par, par_name) in enumerate(par_name_cp[i_comp]):
                 output_c[comp_c[i_comp]]['values'][str(par_name)] = par_lcp[:, i_comp, i_par]
             for (i_line, line_name) in enumerate(self.linename_n):
-                output_c[comp_c[i_comp]]['values'][str(line_name)] = coeff_lcn[:, i_comp, i_line]
-                output_c['sum']['values'][line_name] += coeff_lcn[:, i_comp, i_line]
+                flux_sign = -1.0 if self.cframe.info_c[i_comp]['sign'] == 'absorption' else 1.0
+                output_c[comp_c[i_comp]]['values'][str(line_name)] = coeff_lcn[:, i_comp, i_line] * flux_sign
+                output_c['sum']['values'][line_name] += coeff_lcn[:, i_comp, i_line] * flux_sign
 
         output_c['sum'] = output_c.pop('sum') # move sum to the end
         
@@ -1114,12 +1115,11 @@ class LineFrame(object):
         if if_return_results: return output_c
 
     def print_results(self, log=[], if_show_average=False, lum_unit=None):
+        print_log('#### Best-fit line model properties ####', log)
+
         mask_l = np.ones(self.num_loops, dtype='bool')
         if not if_show_average: mask_l[1:] = False
         # lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
-
-        print_log('', log)
-        print_log('Best-fit emission line components', log)
 
         cols = 'Par/Line Name'
         fmt_cols = '| {:^20} |'
@@ -1135,8 +1135,9 @@ class LineFrame(object):
         print_log(tbl_title, log)
         print_log(tbl_border, log)
 
-        # the print_names is based on value_names of the 0th component
-        value_names = [*self.output_c[[*self.output_c][0]]['values']]
+        # set the print name for each value
+        value_names = [value_name for comp in self.output_c for value_name in [*self.output_c[comp]['values']]]
+        value_names = list(dict.fromkeys(value_names)) # remove duplicates
         print_names = {}
         for value_name in value_names: print_names[value_name] = value_name
         print_names['voff']      = 'Voff (km/s)'
@@ -1155,5 +1156,6 @@ class LineFrame(object):
             print_log(fmt_numbers.format(*tbl_row), log)
         print_log(tbl_border, log)  
         print_log(f'[Note] Rows starting with a line name show the observed line flux, in unit of {self.spec_flux_scale:.0e} erg/s/cm2.', log)
+        print_log('', log)
 
 

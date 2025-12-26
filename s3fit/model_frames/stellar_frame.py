@@ -53,8 +53,19 @@ class StellarFrame(object):
             if 'met_sel' in [*self.cframe.info_c[i_comp]]: self.cframe.info_c[i_comp]['ssp_metallicity'] = self.cframe.info_c[i_comp]['met_sel']
         ############################################################
 
-        # read SFH setup from input config file
-        self.sfh_names = casefold(np.array([d['sfh_name'] for d in self.cframe.info_c]))
+        # read SFH setup from input config file; check alternative names
+        for i_comp in range(self.num_comps):
+            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['exponential']: 
+                self.cframe.info_c[i_comp]['sfh_name'] = 'exponential'
+            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['delayed']: 
+                self.cframe.info_c[i_comp]['sfh_name'] = 'delayed'
+            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['constant', 'burst', 'starburst']: 
+                self.cframe.info_c[i_comp]['sfh_name'] = 'constant'
+            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['nonparametric', 'non-parametric', 'non_parametric']: 
+                self.cframe.info_c[i_comp]['sfh_name'] = 'nonparametric'
+            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['user', 'custom', 'customized']: 
+                self.cframe.info_c[i_comp]['sfh_name'] = 'user'
+        self.sfh_names = np.array([info['sfh_name'] for info in self.cframe.info_c])
         if self.num_comps > 1:
             if np.sum(self.sfh_names == 'nonparametric') >= 1:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
@@ -475,12 +486,14 @@ class StellarFrame(object):
         num_pars_per_comp = self.cframe.num_pars_c_max
         num_coeffs_per_comp = self.num_coeffs_c[0] # components share the same num_coeffs
 
-        # list the properties to be output
-        val_names = ['redshift', 
-                     'flux_5500', 'log_lambLum_5500', 
-                     'flux_wavenorm', 'log_lambLum_wavenorm', 
-                     'log_Mass_formed', 'log_Mass_remaining', 'log_MtoL',
-                     'log_Age_Lweight', 'log_Age_Mweight', 'log_Z_Lweight', 'log_Z_Mweight']
+        # list the properties to be output; the print will follow this order
+        value_names_additive = ['flux_5500', 'flux_wavenorm', 
+                                'log_lambLum_5500', 'log_lambLum_wavenorm', 
+                                'log_Mass_formed', 'log_Mass_remaining', 'log_MtoL',
+                                'log_Age_Lweight', 'log_Age_Mweight', 'log_Z_Lweight', 'log_Z_Mweight']
+        value_names_c = {}
+        for i_comp in range(num_comps): 
+            value_names_c[comp_c[i_comp]] = ['redshift', 'sigma'] + value_names_additive
 
         # format of results
         # output_c['comp']['par_lp'][i_l,i_p]: parameters
@@ -491,12 +504,12 @@ class StellarFrame(object):
             output_c[str(comp_c[i_comp])] = {} # init results for each comp
             output_c[comp_c[i_comp]]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
             output_c[comp_c[i_comp]]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
-            output_c[comp_c[i_comp]]['values'] = {}
-            for val_name in par_name_cp[i_comp].tolist() + val_names:
+            output_c[comp_c[i_comp]]['values']   = {}
+            for val_name in par_name_cp[i_comp].tolist() + value_names_c[comp_c[i_comp]]:
                 output_c[comp_c[i_comp]]['values'][val_name] = np.zeros(num_loops, dtype='float')
         output_c['sum'] = {}
         output_c['sum']['values'] = {} # only init values for sum of all comp
-        for val_name in val_names:
+        for val_name in value_names_additive:
             output_c['sum']['values'][val_name] = np.zeros(num_loops, dtype='float')
 
         for i_comp in range(num_comps): 
@@ -509,6 +522,8 @@ class StellarFrame(object):
                 voff = par_p[self.cframe.par_index_cp[i_comp]['voff']]
                 rev_redshift = (1+self.v0_redshift) * (1+voff/299792.458) - 1
                 output_c[comp_c[i_comp]]['values']['redshift'][i_loop] = copy(rev_redshift)
+                fwhm = par_p[self.cframe.par_index_cp[i_comp]['fwhm']]
+                output_c[comp_c[i_comp]]['values']['sigma'][i_loop] = fwhm/np.sqrt(np.log(256))
 
                 tmp_spec_w = self.fframe.output_mc[mod][comp_c[i_comp]]['spec_lw'][i_loop, :]
                 mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 AA
@@ -566,9 +581,10 @@ class StellarFrame(object):
         output_c['sum']['values']['log_Mass_formed']    = np.log10(output_c['sum']['values']['log_Mass_formed'])
         output_c['sum']['values']['log_Mass_remaining'] = np.log10(output_c['sum']['values']['log_Mass_remaining'])
 
-        if self.sfh_names[0] == 'nonparametric':
-            coeff_le = output_c[comp_c[0]]['coeff_le']
-            output_c[comp_c[0]]['coeff_norm_le'] = coeff_le / coeff_le.sum(axis=1)[:,None]
+        i_comp = 0 # only enable one comp if nonparametric SFH is used
+        if self.sfh_names[i_comp] == 'nonparametric':
+            coeff_le = output_c[comp_c[i_comp]]['coeff_le']
+            output_c[comp_c[i_comp]]['coeff_norm_le'] = coeff_le / coeff_le.sum(axis=1)[:,None]
 
         self.output_c = output_c # save to model frame
         self.num_loops = num_loops # for reconstruct_sfh and print_results
@@ -578,102 +594,154 @@ class StellarFrame(object):
         if if_return_results: return output_c
 
     def print_results(self, log=[], if_show_average=False, lum_unit='Lsun'):
+        print_log(f"#### Best-fit stellar properties ####", log)
+
         mask_l = np.ones(self.num_loops, dtype='bool')
         if not if_show_average: mask_l[1:] = False
         lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
-        if self.cframe.num_comps > 1:
-            num_comps = len([*self.output_c])
-        else:
-            num_comps = 1
+        # set the print name for each value
+        value_names = [value_name for comp in self.output_c for value_name in [*self.output_c[comp]['values']]]
+        value_names = list(dict.fromkeys(value_names)) # remove duplicates
+        print_names = {}
+        for value_name in value_names: print_names[value_name] = value_name
+        print_names['voff'] = 'Velocity shift in relative to z_sys (km/s)'
+        print_names['fwhm'] = 'Velocity FWHM (km/s)'
+        print_names['sigma'] = 'Velocity dispersion (σ) (km/s)'
+        print_names['Av'] = 'Extinction (Av)'
+        print_names['log_csp_age'] = 'Max age of composite star.pop. (log Gyr)'
+        print_names['log_csp_tau'] = 'Declining timescale of SFH (log Gyr)'
+        print_names['redshift'] = 'Redshift (from continuum absorptions)'
+        print_names['flux_5500'] = f"F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
+        print_names['log_lambLum_5500'] = f"λL5500 (rest,intrinsic) "+lum_unit_str
+        print_names['flux_wavenorm'] = f"F{self.w_norm:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
+        print_names['log_lambLum_wavenorm'] = f"λL{self.w_norm:.0f} (rest,intrinsic) "+lum_unit_str
+        print_names['log_Mass_formed'] = 'Mass (all formed) (log Msun)'
+        print_names['log_Mass_remaining'] = 'Mass (remaining) (log Msun)'
+        print_names['log_MtoL'] = 'Mass/λL5500 (log Msun/Lsun)'
+        print_names['log_Age_Lweight'] = 'λL5500-weight age (log Gyr)'
+        print_names['log_Age_Mweight'] = 'Mass-weight age (log Gyr)'
+        print_names['log_Z_Lweight'] = 'λL5500-weight metallicity (log Z)'
+        print_names['log_Z_Mweight'] = 'Mass-weight metallicity (log Z)'
+        print_length = max([len(print_names[value_name]) for value_name in print_names] + [40]) # set min length
+        for value_name in print_names:
+            print_names[value_name] += ' '*(print_length-len(print_names[value_name]))
 
-        for i_comp in range(num_comps):
-            tmp_values_vl = self.output_c[[*self.output_c][i_comp]]['values']
-            if i_comp < self.cframe.num_comps:
-                if self.sfh_names[i_comp] == 'nonparametric':
-                    print_log('', log)
-                    print_log('Best-fit single stellar populations (SSP) of nonparametric SFH', log)
-                    cols = 'ID,Age (Gyr),Metallicity,Coeff.mean,Coeff.rms,log(M/L5500)'
-                    fmt_cols = '| {0:^4} | {1:^10} | {2:^6} | {3:^6} | {4:^9} | {5:^8} |'
-                    fmt_numbers = '| {:=04d} |   {:=6.4f}   |    {:=6.4f}   |   {:=6.4f}   |   {:=6.4f}  |    {:=6.4f}    |'
-                    cols_split = cols.split(',')
-                    tbl_title = fmt_cols.format(*cols_split)
-                    tbl_border = len(tbl_title)*'-'
-                    print_log(tbl_border, log)
-                    print_log(tbl_title, log)
-                    print_log(tbl_border, log)
-                    for i_e in range(self.num_models):
-                        coeff_norm_mn_e  = self.output_c[[*self.output_c][0]]['coeff_norm_le'][mask_l].mean(axis=0)
-                        coeff_norm_std_e = self.output_c[[*self.output_c][0]]['coeff_norm_le'].std(axis=0)
-                        if coeff_norm_mn_e[i_e] < 0.05: continue
-                        tbl_row = []
-                        tbl_row.append(i_e)
-                        tbl_row.append(self.age_e[i_e])
-                        tbl_row.append(self.met_e[i_e])
-                        tbl_row.append(coeff_norm_mn_e[i_e]) 
-                        tbl_row.append(coeff_norm_std_e[i_e])
-                        tbl_row.append(np.log10(self.mtol_e[i_e]))
-                        print_log(fmt_numbers.format(*tbl_row), log)
-                    print_log(tbl_border, log)
-                    print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 AA.", log)
-                    print_log(f"[Note] only SSPs with flux fraction over 5% are listed.", log)
-
-            print_log('', log)
+        for i_comp in range(len(self.output_c)):
+            values_vl = self.output_c[[*self.output_c][i_comp]]['values']
+            value_names = [*values_vl]
             msg = ''
-            if i_comp < self.cframe.num_comps:
-                print_log(f"Best-fit stellar properties of the <{self.cframe.comp_c[i_comp]}> component with {self.sfh_names[i_comp]} SFH.", log)
-                msg += f"| Redshift (from continuum absorptions)     = {tmp_values_vl['redshift'][mask_l].mean():10.4f}"
-                msg += f" +/- {tmp_values_vl['redshift'].std():<8.4f}|\n"
-                msg += f"| Velocity shift in relative to z_sys (km/s)= {tmp_values_vl['voff'][mask_l].mean():10.4f}"
-                msg += f" +/- {tmp_values_vl['voff'].std():<8.4f}|\n"
-                msg += f"| Velocity dispersion (σ) (km/s)            = {tmp_values_vl['fwhm'][mask_l].mean()/np.sqrt(np.log(256)):10.4f}"
-                msg += f" +/- {tmp_values_vl['fwhm'].std()/np.sqrt(np.log(256)):<8.4f}|\n"
-                msg += f"| Extinction (Av)                           = {tmp_values_vl['Av'][mask_l].mean():10.4f}"
-                msg += f" +/- {tmp_values_vl['Av'].std():<8.4f}|\n"
-                if self.sfh_names[i_comp] in ['exponential', 'delayed', 'constant', 'user']:
-                    msg += f"| Max age of composite star.pop. (log Gyr)  = {tmp_values_vl['log_csp_age'][mask_l].mean():10.4f}"
-                    msg += f" +/- {tmp_values_vl['log_csp_age'].std():<8.4f}|\n"
-                if self.sfh_names[i_comp] in ['exponential', 'delayed']:
-                    msg += f"| Declining timescale of SFH (log Gyr)      = {tmp_values_vl['log_csp_tau'][mask_l].mean():10.4f}"
-                    msg += f" +/- {tmp_values_vl['log_csp_tau'].std():<8.4f}|\n"
-                if self.sfh_names[i_comp] in ['user']:
-                    # for par_name in [*tmp_values_vl]:
-                    #     if par_name[:3] != 'sfh': continue
-                    #     if par_name == 'sfh_par0': continue
-                    for par_name in self.cframe.par_name_cp[i_comp]:
-                        if not (par_name in ['voff', 'fwhm', 'Av', 'log_csp_age']): 
-                            msg += f"| {par_name} " + ' '*(40-len(par_name)) + f" = {tmp_values_vl[par_name][mask_l].mean():10.4f}"
-                            msg += f" +/- {tmp_values_vl[par_name].std():<8.4f}|\n"
-            else:
-                print_log(f"Best-fit stellar properties of the sum of all components.", log)
-            msg += f"| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl['flux_5500'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['flux_5500'].std():<8.4f}|\n"
-            if self.w_norm != 5500:
-                msg += f"| F{self.w_norm:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {tmp_values_vl['flux_wavenorm'][mask_l].mean():10.4f}"
-                msg += f" +/- {tmp_values_vl['flux_wavenorm'].std():<8.4f}|\n"
-            msg += f"| λL5500 (rest,intrinsic) "+lum_unit_str+f"       = {tmp_values_vl['log_lambLum_5500'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_lambLum_5500'].std():<8.4f}|\n"
-            if self.w_norm != 5500:
-                msg += f"| λL{self.w_norm:.0f} (rest,intrinsic) "+lum_unit_str+f"       = {tmp_values_vl['log_lambLum_wavenorm'][mask_l].mean():10.4f}"
-                msg += f" +/- {tmp_values_vl['log_lambLum_wavenorm'].std():<8.4f}|\n"
-            msg += f"| Mass (all formed) (log Msun)              = {tmp_values_vl['log_Mass_formed'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_Mass_formed'].std():<8.4f}|\n"
-            msg += f"| Mass (remaining) (log Msun)               = {tmp_values_vl['log_Mass_remaining'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_Mass_remaining'].std():<8.4f}|\n"
-            msg += f"| Mass/λL5500 (log Msun/Lsun)               = {tmp_values_vl['log_MtoL'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_MtoL'].std():<8.4f}|\n"
-            msg += f"| λL5500-weight age (log Gyr)               = {tmp_values_vl['log_Age_Lweight'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_Age_Lweight'].std():<8.4f}|\n"
-            msg += f"| Mass-weight age (log Gyr)                 = {tmp_values_vl['log_Age_Mweight'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_Age_Mweight'].std():<8.4f}|\n"
-            msg += f"| λL5500-weight metallicity (log Z)         = {tmp_values_vl['log_Z_Lweight'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_Z_Lweight'].std():<8.4f}|\n"
-            msg += f"| Mass-weight metallicity (log Z)           = {tmp_values_vl['log_Z_Mweight'][mask_l].mean():10.4f}"
-            msg += f" +/- {tmp_values_vl['log_Z_Mweight'].std():<8.4f}|"
+            if i_comp < self.cframe.num_comps: # print best-fit pars for each comp
+                print_log(f"# Stellar component <{self.cframe.comp_c[i_comp]}> with {self.sfh_names[i_comp]} SFH:", log)
+                value_names = [value_name for value_name in value_names if value_name[:6] != 'Empty_'] # remove unused pars
+                value_names.remove('redshift'); value_names = ['redshift'] + value_names # move redshift to the begining
+                value_names.remove('sigma'); value_names = ['sigma' if value_name == 'fwhm' else value_name for value_name in value_names] # print sigma instead of fwhm
+            elif self.cframe.num_comps >= 2: # print sum only if using >= 2 comps
+                print_log(f"# Best-fit properties of the sum of all stellar components.", log)
+            else: 
+                continue
+            if self.w_norm == 5500:
+                value_names.remove('flux_wavenorm')
+                value_names.remove('log_lambLum_wavenorm')
+            for value_name in value_names:
+                msg += '| ' + print_names[value_name] + f" = {values_vl[value_name][mask_l].mean():10.4f}" + f" +/- {values_vl[value_name].std():<10.4f}|\n"
+            msg = msg[:-1] # remove the last \n
             bar = '=' * len(msg.split('\n')[-1])
             print_log(bar, log)
             print_log(msg, log)
             print_log(bar, log)
+            print_log('', log)
+
+        i_comp = 0 # only enable one comp if nonparametric SFH is used
+        if self.sfh_names[i_comp] == 'nonparametric':
+            print_log('# Best-fit single stellar populations (SSP) with nonparametric SFH', log)
+            cols = 'ID,Age (Gyr),Metallicity,Coeff.mean,Coeff.rms,log(M/L5500)'
+            fmt_cols = '| {0:^4} | {1:^10} | {2:^6} | {3:^6} | {4:^9} | {5:^8} |'
+            fmt_numbers = '| {:=04d} |   {:=6.4f}   |    {:=6.4f}   |   {:=6.4f}   |   {:=6.4f}  |    {:=6.4f}    |'
+            cols_split = cols.split(',')
+            tbl_title = fmt_cols.format(*cols_split)
+            tbl_border = len(tbl_title)*'-'
+            print_log(tbl_border, log)
+            print_log(tbl_title, log)
+            print_log(tbl_border, log)
+            for i_e in range(self.num_models):
+                coeff_norm_mn_e  = self.output_c[comp_c[i_comp]]['coeff_norm_le'][mask_l].mean(axis=0)
+                coeff_norm_std_e = self.output_c[comp_c[i_comp]]['coeff_norm_le'].std(axis=0)
+                if coeff_norm_mn_e[i_e] < 0.01: continue
+                tbl_row = []
+                tbl_row.append(i_e)
+                tbl_row.append(self.age_e[i_e])
+                tbl_row.append(self.met_e[i_e])
+                tbl_row.append(coeff_norm_mn_e[i_e]) 
+                tbl_row.append(coeff_norm_std_e[i_e])
+                tbl_row.append(np.log10(self.mtol_e[i_e]))
+                print_log(fmt_numbers.format(*tbl_row), log)
+            print_log(tbl_border, log)
+            print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 AA.", log)
+            print_log(f"[Note] only SSPs with Coeff over 1% are listed.", log)
+            print_log('', log)
+
+        # comp_c = [*self.output_c]
+        # if self.cframe.num_comps > 1:
+        #     num_comps = len(comp_c)
+        # else:
+        #     num_comps = 1 # omit sum if only one comp
+
+        # for i_comp in range(num_comps):
+        #     values_vl = self.output_c[comp_c[i_comp]]['values']
+        #     msg = ''
+        #     print_log('', log)
+        #     if i_comp < self.cframe.num_comps:
+        #         print_log(f"Best-fit stellar properties of the <{self.cframe.comp_c[i_comp]}> component with {self.sfh_names[i_comp]} SFH.", log)
+        #         msg += f"| Redshift (from continuum absorptions)     = {values_vl['redshift'][mask_l].mean():10.4f}"
+        #         msg += f" +/- {values_vl['redshift'].std():<8.4f}|\n"
+        #         msg += f"| Velocity shift in relative to z_sys (km/s)= {values_vl['voff'][mask_l].mean():10.4f}"
+        #         msg += f" +/- {values_vl['voff'].std():<8.4f}|\n"
+        #         msg += f"| Velocity dispersion (σ) (km/s)            = {values_vl['fwhm'][mask_l].mean()/np.sqrt(np.log(256)):10.4f}"
+        #         msg += f" +/- {values_vl['fwhm'].std()/np.sqrt(np.log(256)):<8.4f}|\n"
+        #         msg += f"| Extinction (Av)                           = {values_vl['Av'][mask_l].mean():10.4f}"
+        #         msg += f" +/- {values_vl['Av'].std():<8.4f}|\n"
+        #         if self.sfh_names[i_comp] in ['exponential', 'delayed', 'constant', 'user']:
+        #             msg += f"| Max age of composite star.pop. (log Gyr)  = {values_vl['log_csp_age'][mask_l].mean():10.4f}"
+        #             msg += f" +/- {values_vl['log_csp_age'].std():<8.4f}|\n"
+        #         if self.sfh_names[i_comp] in ['exponential', 'delayed']:
+        #             msg += f"| Declining timescale of SFH (log Gyr)      = {values_vl['log_csp_tau'][mask_l].mean():10.4f}"
+        #             msg += f" +/- {values_vl['log_csp_tau'].std():<8.4f}|\n"
+        #         if self.sfh_names[i_comp] in ['user']:
+        #             for par_name in self.cframe.par_name_cp[i_comp]:
+        #                 if not (par_name in ['voff', 'fwhm', 'Av', 'log_csp_age']): 
+        #                     msg += f"| {par_name} " + ' '*(40-len(par_name)) + f" = {values_vl[par_name][mask_l].mean():10.4f}"
+        #                     msg += f" +/- {values_vl[par_name].std():<8.4f}|\n"
+        #     else:
+        #         print_log(f"Best-fit stellar properties of the sum of all components.", log)
+        #     msg += f"| F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {values_vl['flux_5500'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['flux_5500'].std():<8.4f}|\n"
+        #     if self.w_norm != 5500:
+        #         msg += f"| F{self.w_norm:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)  = {values_vl['flux_wavenorm'][mask_l].mean():10.4f}"
+        #         msg += f" +/- {values_vl['flux_wavenorm'].std():<8.4f}|\n"
+        #     msg += f"| λL5500 (rest,intrinsic) "+lum_unit_str+f"       = {values_vl['log_lambLum_5500'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_lambLum_5500'].std():<8.4f}|\n"
+        #     if self.w_norm != 5500:
+        #         msg += f"| λL{self.w_norm:.0f} (rest,intrinsic) "+lum_unit_str+f"       = {values_vl['log_lambLum_wavenorm'][mask_l].mean():10.4f}"
+        #         msg += f" +/- {values_vl['log_lambLum_wavenorm'].std():<8.4f}|\n"
+        #     msg += f"| Mass (all formed) (log Msun)              = {values_vl['log_Mass_formed'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_Mass_formed'].std():<8.4f}|\n"
+        #     msg += f"| Mass (remaining) (log Msun)               = {values_vl['log_Mass_remaining'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_Mass_remaining'].std():<8.4f}|\n"
+        #     msg += f"| Mass/λL5500 (log Msun/Lsun)               = {values_vl['log_MtoL'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_MtoL'].std():<8.4f}|\n"
+        #     msg += f"| λL5500-weight age (log Gyr)               = {values_vl['log_Age_Lweight'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_Age_Lweight'].std():<8.4f}|\n"
+        #     msg += f"| Mass-weight age (log Gyr)                 = {values_vl['log_Age_Mweight'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_Age_Mweight'].std():<8.4f}|\n"
+        #     msg += f"| λL5500-weight metallicity (log Z)         = {values_vl['log_Z_Lweight'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_Z_Lweight'].std():<8.4f}|\n"
+        #     msg += f"| Mass-weight metallicity (log Z)           = {values_vl['log_Z_Mweight'][mask_l].mean():10.4f}"
+        #     msg += f" +/- {values_vl['log_Z_Mweight'].std():<8.4f}|"
+        #     bar = '=' * len(msg.split('\n')[-1])
+        #     print_log(bar, log)
+        #     print_log(msg, log)
+        #     print_log(bar, log)
 
     def reconstruct_sfh(self, output_c=None, num_bins=None, if_plot_sfh=True, if_return_sfh=False, if_show_average=True, **kwargs):
 
