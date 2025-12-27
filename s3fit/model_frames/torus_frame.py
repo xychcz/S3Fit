@@ -47,8 +47,8 @@ class TorusFrame(object):
                 self.cframe.par_index_cp[i_comp]['half_open_angle'] = self.cframe.par_index_cp[i_comp]['opening_angle']        
         ############################################################
 
+        # set default info if not specified in config
         for i_comp in range(self.num_comps):
-            # set default info if not specified in config
             if not ('lum_range' in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['lum_range'] = [(5,38), (8,1000), (1,1000)]
             # group line info to a list
             if isinstance(self.cframe.info_c[i_comp]['lum_range'], tuple): self.cframe.info_c[i_comp]['lum_range'] = [self.cframe.info_c[i_comp]['lum_range']]
@@ -65,6 +65,7 @@ class TorusFrame(object):
 
         self.read_skirtor()
 
+        # set plot styles
         self.plot_style_c = {}
         self.plot_style_c['sum'] = {'color': 'C8', 'alpha': 1, 'linestyle': '-', 'linewidth': 1.5}
         i_yellow = 0

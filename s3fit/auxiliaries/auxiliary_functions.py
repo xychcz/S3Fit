@@ -40,6 +40,8 @@ def casefold(x):
         return [i.casefold() for i in x]
     elif isinstance(x, np.ndarray): 
         if x.ndim == 1: return np.array([i.casefold() for i in x])
+    elif isinstance(x, (int, float)):
+        return x
     raise ValueError((f"casefold() only supports string, list, or 1-d np.ndarray."))
         
 # convert roman numbers

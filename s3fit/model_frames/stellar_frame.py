@@ -73,6 +73,7 @@ class StellarFrame(object):
         # load ssp library
         self.read_ssp_library()
 
+        # count the number of independent model elements
         self.num_coeffs_c = np.zeros(self.num_comps, dtype='int')
         for i_comp in range(self.num_comps):
             if self.sfh_names[i_comp] == 'nonparametric':
@@ -84,6 +85,7 @@ class StellarFrame(object):
         # currently do not consider negative spectra 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
 
+        # check boundaries of stellar ages
         for i_comp in range(self.num_comps):
             i_par_log_csp_age = self.cframe.par_index_cp[i_comp]['log_csp_age']
             if self.cframe.par_max_cp[i_comp, i_par_log_csp_age] > np.log10(cosmo.age(self.v0_redshift).value):
@@ -100,6 +102,7 @@ class StellarFrame(object):
                 print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{self.cframe.comp_c[i_comp]}' "
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message) 
 
+        # set plot styles
         self.plot_style_c = {}
         self.plot_style_c['sum'] = {'color': 'C0', 'alpha': 1, 'linestyle': '-', 'linewidth': 1.5}
         i_red, i_green, i_blue = 0, 0, 0

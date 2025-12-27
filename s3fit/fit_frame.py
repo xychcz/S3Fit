@@ -1613,8 +1613,8 @@ class FitFrame(object):
             success_count = self.examine_fit_quality() # self.fit_quality_l updated
             recycle_count += 1
 
-        print_log(center_string(f'{success_count} successful loops in {recycle_count} recyles, '+
-                                f'{time.time()-self.time_init:.1f}s', 80), self.log_message)
+        print_log(center_string(f'{success_count} successful loops in {recycle_count} recyles, {time.time()-self.time_init:.1f}s', 80), self.log_message)
+        print_log('', self.log_message)
 
         # self.output_s is the core results of the fitting
         # delete the format template with empty values

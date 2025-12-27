@@ -10,6 +10,7 @@ from scipy.interpolate import RegularGridInterpolator
 
 from ..auxiliaries.auxiliary_frames import ConfigFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters, roman_to_int, color_list_dict, lamb_air_to_vac, convolve_fix_width_fft
+from ..auxiliaries.basic_model_functions import single_line
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
@@ -41,8 +42,8 @@ class LineFrame(object):
         self.release_pair = self.untie_line_fluxes
         ############################################################
 
+        # set default info if not specified in config
         for i_comp in range(self.num_comps):
-            # set default info if not specified in config
             if not ('line_used'  in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
             if not ('line_ties'  in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_ties'] = ['default']
             if not ('H_hi_order' in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['H_hi_order'] = False
@@ -57,9 +58,11 @@ class LineFrame(object):
                 if all( isinstance(i, str) for i in self.cframe.info_c[i_comp]['line_ties'] ):
                     if len(self.cframe.info_c[i_comp]['line_ties']) > 1: self.cframe.info_c[i_comp]['line_ties'] = [tuple(self.cframe.info_c[i_comp]['line_ties'])] # to allow pure hydrogen
 
+        # load line list and count the number of independent model elements
         self.initialize_linelist()
         self.update_linelist()
 
+        # set plot styles
         self.plot_style_c = {}
         self.plot_style_c['sum'] = {'color': 'C2', 'alpha': 1, 'linestyle': '-', 'linewidth': 1.5}
         i_red, i_green, i_purple = 0, 0, 0
@@ -415,6 +418,7 @@ class LineFrame(object):
             self.H_levels_dict['Pa'+u] = {'lower': 3} # Paschen
             self.H_levels_dict['Br'+u] = {'lower': 4} # Brackett
             self.H_levels_dict['Pf'+u] = {'lower': 5} # Pfund
+            self.H_levels_dict['Hu'+u] = {'lower': 6} # Humphreys
         for name in self.H_levels_dict:
             if len(name.split('-')) == 2: 
                 self.H_levels_dict[name]['upper'] = self.H_levels_dict[name]['lower'] + greek_letters.index(name.split('-')[1]) + 1
@@ -933,36 +937,36 @@ class LineFrame(object):
 
     ##################
 
-    def single_line(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
-        if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
-        if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
+    # def single_line(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
+    #     if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
+    #     if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
 
-        lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
-        mu =   (1 + voff/299792.458) * lamb_c_obs
-        fwhm_line = fwhm/299792.458  * lamb_c_obs
+    #     lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
+    #     mu =   (1 + voff/299792.458) * lamb_c_obs
+    #     fwhm_line = fwhm/299792.458  * lamb_c_obs
 
-        if np.isscalar(R_inst_rw):
-            local_R_inst = copy(R_inst_rw)
-        else:
-            local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
-        fwhm_inst = 1 / local_R_inst * lamb_c_obs
+    #     if np.isscalar(R_inst_rw):
+    #         local_R_inst = copy(R_inst_rw)
+    #     else:
+    #         local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
+    #     fwhm_inst = 1 / local_R_inst * lamb_c_obs
 
-        if casefold(profile) in ['gaussian', 'gauss']:
-            fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
-            sigma_tot = fwhm_tot / np.sqrt(np.log(256))
-            model = np.exp(-0.5 * ((obs_wave_w-mu) / sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
-        elif casefold(profile) in ['lorentzian', 'lorentz']:
-            gamma_line = fwhm_line / 2
-            model = 1 / (1 + ((obs_wave_w-mu) / gamma_line)**2) / (gamma_line * np.pi)
-            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
-        elif casefold(profile) in ['exponential', 'exp', 'laplace']:
-            b_line = fwhm_line / np.log(4)
-            model = np.exp(-np.abs(obs_wave_w-mu) / b_line) / (b_line * 2)
-            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
-        else:
-            raise ValueError((f"Please specify one of the line profiles: Gaussian, Lorentzian, or Exponential."))
+    #     if casefold(profile) in ['gaussian', 'gauss']:
+    #         fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
+    #         sigma_tot = fwhm_tot / np.sqrt(np.log(256))
+    #         model = np.exp(-0.5 * ((obs_wave_w-mu) / sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
+    #     elif casefold(profile) in ['lorentzian', 'lorentz']:
+    #         gamma_line = fwhm_line / 2
+    #         model = 1 / (1 + ((obs_wave_w-mu) / gamma_line)**2) / (gamma_line * np.pi)
+    #         model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
+    #     elif casefold(profile) in ['exponential', 'exp', 'laplace']:
+    #         b_line = fwhm_line / np.log(4)
+    #         model = np.exp(-np.abs(obs_wave_w-mu) / b_line) / (b_line * 2)
+    #         model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
+    #     else:
+    #         raise ValueError((f"Please specify one of the line profiles: Gaussian, Lorentzian, or Exponential."))
 
-        return model * flux
+    #     return model * flux
 
     def models_single_comp(self, obs_wave_w, par_cp, i_comp):
 
@@ -979,15 +983,15 @@ class LineFrame(object):
         list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
         models_scomp = []
         for i_free in list_free:
-            model_sline = self.single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
-                                           1,  # flux=1
-                                           self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
+            model_sline = single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
+                                      1,  # flux=1
+                                      self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
             list_linked = np.where(self.linelink_name_cn[i_comp] == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
-                model_sline += self.single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
-                                                self.lineratio_cn[i_comp, i_linked], 
-                                                self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
+                model_sline += single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
+                                           self.lineratio_cn[i_comp, i_linked], 
+                                           self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
             # detect and exclude weak lines
             int_flux_list = [1] + [self.lineratio_cn[i_comp, i_linked] for i_linked in list_linked]
             peak_flux_min = min(int_flux_list) / (fwhm / np.sqrt(np.log(256)) * np.sqrt(2*np.pi)) 
