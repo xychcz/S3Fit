@@ -13,11 +13,11 @@ import astropy.constants as const
 from .auxiliary_functions import casefold
 
 class ConfigFrame(object):
-    def __init__(self, config):
-        self.config = config
-        self.comp_c = np.array([*config])
-        self.num_comps = len(config)
-        self.num_pars_c = [len(config[self.comp_c[i_comp]]['pars']) for i_comp in range(self.num_comps)]
+    def __init__(self, config_C):
+        self.config_C = config_C
+        self.comp_name_c = np.array([*config_C])
+        self.num_comps = len(config_C)
+        self.num_pars_c = [len(config_C[comp_name]['pars']) for comp_name in config_C]
         self.num_pars_c_max = max(self.num_pars_c)
         self.num_pars_c_tot = self.num_pars_c_max * self.num_comps # total number of pars of all comps (including placeholders)
         self.num_pars = self.num_pars_c_tot
@@ -26,31 +26,35 @@ class ConfigFrame(object):
         self.par_max_cp = np.full((self.num_comps, self.num_pars_c_max), +9999, dtype='float')
         self.par_tie_cp = np.full((self.num_comps, self.num_pars_c_max), 'None', dtype='<U256')
         self.par_name_cp = np.array([['Empty_'+str(i_par) for i_par in range(self.num_pars_c_max)] for i_comp in range(self.num_comps)]).astype('<U256')
-        self.par_index_cp = [] # index of each par in each comp
+        self.par_index_cP = [] # index of each par in each comp
         self.info_c = [] 
 
         for i_comp in range(self.num_comps):
-            par_index_p = {}
+            input_pars = config_C[self.comp_name_c[i_comp]]['pars']
+            par_index_P = {}
             for i_par in range(self.num_pars_c[i_comp]):
-                if isinstance(config[self.comp_c[i_comp]]['pars'], list):
-                    self.par_min_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][i_par][0]
-                    self.par_max_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][i_par][1]
-                    self.par_tie_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][i_par][2]
-                elif isinstance(config[self.comp_c[i_comp]]['pars'], dict):
-                    par_name = [*config[self.comp_c[i_comp]]['pars']][i_par]
-                    par_index_p[par_name] = i_par
+                if isinstance(input_pars, list):
+                    par_pk = input_pars
+                    self.par_min_cp[i_comp,i_par] = par_pk[i_par][0]
+                    self.par_max_cp[i_comp,i_par] = par_pk[i_par][1]
+                    self.par_tie_cp[i_comp,i_par] = par_pk[i_par][2]
+                elif isinstance(input_pars, dict):
+                    par_name = [*input_pars][i_par]
+                    par_index_P[par_name] = i_par
                     self.par_name_cp[i_comp,i_par] = par_name
-                    if isinstance(config[self.comp_c[i_comp]]['pars'][par_name], list):
-                        self.par_min_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][par_name][0]
-                        self.par_max_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][par_name][1]
-                        self.par_tie_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][par_name][2]
-                    elif isinstance(config[self.comp_c[i_comp]]['pars'][par_name], dict):
-                        self.par_min_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][par_name]['min']
-                        self.par_max_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][par_name]['max']
-                        self.par_tie_cp[i_comp,i_par] = config[self.comp_c[i_comp]]['pars'][par_name]['tie']
-            self.par_index_cp.append(par_index_p)
+                    if isinstance(input_pars[par_name], list):
+                        par_Pk = input_pars
+                        self.par_min_cp[i_comp,i_par] = par_Pk[par_name][0]
+                        self.par_max_cp[i_comp,i_par] = par_Pk[par_name][1]
+                        self.par_tie_cp[i_comp,i_par] = par_Pk[par_name][2]
+                    elif isinstance(input_pars[par_name], dict):
+                        par_PK = input_pars
+                        self.par_min_cp[i_comp,i_par] = par_PK[par_name]['min']
+                        self.par_max_cp[i_comp,i_par] = par_PK[par_name]['max']
+                        self.par_tie_cp[i_comp,i_par] = par_PK[par_name]['tie']
+            self.par_index_cP.append(par_index_P)
                     
-            self.info_c.append(config[self.comp_c[i_comp]]['info'])
+            self.info_c.append(config_C[self.comp_name_c[i_comp]]['info'])
 
             # group used model elements in an array
             for item in ['mod_used', 'line_used']:
@@ -67,7 +71,7 @@ class ConfigFrame(object):
             else:
                 self.info_c[i_comp]['sign'] = 'emission' # default
 
-            self.info_c[i_comp]['comp_name'] = [*config.keys()][i_comp]
+            self.info_c[i_comp]['comp_name'] = self.comp_name_c[i_comp]
         # self.info_c = np.array(self.info_c)
 
     def flat_to_arr(self, vals_flat):
