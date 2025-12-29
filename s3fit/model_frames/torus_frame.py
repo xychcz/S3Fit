@@ -16,15 +16,17 @@ from ..auxiliaries.auxiliary_frames import ConfigFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict
 
 class TorusFrame(object): 
-    def __init__(self, fframe=None, config=None, filename=None, 
+    def __init__(self, mod_name=None, fframe=None, 
+                 config=None, file_path=None, 
                  v0_redshift=None, 
                  w_min=None, w_max=None, 
                  lum_norm=None, flux_scale=None, 
                  verbose=True, log_message=[]): 
 
+        self.mod_name = mod_name
         self.fframe = fframe
         self.config = config 
-        self.filename = filename        
+        self.file_path = file_path        
         self.v0_redshift = v0_redshift        
         self.w_min = w_min # currently not used
         self.w_max = w_max # currently not used
@@ -82,7 +84,7 @@ class TorusFrame(object):
         # https://sites.google.com/site/skirtorus/sed-library
         # skirtor_disc = np.loadtxt(self.file_disc) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
         # skirtor_torus = np.loadtxt(self.file_dust) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
-        skirtor_lib = fits.open(self.filename)
+        skirtor_lib = fits.open(self.file_path)
         skirtor_disc = skirtor_lib[0].data[0]
         skirtor_torus = skirtor_lib[0].data[1]
 
@@ -157,15 +159,13 @@ class TorusFrame(object):
 
     ##########################################################################
 
-    def models_unitnorm_obsframe(self, wavelength, par_p, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
+    def models_unitnorm_obsframe(self, wavelength, par_p, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         # par: voff (to adjust redshift), tau, oa, rratio, incl
         # comps: 'disc', 'torus'
-        if if_pars_flat: 
-            par_cp = self.cframe.flat_to_arr(par_p)
-        else:
-            par_cp = copy(par_p)
+        par_cp = self.cframe.reshape_by_comp(par_p)
 
+        obs_flux_mcomp_ew = None
         for i_comp in range(par_cp.shape[0]):
             voff   = par_cp[i_comp, self.cframe.par_index_cP[i_comp]['voff']]
             tau    = par_cp[i_comp, self.cframe.par_index_cP[i_comp]['opt_depth_9.7']]
@@ -220,7 +220,7 @@ class TorusFrame(object):
             obs_flux_scomp_ew = np.vstack((obs_flux_scomp_ew))
             obs_flux_scomp_ew = obs_flux_scomp_ew.T # add .T for a uniform format with other models with n_coeffs > 1
             
-            if i_comp == 0: 
+            if obs_flux_mcomp_ew is None: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
                 obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
@@ -255,10 +255,9 @@ class TorusFrame(object):
             best_par_lp[:, self.fframe.par_name_p == 'voff'] -= self.fframe.ref_voff_l[0]
             best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
-        mod = 'torus'
-        fp0, fp1, fe0, fe1 = self.fframe.search_model_index(mod, self.fframe.full_model_type)
-        spec_flux_scale = self.fframe.spec_flux_scale
-        num_loops = self.fframe.num_loops
+
+        self.num_loops = self.fframe.num_loops # for print_results
+        self.spec_flux_scale = self.fframe.spec_flux_scale # to calculate luminosity in printing
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
         par_name_cp = self.cframe.par_name_cp
@@ -279,23 +278,24 @@ class TorusFrame(object):
         output_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[str(comp_name)] = {} # init results for each comp
-            output_C[comp_name]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
-            output_C[comp_name]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
             output_C[comp_name]['value_Vl'] = {}
             for val_name in par_name_cp[i_comp].tolist() + value_names_C[comp_name]:
-                output_C[comp_name]['value_Vl'][val_name] = np.zeros(num_loops, dtype='float')
+                output_C[comp_name]['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
         output_C['sum'] = {}
         output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
         for val_name in value_names_additive:
-            output_C['sum']['value_Vl'][val_name] = np.zeros(num_loops, dtype='float')
+            output_C['sum']['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
 
-        i_e0 = 0; i_e1 = 0
+        i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_model_type)
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
-            i_e1 += num_coeffs_c[i_comp]
+            i_pars_0_of_comp_in_mod, i_pars_1_of_comp_in_mod, i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.fframe.search_comp_index(comp_name, self.mod_name)
+
+            output_C[comp_name]['par_lp']   = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod].reshape(self.num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
+            output_C[comp_name]['coeff_le'] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod].reshape(self.num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
+
             for i_par in range(num_pars_per_comp):
                 output_C[comp_name]['value_Vl'][par_name_cp[i_comp,i_par]] = output_C[comp_name]['par_lp'][:, i_par]
-            for i_loop in range(num_loops):
+            for i_loop in range(self.num_loops):
                 par_p = output_C[comp_name]['par_lp'][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
 
@@ -307,13 +307,14 @@ class TorusFrame(object):
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
-                unitconv = 4*np.pi*dist_lum**2 * spec_flux_scale # convert intrinsic flux to Lum, in erg/s
+                unitconv = 4*np.pi*dist_lum**2 * self.spec_flux_scale # convert intrinsic flux to Lum, in erg/s
                 if lum_unit == 'Lsun': unitconv /= const.L_sun.to('erg/s').value
 
+                tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
                 for lum_range in self.cframe.info_c[i_comp]['lum_range']: 
                     tmp_wave_w = np.logspace(np.log10(lum_range[0]*1e4), np.log10(lum_range[1]*1e4), num=10000) # rest frame grid
-                    tmp_torus_ew = self.models_unitnorm_obsframe(tmp_wave_w * (1+rev_redshift), best_par_lp[i_loop, fp0:fp1])
-                    tmp_torus_w  = best_coeff_le[i_loop, fe0:fe1][i_e0:i_e1] @ tmp_torus_ew[i_e0:i_e1] # redshifted flux
+                    tmp_torus_ew = self.models_unitnorm_obsframe(tmp_wave_w * (1+rev_redshift), best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod])
+                    tmp_torus_w  = tmp_coeff_e[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod] @ tmp_torus_ew[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod] # redshifted flux
                     tmp_torus_w *= 1+rev_redshift # to rest frame, in erg/s/cm2/AA
                     tmp_lum = np.trapezoid(tmp_torus_w, x=tmp_wave_w) * unitconv
                     tmp_name = f"log_Lum_{lum_range[0]}_{lum_range[1]}"
@@ -330,8 +331,6 @@ class TorusFrame(object):
         ############################################################
 
         self.output_C = output_C # save to model frame
-        self.num_loops = num_loops # for print_results
-        self.spec_flux_scale = self.fframe.spec_flux_scale # to calculate luminosity in printing
 
         if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
         if if_return_results: return output_C
@@ -344,7 +343,7 @@ class TorusFrame(object):
         lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
         # set the print name for each value
-        value_names = [value_name for comp in self.output_C for value_name in [*self.output_C[comp]['value_Vl']]]
+        value_names = [value_name for comp_name in self.output_C for value_name in [*self.output_C[comp_name]['value_Vl']]]
         value_names = list(dict.fromkeys(value_names)) # remove duplicates
         print_names = {}
         for value_name in value_names: print_names[value_name] = value_name

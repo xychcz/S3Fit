@@ -18,15 +18,17 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
-    def __init__(self, fframe=None, config=None, filename=None, 
+    def __init__(self, mod_name=None, fframe=None, 
+                 config=None, file_path=None, 
                  v0_redshift=None, R_inst_rw=None, 
                  w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
+        self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.filename = filename
+        self.file_path = file_path
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.w_min = w_min
@@ -133,7 +135,7 @@ class StellarFrame(object):
     def read_ssp_library(self):
         ##############################################################
         ###### Modify this section to use a different SSP model ######
-        ssp_lib = fits.open(self.filename)
+        ssp_lib = fits.open(self.file_path)
         # template resolution step of 0.1 AA, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
         self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
@@ -316,7 +318,8 @@ class StellarFrame(object):
         # Note that in all above (_e).sum(axis=0) is indeed (_e[mask_e]).sum(axis=0), 
         # mask_e is used to mask the allowed ssp model elements (age and met ranges). 
 
-    def models_unitnorm_obsframe(self, obs_wave_w, par_p, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
+    def models_unitnorm_obsframe(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
+                                 if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, if_redshift=True, if_convolve=True, conv_nbin=None):
         # The input model is spectra per unit Lsun/AA at rest 5500AA before dust reddening and redshift, 
         # corresponds to mass of 1/L5500 Msun (L5500 is the lum-value in unit of Lsun/AA from original models normalized per unit Msun).
         # In the fitting for the observed spectra in unit of in erg/s/AA/cm2, 
@@ -325,13 +328,10 @@ class StellarFrame(object):
         # and the corresponding mass is (1/3.826e33*Area) * (1/L5500) Msun, 
         # i.e., the real mtol is (1/3.826e33*Area) * (1/L5500) = (1/3.826e33*Area) * self.mtol
         # The values will be used to calculate the stellar mass from the best-fit results. 
-        if if_pars_flat: 
-            par_cp = self.cframe.flat_to_arr(par_p)
-        else:
-            par_cp = copy(par_p)
-        if mask_lite_e is not None:
-            mask_lite_ce = self.cframe.flat_to_arr(mask_lite_e)
+        par_cp = self.cframe.reshape_by_comp(par_p)
+        if mask_lite_e is not None: mask_lite_ce = self.cframe.reshape_by_comp(mask_lite_e) # components share the same num_coeffs
 
+        obs_flux_mcomp_ew = None
         for i_comp in range(self.num_comps):
             # build models with SFH function
             if self.sfh_name_c[i_comp] == 'nonparametric':
@@ -372,7 +372,7 @@ class StellarFrame(object):
             interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value='extrapolate')
             obs_flux_scomp_ew = interp_func(obs_wave_w)
 
-            if i_comp == 0: 
+            if obs_flux_mcomp_ew is None: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
                 obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
@@ -483,11 +483,8 @@ class StellarFrame(object):
             best_par_lp[:, self.fframe.par_name_p == 'voff'] -= self.fframe.ref_voff_l[0]
             best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
-        mod = 'stellar'
-        fp0, fp1, fe0, fe1 = self.fframe.search_model_index(mod, self.fframe.full_model_type)
-        spec_wave_w = self.fframe.spec['wave_w']
-        spec_flux_scale = self.fframe.spec_flux_scale
-        num_loops = self.fframe.num_loops
+        self.num_loops = self.fframe.num_loops # for reconstruct_sfh and print_results
+        self.spec_flux_scale = self.fframe.spec_flux_scale # for reconstruct_sfh and print_results
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
         par_name_cp = self.cframe.par_name_cp
@@ -510,20 +507,22 @@ class StellarFrame(object):
         output_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[str(comp_name)] = {} # init results for each comp
-            output_C[comp_name]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
-            output_C[comp_name]['coeff_le'] = best_coeff_le[:, fe0:fe1].reshape(num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
             output_C[comp_name]['value_Vl']   = {}
             for val_name in par_name_cp[i_comp].tolist() + value_names_C[comp_name]:
-                output_C[comp_name]['value_Vl'][val_name] = np.zeros(num_loops, dtype='float')
+                output_C[comp_name]['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
         output_C['sum'] = {}
         output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
         for val_name in value_names_additive:
-            output_C['sum']['value_Vl'][val_name] = np.zeros(num_loops, dtype='float')
+            output_C['sum']['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
 
+        i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_model_type)
         for (i_comp, comp_name) in enumerate(comp_name_c):
+            output_C[comp_name]['par_lp']   = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod].reshape(self.num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
+            output_C[comp_name]['coeff_le'] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod].reshape(self.num_loops, num_comps, num_coeffs_per_comp)[:, i_comp, :]
+
             for i_par in range(num_pars_per_comp):
                 output_C[comp_name]['value_Vl'][par_name_cp[i_comp,i_par]] = output_C[comp_name]['par_lp'][:, i_par]
-            for i_loop in range(num_loops):
+            for i_loop in range(self.num_loops):
                 par_p   = output_C[comp_name]['par_lp'][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
 
@@ -533,18 +532,18 @@ class StellarFrame(object):
                 fwhm = par_p[self.cframe.par_index_cP[i_comp]['fwhm']]
                 output_C[comp_name]['value_Vl']['sigma'][i_loop] = fwhm/np.sqrt(np.log(256))
 
-                tmp_spec_w = self.fframe.output_MC[mod][comp_name]['spec_lw'][i_loop, :]
-                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 AA
+                tmp_spec_w = self.fframe.output_MC[self.mod_name][comp_name]['spec_lw'][i_loop, :]
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 AA
                 if mask_norm_w.sum() > 0:
                     output_C[comp_name]['value_Vl']['flux_5500'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_5500'][i_loop] += tmp_spec_w[mask_norm_w].mean()
 
-                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
                 output_C[comp_name]['value_Vl']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                 output_C['sum']['value_Vl']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
 
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
-                unitconv = 4*np.pi*dist_lum**2 * spec_flux_scale # convert intrinsic flux to Lum, in erg/s
+                unitconv = 4*np.pi*dist_lum**2 * self.spec_flux_scale # convert intrinsic flux to Lum, in erg/s
                 if lum_unit == 'Lsun': unitconv /= const.L_sun.to('erg/s').value
 
                 if self.sfh_name_c[i_comp] != 'nonparametric':
@@ -602,9 +601,7 @@ class StellarFrame(object):
             output_C[comp_name_c[i_comp]]['coeff_norm_le'] = coeff_le / coeff_le.sum(axis=1)[:,None]
 
         self.output_C = output_C # save to model frame
-        self.num_loops = num_loops # for reconstruct_sfh and print_results
-        self.spec_flux_scale = spec_flux_scale # for reconstruct_sfh and print_results
-
+ 
         if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
         if if_return_results: return output_C
 
@@ -616,7 +613,7 @@ class StellarFrame(object):
         lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
         # set the print name for each value
-        value_names = [value_name for comp in self.output_C for value_name in [*self.output_C[comp]['value_Vl']]]
+        value_names = [value_name for comp_name in self.output_C for value_name in [*self.output_C[comp_name]['value_Vl']]]
         value_names = list(dict.fromkeys(value_names)) # remove duplicates
         print_names = {}
         for value_name in value_names: print_names[value_name] = value_name

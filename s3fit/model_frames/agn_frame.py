@@ -18,15 +18,17 @@ from ..auxiliaries.basic_model_functions import powerlaw_func, blackbody_func, r
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class AGNFrame(object):
-    def __init__(self, fframe=None, config=None, filename=None, 
+    def __init__(self, mod_name=None, fframe=None, 
+                 config=None, file_path=None, 
                  v0_redshift=None, R_inst_rw=None, 
                  w_min=None, w_max=None, w_norm=5100, dw_norm=25, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
+        self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.filename = filename
+        self.file_path = file_path
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw        
         self.w_min = w_min
@@ -152,7 +154,7 @@ class AGNFrame(object):
         # https://arxiv.org/pdf/astro-ph/0312654, Veron-Cetty et al., 2003
         # https://arxiv.org/pdf/astro-ph/0606040, Tsuzuki et al., 2006
 
-        iron_lib = fits.open(self.filename)
+        iron_lib = fits.open(self.file_path)
         iron_wave_w = iron_lib[0].data[0] # AA, in rest frame
         iron_flux_w = iron_lib[0].data[1] # erg/s/cm2/AA
         iron_dw_fwhm_w = iron_wave_w * 1100 / 299792.458
@@ -233,12 +235,10 @@ class AGNFrame(object):
 
     ##########################################################################
 
-    def models_unitnorm_obsframe(self, obs_wave_w, par_p, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
-        if if_pars_flat: 
-            par_cp = self.cframe.flat_to_arr(par_p)
-        else:
-            par_cp = copy(par_p)
+    def models_unitnorm_obsframe(self, obs_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
+        par_cp = self.cframe.reshape_by_comp(par_p)
 
+        obs_flux_mcomp_ew = None
         for i_comp in range(par_cp.shape[0]):
             # read and append intrinsic templates in rest frame
             if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':
@@ -292,7 +292,7 @@ class AGNFrame(object):
             interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value='extrapolate')
             obs_flux_scomp_ew = interp_func(obs_wave_w)
 
-            if i_comp == 0: 
+            if obs_flux_mcomp_ew is None: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
                 obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
@@ -327,11 +327,8 @@ class AGNFrame(object):
             best_par_lp[:, self.fframe.par_name_p == 'voff'] -= self.fframe.ref_voff_l[0]
             best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
-        mod = 'agn'
-        fp0, fp1, fe0, fe1 = self.fframe.search_model_index(mod, self.fframe.full_model_type)
-        spec_wave_w = self.fframe.spec['wave_w']
-        spec_flux_scale = self.fframe.spec_flux_scale
-        num_loops = self.fframe.num_loops
+        self.num_loops = self.fframe.num_loops # for print_results
+        self.spec_flux_scale = self.fframe.spec_flux_scale # to calculate luminosity in printing
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
         par_name_cp = self.cframe.par_name_cp
@@ -358,47 +355,48 @@ class AGNFrame(object):
         # output_C['comp']['coeff_le'][i_l,i_e]: coefficients
         # output_C['comp']['value_Vl']['name_l'][i_l]: calculated values
         output_C = {}
-        i_e0 = 0; i_e1 = 0
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[str(comp_name)] = {} # init results for each comp
-            output_C[comp_name]['par_lp']   = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
-            i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
-            i_e1 += num_coeffs_c[i_comp]
-            output_C[comp_name]['coeff_le'] = best_coeff_le[:, fe0:fe1][:, i_e0:i_e1]
             output_C[comp_name]['value_Vl'] = {}
             for val_name in par_name_cp[i_comp].tolist() + value_names_C[comp_name]:
-                output_C[comp_name]['value_Vl'][val_name] = np.zeros(num_loops, dtype='float')
+                output_C[comp_name]['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
         output_C['sum'] = {}
         output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
         for val_name in value_names_additive:
-            output_C['sum']['value_Vl'][val_name] = np.zeros(num_loops, dtype='float')
+            output_C['sum']['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
 
+        i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_model_type)
         for (i_comp, comp_name) in enumerate(comp_name_c):
+            i_pars_0_of_comp_in_mod, i_pars_1_of_comp_in_mod, i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.fframe.search_comp_index(comp_name, self.mod_name)
+
+            output_C[comp_name]['par_lp']   = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod].reshape(self.num_loops, num_comps, num_pars_per_comp)[:, i_comp, :]
+            output_C[comp_name]['coeff_le'] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod][:, i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
+
             for i_par in range(self.cframe.num_pars_c[i_comp]): # use the actual valid par number instead of num_pars_per_comp
                 output_C[comp_name]['value_Vl'][par_name_cp[i_comp, i_par]] = output_C[comp_name]['par_lp'][:, i_par]
-            for i_loop in range(num_loops):
+            for i_loop in range(self.num_loops):
                 par_p   = output_C[comp_name]['par_lp'][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
 
-                tmp_spec_w = self.fframe.output_MC[mod][comp_name]['spec_lw'][i_loop, :]
-                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 3000) < 25 # for observed flux at rest 3000 AA 
+                tmp_spec_w = self.fframe.output_MC[self.mod_name][comp_name]['spec_lw'][i_loop, :]
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 3000) < 25 # for observed flux at rest 3000 AA 
                 if mask_norm_w.sum() > 0:
                     output_C[comp_name]['value_Vl']['flux_3000'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_3000'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - 5100) < 25 # for observed flux at rest 5100 AA
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 5100) < 25 # for observed flux at rest 5100 AA
                 if mask_norm_w.sum() > 0:
                     output_C[comp_name]['value_Vl']['flux_5100'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_5100'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-                mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
                 if mask_norm_w.sum() > 0:
                     output_C[comp_name]['value_Vl']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
 
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
-                unitconv = 4*np.pi*dist_lum**2 * spec_flux_scale # convert intrinsic flux to Lum, in erg/s
+                unitconv = 4*np.pi*dist_lum**2 * self.spec_flux_scale # convert intrinsic flux to Lum, in erg/s
                 if lum_unit == 'Lsun': unitconv /= const.L_sun.to('erg/s').value
 
                 if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':
@@ -419,7 +417,7 @@ class AGNFrame(object):
                                                                curvature=curvature, bending=True)
                         lambLum_wave = flux_wave * unitconv * wave
                         output_C[comp_name]['value_Vl']['log_lambLum_'+wave_str][i_loop] = np.log10(lambLum_wave)
-                    mask_norm_w = np.abs(spec_wave_w/(1+rev_redshift) - wave_turn) < self.dw_norm 
+                    mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - wave_turn) < self.dw_norm 
                     if mask_norm_w.sum() > 0:
                         output_C[comp_name]['value_Vl']['flux_waveturn'][i_loop] = tmp_spec_w[mask_norm_w].mean()
 
@@ -458,8 +456,6 @@ class AGNFrame(object):
         ############################################################
 
         self.output_C = output_C # save to model frame
-        self.num_loops = num_loops # for print_results
-        self.spec_flux_scale = spec_flux_scale # to calculate luminosity in printing
 
         if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
         if if_return_results: return output_C
@@ -472,7 +468,7 @@ class AGNFrame(object):
         lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
         # set the print name for each value
-        value_names = [value_name for comp in self.output_C for value_name in [*self.output_C[comp]['value_Vl']]]
+        value_names = [value_name for comp_name in self.output_C for value_name in [*self.output_C[comp_name]['value_Vl']]]
         value_names = list(dict.fromkeys(value_names)) # remove duplicates
         print_names = {}
         for value_name in value_names: print_names[value_name] = value_name

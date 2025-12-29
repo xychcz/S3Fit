@@ -74,8 +74,11 @@ class ConfigFrame(object):
             self.info_c[i_comp]['comp_name'] = self.comp_name_c[i_comp]
         # self.info_c = np.array(self.info_c)
 
-    def flat_to_arr(self, vals_flat):
-        return vals_flat.reshape(self.num_comps, int(len(vals_flat)/self.num_comps))
+    def reshape_by_comp(self, array_x):
+        # _x can be 1) _p, for pars, where len(array_x)/self.num_comps = self.num_pars_c_max
+        # or 2) _e, for coeffs or elements, only if components have the same number of _e
+        array_cx = array_x.reshape(self.num_comps, int(len(array_x)/self.num_comps))
+        return array_cx
 
 ###################################################################################################
 ###################################################################################################

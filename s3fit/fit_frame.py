@@ -402,14 +402,16 @@ class FitFrame(object):
                 print_log(center_string('Initialize stellar continuum models', 80), self.log_message)
                 from .model_frames.stellar_frame import StellarFrame
                 self.model_dict_M[mod_name] = {}
-                self.model_dict_M[mod_name]['spec_mod'] = StellarFrame(fframe=self, config=self.model_config_M[mod_name]['config'], filename=self.model_config_M[mod_name]['file'], 
+                self.model_dict_M[mod_name]['spec_mod'] = StellarFrame(mod_name=mod_name, fframe=self, 
+                                                                       config=self.model_config_M[mod_name]['config'], file_path=self.model_config_M[mod_name]['file'], 
                                                                        v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                                        w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                        Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                        log_message=self.log_message) 
                 self.model_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict_M[mod_name]['sed_mod'] = StellarFrame(fframe=self, config=self.model_config_M[mod_name]['config'], filename=self.model_config_M[mod_name]['file'], 
+                    self.model_dict_M[mod_name]['sed_mod'] = StellarFrame(mod_name=mod_name, fframe=self, 
+                                                                          config=self.model_config_M[mod_name]['config'], file_path=self.model_config_M[mod_name]['file'], 
                                                                           v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                           w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                           dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
@@ -422,14 +424,16 @@ class FitFrame(object):
                 print_log(center_string('Initialize AGN UV/optical continuum models', 80), self.log_message)
                 from .model_frames.agn_frame import AGNFrame
                 self.model_dict_M[mod_name] = {}
-                self.model_dict_M[mod_name]['spec_mod'] = AGNFrame(fframe=self, config=self.model_config_M[mod_name]['config'], filename=self.model_config_M[mod_name]['file'], 
+                self.model_dict_M[mod_name]['spec_mod'] = AGNFrame(mod_name=mod_name, fframe=self, 
+                                                                   config=self.model_config_M[mod_name]['config'], file_path=self.model_config_M[mod_name]['file'], 
                                                                    v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
                                                                    w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                    Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                    log_message=self.log_message) 
                 self.model_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.model_dict_M[mod_name]['sed_mod'] = AGNFrame(fframe=self, config=self.model_config_M[mod_name]['config'], filename=self.model_config_M[mod_name]['file'], 
+                    self.model_dict_M[mod_name]['sed_mod'] = AGNFrame(mod_name=mod_name, fframe=self, 
+                                                                      config=self.model_config_M[mod_name]['config'], file_path=self.model_config_M[mod_name]['file'], 
                                                                       v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                       w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                       dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
@@ -442,7 +446,8 @@ class FitFrame(object):
                 print_log(center_string('Initialize AGN torus models', 80), self.log_message)
                 from .model_frames.torus_frame import TorusFrame
                 self.model_dict_M[mod_name] = {}
-                self.model_dict_M[mod_name]['spec_mod'] = TorusFrame(fframe=self, config=self.model_config_M[mod_name]['config'], filename=self.model_config_M[mod_name]['file'], 
+                self.model_dict_M[mod_name]['spec_mod'] = TorusFrame(mod_name=mod_name, fframe=self, 
+                                                                     config=self.model_config_M[mod_name]['config'], file_path=self.model_config_M[mod_name]['file'], 
                                                                      v0_redshift=self.v0_redshift, 
                                                                      flux_scale=self.spec_flux_scale, 
                                                                      log_message=self.log_message) 
@@ -457,7 +462,8 @@ class FitFrame(object):
                 print_log(center_string('Initialize line models', 80), self.log_message)
                 from .model_frames.line_frame import LineFrame
                 self.model_dict_M[mod_name] = {}
-                self.model_dict_M[mod_name]['spec_mod'] = LineFrame(fframe=self, config=self.model_config_M[mod_name]['config'], use_pyneb=self.model_config_M[mod_name]['use_pyneb'], 
+                self.model_dict_M[mod_name]['spec_mod'] = LineFrame(mod_name=mod_name, fframe=self, 
+                                                                    config=self.model_config_M[mod_name]['config'], use_pyneb=self.model_config_M[mod_name]['use_pyneb'], 
                                                                     v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                                     w_min=self.spec_wmin, w_max=self.spec_wmax, mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']], 
                                                                     log_message=self.log_message) 
@@ -586,35 +592,66 @@ class FitFrame(object):
             ret_mask_lite_Me[input_mod_name] = input_mask_lite_e
         return ret_mask_lite_Me
 
-    def search_model_index(self, sel_mods, model_type, mask_lite_Me=None):
+    def search_mod_index(self, input_mods, model_type, mask_lite_Me=None):
+        # return the start and end indexes of par and coeff of input_mods in given model_type
+
         rev_model_type = ''
         for mod_name in self.full_model_type.split('+'):
             if mod_name in model_type.split('+'): rev_model_type += mod_name + '+'
-        rev_model_type = rev_model_type[:-1] # re-sort the input model_type to fit the order in self.full_model_type
-        if rev_model_type.split(sel_mods)[0] == rev_model_type: raise ValueError((f"No such model combination: {sel_mods} in {rev_model_type}"))
+        rev_model_type = rev_model_type[:-1] # re-sort the given model_type to fit the order in self.full_model_type
+        if rev_model_type.split(input_mods)[0] == rev_model_type: 
+            raise ValueError((f"No such model combination: {input_mods} in {rev_model_type}"))
 
-        model_nums_M = {}
-        for mod_name in self.full_model_type.split('+'): model_nums_M[mod_name] = {'par': self.model_dict_M[mod_name]['num_pars']}
-        if mask_lite_Me is None: 
-            for mod_name in self.full_model_type.split('+'): model_nums_M[mod_name]['coeff'] = self.model_dict_M[mod_name]['num_coeffs']
-        else:
-            for mod_name in self.full_model_type.split('+'): model_nums_M[mod_name]['coeff'] = mask_lite_Me[mod_name].sum()
+        # count num of mod before input_mods in rev_model_type
+        i_pars_0   = 0
+        i_coeffs_0 = 0
+        for mod_name in rev_model_type.split(input_mods)[0].split('+'):
+            if mod_name == '': continue
+            i_pars_0   += self.model_dict_M[mod_name]['num_pars']
+            i_coeffs_0 += self.model_dict_M[mod_name]['num_coeffs'] if mask_lite_Me is None else mask_lite_Me[mod_name].sum()
 
-        index_start_par = 0; index_start_coeff = 0
-        for pre_mod in rev_model_type.split(sel_mods)[0].split('+'):
-            if pre_mod == '': continue
-            index_start_par   += model_nums_M[pre_mod]['par']
-            index_start_coeff += model_nums_M[pre_mod]['coeff']
-        index_end_par   = index_start_par   + 0
-        index_end_coeff = index_start_coeff + 0
-        if len(sel_mods.split('+')) == 1:
-            index_end_par   += model_nums_M[sel_mods]['par']
-            index_end_coeff += model_nums_M[sel_mods]['coeff']
-        else:
-            for single_mod in sel_mods.split('+'):
-                index_end_par   += model_nums_M[single_mod]['par']
-                index_end_coeff += model_nums_M[single_mod]['coeff']            
-        return index_start_par, index_end_par, index_start_coeff, index_end_coeff
+        # count num of input_mods
+        i_pars_1   = i_pars_0   + 0
+        i_coeffs_1 = i_coeffs_0 + 0
+        for mod_name in input_mods.split('+'): 
+            if mod_name == '': continue
+            i_pars_1   += self.model_dict_M[mod_name]['num_pars']
+            i_coeffs_1 += self.model_dict_M[mod_name]['num_coeffs'] if mask_lite_Me is None else mask_lite_Me[mod_name].sum()
+
+        return i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1
+
+    def search_comp_index(self, input_comps, mod_name, mask_lite_Ce=None):
+        # return the start and end indexes of par and coeff of input_comps among all comps in given mod
+
+        comp_name_c = self.model_dict_M[mod_name]['cframe'].comp_name_c
+        num_pars_c  = self.model_dict_M[mod_name]['cframe'].num_pars_c
+        num_coeffs_c = self.model_dict_M[mod_name]['spec_mod'].num_coeffs_c
+
+        num_pars_C   = {comp_name:num_pars   for (comp_name,num_pars)   in zip(comp_name_c, num_pars_c)}
+        num_coeffs_C = {comp_name:num_coeffs for (comp_name,num_coeffs) in zip(comp_name_c, num_coeffs_c)}
+
+        input_comps_str = '+'.join(input_comps) if isinstance(input_comps, list) else input_comps
+        all_comps_str = '+'.join(comp_name_c)
+        if all_comps_str.split(input_comps_str)[0] == all_comps_str: 
+            raise ValueError((f"No such component combination: {input_comps_str} in the components {all_comps_str} of {mod_name}."))
+
+        # count num of comp before input_comps_str in all_comps_str
+        i_pars_0   = 0
+        i_coeffs_0 = 0
+        for comp_name in all_comps_str.split(input_comps_str)[0].split('+'):
+            if comp_name == '': continue
+            i_pars_0   += num_pars_C[comp_name]
+            i_coeffs_0 += num_coeffs_C[comp_name] if mask_lite_Ce is None else mask_lite_Ce[comp_name].sum()
+
+        # count num of input_comps_str
+        i_pars_1   = i_pars_0   + 0
+        i_coeffs_1 = i_coeffs_0 + 0
+        for comp_name in input_comps_str.split('+'): 
+            if comp_name == '': continue
+            i_pars_1   += num_pars_C[comp_name]
+            i_coeffs_1 += num_coeffs_C[comp_name] if mask_lite_Ce is None else mask_lite_Ce[comp_name].sum()
+
+        return i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1
 
     def update_tied_pars(self, model_type=None, input_par_p=None):
         par_p = copy(input_par_p) # avoid changing input_par_p to make confilicts with the outer non-linear process
@@ -655,7 +692,7 @@ class FitFrame(object):
                         raise ValueError((f"The format of the tying relation {single_tie} is wrong."))
 
                     if ref_mod in model_type.split('+'):
-                        mp0, mp1 = self.search_model_index(ref_mod, model_type)[0:2]
+                        i_pars_0, i_pars_1 = self.search_mod_index(ref_mod, model_type)[0:2]
 
                         ref_i_comp = np.where(np.array(self.model_dict_M[ref_mod]['cframe'].comp_name_c) == ref_comp)[0]
                         if len(ref_i_comp) == 1:
@@ -675,7 +712,7 @@ class FitFrame(object):
                         ref_i_par_in_mod = ref_i_par_in_comp + ref_i_comp * self.model_dict_M[ref_mod]['cframe'].num_pars_c_max
 
                         if par_p is not None:
-                            ref_value = par_p[mp0:mp1][ref_i_par_in_mod]
+                            ref_value = par_p[i_pars_0:i_pars_1][ref_i_par_in_mod]
                             if tie_sign is None:
                                 par_p[i_p] = ref_value
                             elif tie_sign == '+':
@@ -694,8 +731,8 @@ class FitFrame(object):
                                 raise ValueError((f"The sign '{tie_sign}' of the tying relation {single_tie} is wrong."))
                             break # only select the 1st effective tie relation
                         else:
-                            ref_par_min = min_p[mp0:mp1][ref_i_par_in_mod]
-                            ref_par_max = max_p[mp0:mp1][ref_i_par_in_mod]
+                            ref_par_min = min_p[i_pars_0:i_pars_1][ref_i_par_in_mod]
+                            ref_par_max = max_p[i_pars_0:i_pars_1][ref_i_par_in_mod]
                             if tie_sign is None:
                                 # copy bounds to replace the input None bounds. 
                                 # non-linear process use these values to generate new par_p but the par_p transfered to linear process will be replaced abouve
@@ -931,25 +968,25 @@ class FitFrame(object):
         if fit_phot: sed_wave_w = self.sed['wave_w']
         fit_model_ew = None
         for mod_name in rev_model_type.split('+'):
-            mp0, mp1 = self.search_model_index(mod_name, rev_model_type)[0:2]
-            if (~np.isfinite(par_p[mp0:mp1])).any():
-                raise ValueError((f"NaN or Inf detected in x = {par_p[mp0:mp1]} of '{mod_name}' model."))
+            i_pars_0, i_pars_1 = self.search_mod_index(mod_name, rev_model_type)[0:2]
+            if (~np.isfinite(par_p[i_pars_0:i_pars_1])).any():
+                raise ValueError((f"NaN or Inf detected in x = {par_p[i_pars_0:i_pars_1]} of '{mod_name}' model."))
             ####
-            spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](spec_wave_w, par_p[mp0:mp1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=conv_nbin)
+            spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](spec_wave_w, par_p[i_pars_0:i_pars_1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=conv_nbin)
             if fit_phot:
-                sed_fmod_ew = self.model_dict_M[mod_name]['sed_func'](sed_wave_w, par_p[mp0:mp1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=None) #convolution not required
+                sed_fmod_ew = self.model_dict_M[mod_name]['sed_func'](sed_wave_w, par_p[i_pars_0:i_pars_1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=None) #convolution not required
                 sed_fmod_eb = self.pframe.spec2phot(sed_wave_w, sed_fmod_ew, self.phot['trans_bw'])
                 spec_fmod_ew = np.hstack((spec_fmod_ew, sed_fmod_eb))
             ####
             if (~np.isfinite(spec_fmod_ew)).any():
-                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':par_p[mp0:mp1], 'mask':mask_lite_Me[mod_name], 'conv_nbin':conv_nbin} # output for check
-                raise ValueError((f"NaN or Inf detected in returned spectra of '{mod_name}' model with x = {par_p[mp0:mp1]}"
+                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':par_p[i_pars_0:i_pars_1], 'mask':mask_lite_Me[mod_name], 'conv_nbin':conv_nbin} # output for check
+                raise ValueError((f"NaN or Inf detected in returned spectra of '{mod_name}' model with x = {par_p[i_pars_0:i_pars_1]}"
                                  +f", position (m,w) = {np.where(~np.isfinite(spec_fmod_ew))}."))
             spec_fmod_positive_ew = spec_fmod_ew * 1.0 # copy
             spec_fmod_positive_ew[self.model_dict_M[mod_name]['spec_mod'].mask_absorption_e[mask_lite_Me[mod_name]],:] *= -1 # convert nagative values for the following positive check
             if (spec_fmod_positive_ew < 0).any(): 
-                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':par_p[mp0:mp1], 'mask':mask_lite_Me[mod_name], 'conv_nbin':conv_nbin} # output for check
-                raise ValueError((f"Negative value detected in returned spectra of '{mod_name}' model with x = {par_p[mp0:mp1]}"
+                self.error = {'spec':spec_fmod_ew, 'wave':spec_wave_w, 'x':par_p[i_pars_0:i_pars_1], 'mask':mask_lite_Me[mod_name], 'conv_nbin':conv_nbin} # output for check
+                raise ValueError((f"Negative value detected in returned spectra of '{mod_name}' model with x = {par_p[i_pars_0:i_pars_1]}"
                                  +f", position (m,w) = {np.where(spec_fmod_positive_ew < 0)}."))
             fit_model_ew = spec_fmod_ew if (fit_model_ew is None) else np.vstack((fit_model_ew, spec_fmod_ew))
         n_elements = fit_model_ew.shape[0]
@@ -1074,8 +1111,8 @@ class FitFrame(object):
 
         mask_p = np.zeros_like(self.par_min_p, dtype='bool') 
         for mod_name in model_type.split('+'):
-            fp0, fp1 = self.search_model_index(mod_name, self.full_model_type)[0:2]
-            mask_p[fp0:fp1] = True
+            i_pars_0_in_allmods, i_pars_1_in_allmods = self.search_mod_index(mod_name, self.full_model_type)[0:2]
+            mask_p[i_pars_0_in_allmods:i_pars_1_in_allmods] = True
         
         ##############################################################
         # main fitting cycles
@@ -1197,16 +1234,16 @@ class FitFrame(object):
             ret_dict['cont_specphot_fmod_w'] = np.hstack((self.spec['wave_w'], self.phot['wave_b'])) * 0
             ret_dict['line_specphot_fmod_w'] = np.hstack((self.spec['wave_w'], self.phot['wave_b'])) * 0
         for mod_name in model_type.split('+'):
-            mp0, mp1, me0, me1 = self.search_model_index(mod_name, model_type, mask_lite_Me)
-            spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](self.spec['wave_w'], par_p[mp0:mp1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=conv_nbin)
-            spec_fmod_w = coeff_e[me0:me1] @ spec_fmod_ew
+            i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1 = self.search_mod_index(mod_name, model_type, mask_lite_Me)
+            spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](self.spec['wave_w'], par_p[i_pars_0:i_pars_1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=conv_nbin)
+            spec_fmod_w = coeff_e[i_coeffs_0:i_coeffs_1] @ spec_fmod_ew
             if mod_name == 'line': 
                 ret_dict['line_spec_fmod_w'] += spec_fmod_w
             else:
                 ret_dict['cont_spec_fmod_w'] += spec_fmod_w
             if self.have_phot:
-                sed_fmod_ew = self.model_dict_M[mod_name]['sed_func'](self.sed['wave_w'], par_p[mp0:mp1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=None) # convolution no required
-                sed_fmod_w = coeff_e[me0:me1] @ sed_fmod_ew
+                sed_fmod_ew = self.model_dict_M[mod_name]['sed_func'](self.sed['wave_w'], par_p[i_pars_0:i_pars_1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=None) # convolution no required
+                sed_fmod_w = coeff_e[i_coeffs_0:i_coeffs_1] @ sed_fmod_ew
                 phot_fmod_b = self.pframe.spec2phot(self.sed['wave_w'], sed_fmod_w, self.phot['trans_bw'])
                 if mod_name == 'line': 
                     ret_dict['line_specphot_fmod_w'] += np.hstack((spec_fmod_w, phot_fmod_b))
@@ -1216,9 +1253,10 @@ class FitFrame(object):
         # update the best-fit parameters to the full par_p list (i.e., with all models in self.full_model_type) to guide following fitting
         ret_dict['final_par_p'] = copy(input_par_p)
         for mod_name in model_type.split('+'):
-            fp0, fp1 = self.search_model_index(mod_name, self.full_model_type)[0:2]
-            mp0, mp1 = self.search_model_index(mod_name, model_type)[0:2]
-            ret_dict['final_par_p'][fp0:fp1] = best_fit.x[mp0:mp1] # use best_fit.x instead of the converted par_p here to avoid bounds conflict in later non-linear process
+            i_pars_0_in_allmods, i_pars_1_in_allmods = self.search_mod_index(mod_name, self.full_model_type)[0:2]
+            i_pars_0_in_selmods, i_pars_1_in_selmods = self.search_mod_index(mod_name, model_type)[0:2]
+            ret_dict['final_par_p'][i_pars_0_in_allmods:i_pars_1_in_allmods] = best_fit.x[i_pars_0_in_selmods:i_pars_1_in_selmods] 
+            # use best_fit.x instead of the converted par_p here to avoid bounds conflict in later non-linear process
         ##############################################################
 
         ##############################################################
@@ -1233,10 +1271,10 @@ class FitFrame(object):
                 # save results only if the loop is the 1st run (use < 0.01, not == 0, to make it robust and overwrite overfit), or the refitting gets smaller chi_sq
                 self.output_S[step_id]['chi_sq_l'][i_loop] = chi_sq
                 for mod_name in model_type.split('+'):
-                    fp0, fp1, fe0, fe1 = self.search_model_index(mod_name, self.full_model_type)
-                    mp0, mp1, me0, me1 = self.search_model_index(mod_name, model_type, mask_lite_Me)
-                    self.output_S[step_id]['par_lp'  ][i_loop, fp0:fp1]                      = par_p[mp0:mp1]
-                    self.output_S[step_id]['coeff_le'][i_loop, fe0:fe1][mask_lite_Me[mod_name]] = coeff_e[me0:me1]
+                    i_pars_0_in_allmods, i_pars_1_in_allmods, i_coeffs_0_in_allmods, i_coeffs_1_in_allmods = self.search_mod_index(mod_name, self.full_model_type)
+                    i_pars_0_in_selmods, i_pars_1_in_selmods, i_coeffs_0_in_selmods, i_coeffs_1_in_selmods = self.search_mod_index(mod_name, model_type, mask_lite_Me)
+                    self.output_S[step_id]['par_lp'  ][i_loop, i_pars_0_in_allmods:i_pars_1_in_allmods]                             = par_p[i_pars_0_in_selmods:i_pars_1_in_selmods]
+                    self.output_S[step_id]['coeff_le'][i_loop, i_coeffs_0_in_allmods:i_coeffs_1_in_allmods][mask_lite_Me[mod_name]] = coeff_e[i_coeffs_0_in_selmods:i_coeffs_1_in_selmods]
                 self.output_S[step_id]['ret_dict_l'][i_loop] = ret_dict
         ##############################################################
 
@@ -1370,9 +1408,9 @@ class FitFrame(object):
             cont_type = '' # reset
             for mod_name in joint_fit_1['model_type'].split('+'):
                 if mod_name == 'line': continue
-                mp0, mp1, me0, me1 = self.search_model_index(mod_name, joint_fit_1['model_type'], joint_fit_1['mask_lite_Me'])
-                spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_Me'][mod_name], conv_nbin=1)
-                spec_fmod_w = joint_fit_1['coeff_e'][me0:me1] @ spec_fmod_ew
+                i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1 = self.search_mod_index(mod_name, joint_fit_1['model_type'], joint_fit_1['mask_lite_Me'])
+                spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](spec_wave_w, joint_fit_1['par_p'][i_pars_0:i_pars_1], mask_lite_e=joint_fit_1['mask_lite_Me'][mod_name], conv_nbin=1)
+                spec_fmod_w = joint_fit_1['coeff_e'][i_coeffs_0:i_coeffs_1] @ spec_fmod_ew
                 mod_peak_SN, mod_examine = self.examine_model_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
                 if mod_examine: 
                     cont_type += mod_name + '+'
@@ -1393,13 +1431,13 @@ class FitFrame(object):
             print_log(center_string(f'Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_model_SN} (set by accept_model_SN).', 80), 
                       self.log_message, self.if_print_step)
             if 'line' in joint_fit_1['model_type'].split('+'): 
-                mp0, mp1, me0, me1 = self.search_model_index('line', joint_fit_1['model_type'], joint_fit_1['mask_lite_Me'])
-                line_spec_fmod_ew = self.model_dict_M['line']['spec_func'](spec_wave_w, joint_fit_1['par_p'][mp0:mp1], mask_lite_e=joint_fit_1['mask_lite_Me']['line'])
+                i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1 = self.search_mod_index('line', joint_fit_1['model_type'], joint_fit_1['mask_lite_Me'])
+                line_spec_fmod_ew = self.model_dict_M['line']['spec_func'](spec_wave_w, joint_fit_1['par_p'][i_pars_0:i_pars_1], mask_lite_e=joint_fit_1['mask_lite_Me']['line'])
                 line_comps = [] 
                 for i_comp in range(self.line.num_comps):
                     line_comp = self.line.cframe.comp_name_c[i_comp]
                     line_comp_mask_lite_e = self.line.mask_lite_with_comps(enabled_comps=[line_comp])[joint_fit_1['mask_lite_Me']['line']]
-                    line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][me0:me1][line_comp_mask_lite_e] @ line_spec_fmod_ew[line_comp_mask_lite_e, :]
+                    line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][i_coeffs_0:i_coeffs_1][line_comp_mask_lite_e] @ line_spec_fmod_ew[line_comp_mask_lite_e, :]
                     line_comp_peak_SN, line_comp_examine = self.examine_model_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_model_SN)
                     if line_comp_examine: 
                         line_comps.append(line_comp)
@@ -1443,8 +1481,8 @@ class FitFrame(object):
                                                      annealing=False, perturb_scale=self.perturb_scale, 
                                                      fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
                 # create new mask_lite_stellar_e with new coeffs; do not use full allowed stellar model elements to save time
-                mp0, mp1, me0, me1 = self.search_model_index('stellar', cont_fit_2b['model_type'], cont_fit_2b['mask_lite_Me'])
-                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_2b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.if_print_step)
+                i_coeffs_0, i_coeffs_1 = self.search_mod_index('stellar', cont_fit_2b['model_type'], cont_fit_2b['mask_lite_Me'])[2:4]
+                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_2b['coeff_e'][i_coeffs_0:i_coeffs_1], num_mods_min=24, verbose=self.if_print_step)
                 mask_lite_Me = self.update_mask_lite_Me('stellar', mask_lite_stellar_e, input_mask_lite_Me=mask_lite_Me)
             else:
                 cont_fit_2b = cont_fit_2a
@@ -1519,8 +1557,8 @@ class FitFrame(object):
             # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
             if 'stellar' in cont_type.split('+'): 
                 # create new mask_lite_stellar_e with new coeffs; do not use full allowed stellar model elements to save time
-                mp0, mp1, me0, me1 = self.search_model_index('stellar', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_Me'])
-                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_3b['coeff_e'][me0:me1], num_mods_min=24, verbose=self.if_print_step)
+                i_coeffs_0, i_coeffs_1 = self.search_mod_index('stellar', cont_fit_3b['model_type'], cont_fit_3b['mask_lite_Me'])[2:4]
+                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_3b['coeff_e'][i_coeffs_0:i_coeffs_1], num_mods_min=24, verbose=self.if_print_step)
                 mask_lite_Me = self.update_mask_lite_Me('stellar', mask_lite_stellar_e, input_mask_lite_Me=mask_lite_Me)
             ########################################
             if 'line' in self.full_model_type.split('+'): 
@@ -1759,20 +1797,23 @@ class FitFrame(object):
         for mod_name in rev_model_type.split('+'): 
             comp_name_c = self.model_dict_M[mod_name]['cframe'].comp_name_c
             num_coeffs_c = self.model_dict_M[mod_name]['spec_mod'].num_coeffs_c
-            fp0, fp1, fe0, fe1 = self.search_model_index(mod_name, self.full_model_type)
-            i_e0 = 0; i_e1 = 0
-            for (i_comp, comp_name) in enumerate(comp_name_c):
-                i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
-                i_e1 += num_coeffs_c[i_comp]
-                for i_loop in range(self.num_loops): 
-                    spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](spec_wave_w, best_par_lp[i_loop, fp0:fp1], conv_nbin=self.conv_nbin_max)
-                    spec_fmod_w  = best_coeff_le[i_loop, fe0:fe1][i_e0:i_e1] @ spec_fmod_ew[i_e0:i_e1]
+            i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.search_mod_index(mod_name, self.full_model_type)
+            for i_loop in range(self.num_loops): 
+                spec_fmod_ew = self.model_dict_M[mod_name]['spec_func'](spec_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], conv_nbin=self.conv_nbin_max)
+                if self.have_phot:
+                    sed_fmod_ew = self.model_dict_M[mod_name]['sed_func'](sed_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], conv_nbin=None)
+                coeff_fmod_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
+                # i_e0 = 0; i_e1 = 0
+                for (i_comp, comp_name) in enumerate(comp_name_c):
+                    # i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
+                    # i_e1 += num_coeffs_c[i_comp]
+                    i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.search_comp_index(comp_name, mod_name)[2:4]
+                    spec_fmod_w  = coeff_fmod_e[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod] @ spec_fmod_ew[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                     output_MC[mod_name][comp_name]['spec_lw'][i_loop, :] = spec_fmod_w
                     output_MC[mod_name]['sum']['spec_lw'][i_loop, :] += spec_fmod_w
                     output_MC['tot']['fmod']['spec_lw'][i_loop, :] += spec_fmod_w
                     if self.have_phot:
-                        sed_fmod_ew = self.model_dict_M[mod_name]['sed_func'](sed_wave_w, best_par_lp[i_loop, fp0:fp1], conv_nbin=None)
-                        sed_fmod_w  = best_coeff_le[i_loop, fe0:fe1][i_e0:i_e1] @ sed_fmod_ew[i_e0:i_e1]
+                        sed_fmod_w  = coeff_fmod_e[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod] @ sed_fmod_ew[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                         output_MC[mod_name][comp_name]['sed_lw'][i_loop, :] = sed_fmod_w
                         output_MC[mod_name]['sum']['sed_lw'][i_loop, :] += sed_fmod_w
                         output_MC['tot']['fmod']['sed_lw'][i_loop, :] += sed_fmod_w

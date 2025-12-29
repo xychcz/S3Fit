@@ -14,11 +14,13 @@ from ..auxiliaries.basic_model_functions import single_line
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
-    def __init__(self, fframe=None, config=None, use_pyneb=False, 
+    def __init__(self, mod_name=None, fframe=None, 
+                 config=None, use_pyneb=False, 
                  v0_redshift=0, R_inst_rw=None, 
                  w_min=None, w_max=None, mask_valid_rw=None, 
                  verbose=True, log_message=[]):
 
+        self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
         self.use_pyneb = use_pyneb
@@ -906,16 +908,16 @@ class LineFrame(object):
         self.num_coeffs = self.mask_free_cn.sum()
         
         # set component name and enable mask for each free line; _e denotes free or coeffs
-        self.component_e = [] # np.zeros((self.num_coeffs), dtype='<U16')
+        self.comp_name_e = [] # np.zeros((self.num_coeffs), dtype='<U16')
         for i_comp in range(self.num_comps):
             for i_line in range(self.num_lines):
                 if self.mask_free_cn[i_comp, i_line]:
-                    self.component_e.append(self.cframe.info_c[i_comp]['comp_name'])
-        self.component_e = np.array(self.component_e)
+                    self.comp_name_e.append(self.comp_name_c[i_comp])
+        self.comp_name_e = np.array(self.comp_name_e)
 
         # mask free absorption lines
         absorption_comp_names = np.array([d['comp_name'] for d in self.cframe.info_c if d['sign'] == 'absorption'])
-        self.mask_absorption_e = np.isin(self.component_e, absorption_comp_names)
+        self.mask_absorption_e = np.isin(self.comp_name_e, absorption_comp_names)
 
         if self.verbose:
             print_log(f"Free lines in each components: ", self.log_message)
@@ -962,12 +964,9 @@ class LineFrame(object):
 
         return models_scomp
     
-    def models_unitnorm_obsframe(self, obs_wave_w, par_p, if_pars_flat=True, mask_lite_e=None, conv_nbin=None):
+    def models_unitnorm_obsframe(self, obs_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
-        if if_pars_flat: 
-            par_cp = self.cframe.flat_to_arr(par_p)
-        else:
-            par_cp = copy(par_p)
+        par_cp = self.cframe.reshape_by_comp(par_p)
 
         obs_flux_mcomp_ew = None
         for i_comp in range(self.num_comps):
@@ -988,11 +987,11 @@ class LineFrame(object):
     def mask_lite_with_comps(self, enabled_comps=None, disabled_comps=None):
         if enabled_comps is not None:
             self.enabled_e = np.zeros((self.num_coeffs), dtype='bool')
-            for comp in enabled_comps: self.enabled_e[self.component_e == comp] = True
+            for comp_name in enabled_comps: self.enabled_e[self.comp_name_e == comp_name] = True
         else:
             self.enabled_e = np.ones((self.num_coeffs), dtype='bool')
             if disabled_comps is not None:
-                for comp in disabled_comps: self.enabled_e[self.component_e == comp] = False
+                for comp_name in disabled_comps: self.enabled_e[self.comp_name_e == comp_name] = False
         return self.enabled_e
 
     ##########################################################################
@@ -1020,25 +1019,25 @@ class LineFrame(object):
             best_par_lp[:, self.fframe.par_name_p == 'voff'] -= self.fframe.ref_voff_l[0]
             best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
-        mod = 'line'
-        fp0, fp1, fe0, fe1 = self.fframe.search_model_index(mod, self.fframe.full_model_type)
-        num_loops = self.fframe.num_loops
+        self.num_loops = self.fframe.num_loops # for print_results
+        self.spec_flux_scale = self.fframe.spec_flux_scale # for print_results
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
         par_name_cp = self.cframe.par_name_cp
         num_pars_per_comp = self.cframe.num_pars_c_max
 
+        i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_model_type)
         # extract parameters of emission lines
-        par_lcp = best_par_lp[:, fp0:fp1].reshape(num_loops, num_comps, num_pars_per_comp)
+        par_lcp = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod].reshape(self.num_loops, num_comps, num_pars_per_comp)
         # extract coefficients of all free lines to matrix
-        coeff_lcn = np.zeros((num_loops, num_comps, self.num_lines))
-        coeff_lcn[:, self.mask_free_cn] = best_coeff_le[:, fe0:fe1]
+        coeff_lcn = np.zeros((self.num_loops, num_comps, self.num_lines))
+        coeff_lcn[:, self.mask_free_cn] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
         # update lineratio_cn to calculate tied lines
         for i_comp in range(num_comps):
             list_linked = np.where(np.isin(self.linename_n, [*self.linelink_dict_cn[i_comp]]))[0]
             for i_line in list_linked:
                 i_main = np.where(self.linename_n == self.linelink_name_cn[i_comp,i_line])[0][0]
-                for i_loop in range(num_loops):
+                for i_loop in range(self.num_loops):
                     Av        = par_lcp[i_loop, i_comp, self.cframe.par_index_cP[i_comp]['Av']]
                     log_e_den = par_lcp[i_loop, i_comp, self.cframe.par_index_cP[i_comp]['log_e_den']]
                     log_e_tem = par_lcp[i_loop, i_comp, self.cframe.par_index_cP[i_comp]['log_e_tem']]
@@ -1053,7 +1052,7 @@ class LineFrame(object):
         output_C['sum'] = {}
         output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
         for line_name in self.linename_n:
-            output_C['sum']['value_Vl'][str(line_name)] = np.zeros(num_loops, dtype='float')
+            output_C['sum']['value_Vl'][str(line_name)] = np.zeros(self.num_loops, dtype='float')
 
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[str(comp_name)] = {} # init results for each comp
@@ -1077,8 +1076,6 @@ class LineFrame(object):
         ############################################################
         
         self.output_C = output_C # save to model frame
-        self.num_loops = num_loops # for print_results
-        self.spec_flux_scale = self.fframe.spec_flux_scale # for print_results
 
         if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
         if if_return_results: return output_C
@@ -1105,7 +1102,7 @@ class LineFrame(object):
         print_log(tbl_border, log)
 
         # set the print name for each value
-        value_names = [value_name for comp in self.output_C for value_name in [*self.output_C[comp]['value_Vl']]]
+        value_names = [value_name for comp_name in self.output_C for value_name in [*self.output_C[comp_name]['value_Vl']]]
         value_names = list(dict.fromkeys(value_names)) # remove duplicates
         print_names = {}
         for value_name in value_names: print_names[value_name] = value_name
