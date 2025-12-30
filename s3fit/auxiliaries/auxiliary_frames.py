@@ -10,60 +10,100 @@ from copy import deepcopy as copy
 import astropy.units as u
 import astropy.constants as const
 
-from .auxiliary_functions import casefold
+from .auxiliary_functions import casefold, var_name
 
 class ConfigFrame(object):
     def __init__(self, config_C):
         self.config_C = config_C
-        self.comp_name_c = np.array([*config_C])
+        self.comp_name_c = [*config_C]
         self.num_comps = len(config_C)
-        self.num_pars_c = [len(config_C[comp_name]['pars']) for comp_name in config_C]
-        self.num_pars_c_max = max(self.num_pars_c)
-        self.num_pars_c_tot = self.num_pars_c_max * self.num_comps # total number of pars of all comps (including placeholders)
-        self.num_pars = self.num_pars_c_tot
+        # self.num_pars_c = [len(config_C[comp_name]['pars']) for comp_name in config_C]
+        # self.num_pars_c_max = max(self.num_pars_c)
+        # self.num_pars_c_tot = self.num_pars_c_max * self.num_comps # total number of pars of all comps (including placeholders)
+        # self.num_pars = self.num_pars_c_tot
+        # self.par_min_cp = np.full((self.num_comps, self.num_pars_c_max), -9999, dtype='float')
+        # self.par_max_cp = np.full((self.num_comps, self.num_pars_c_max), +9999, dtype='float')
+        # self.par_tie_cp = np.full((self.num_comps, self.num_pars_c_max), 'None', dtype='<U256')
+        # self.par_name_cp = np.array([['Empty_'+str(i_par) for i_par in range(self.num_pars_c_max)] for i_comp in range(self.num_comps)]).astype('<U256')
 
-        self.par_min_cp = np.full((self.num_comps, self.num_pars_c_max), -9999, dtype='float')
-        self.par_max_cp = np.full((self.num_comps, self.num_pars_c_max), +9999, dtype='float')
-        self.par_tie_cp = np.full((self.num_comps, self.num_pars_c_max), 'None', dtype='<U256')
-        self.par_name_cp = np.array([['Empty_'+str(i_par) for i_par in range(self.num_pars_c_max)] for i_comp in range(self.num_comps)]).astype('<U256')
-        self.par_index_cP = [] # index of each par in each comp
+        self.num_pars_c = []
+        self.par_min_cp = []
+        self.par_max_cp = []
+        self.par_tie_cp = []
+        self.par_name_cp = []
+        self.par_index_cP = [] # index of each par_name in each comp
         self.info_c = [] 
 
-        for i_comp in range(self.num_comps):
-            input_pars = config_C[self.comp_name_c[i_comp]]['pars']
+        for (i_comp, comp_name) in enumerate(self.comp_name_c):
+            input_pars = config_C[comp_name]['pars']
+            self.num_pars_c.append(len(input_pars))
+
+            par_min_p = []
+            par_max_p = []
+            par_tie_p = []
+            par_name_p = []
             par_index_P = {}
-            for i_par in range(self.num_pars_c[i_comp]):
+
+            for i_par in range(len(input_pars)):
                 if isinstance(input_pars, list):
                     par_pk = input_pars
-                    self.par_min_cp[i_comp,i_par] = par_pk[i_par][0]
-                    self.par_max_cp[i_comp,i_par] = par_pk[i_par][1]
-                    self.par_tie_cp[i_comp,i_par] = par_pk[i_par][2]
+                    par_min_p.append(par_pk[i_par][0])
+                    par_max_p.append(par_pk[i_par][1])
+                    par_tie_p.append(par_pk[i_par][2])
                 elif isinstance(input_pars, dict):
                     par_name = [*input_pars][i_par]
+                    par_name_p.append(par_name)
                     par_index_P[par_name] = i_par
-                    self.par_name_cp[i_comp,i_par] = par_name
                     if isinstance(input_pars[par_name], list):
                         par_Pk = input_pars
-                        self.par_min_cp[i_comp,i_par] = par_Pk[par_name][0]
-                        self.par_max_cp[i_comp,i_par] = par_Pk[par_name][1]
-                        self.par_tie_cp[i_comp,i_par] = par_Pk[par_name][2]
+                        par_min_p.append(par_Pk[par_name][0])
+                        par_max_p.append(par_Pk[par_name][1])
+                        par_tie_p.append(par_Pk[par_name][2])
                     elif isinstance(input_pars[par_name], dict):
                         par_PK = input_pars
-                        self.par_min_cp[i_comp,i_par] = par_PK[par_name]['min']
-                        self.par_max_cp[i_comp,i_par] = par_PK[par_name]['max']
-                        self.par_tie_cp[i_comp,i_par] = par_PK[par_name]['tie']
+                        par_min_p.append(par_PK[par_name]['min'])
+                        par_max_p.append(par_PK[par_name]['max'])
+                        par_tie_p.append(par_PK[par_name]['tie'])
+
+            self.par_min_cp.append(par_min_p)
+            self.par_max_cp.append(par_max_p)
+            self.par_tie_cp.append(par_tie_p)
+            self.par_name_cp.append(par_name_p)
             self.par_index_cP.append(par_index_P)
+
+            # for i_par in range(self.num_pars_c[i_comp]):
+            #     if isinstance(input_pars, list):
+            #         par_pk = input_pars
+            #         self.par_min_cp[i_comp,i_par] = par_pk[i_par][0]
+            #         self.par_max_cp[i_comp,i_par] = par_pk[i_par][1]
+            #         self.par_tie_cp[i_comp,i_par] = par_pk[i_par][2]
+            #     elif isinstance(input_pars, dict):
+            #         par_name = [*input_pars][i_par]
+            #         par_index_P[par_name] = i_par
+            #         self.par_name_cp[i_comp,i_par] = par_name
+            #         if isinstance(input_pars[par_name], list):
+            #             par_Pk = input_pars
+            #             self.par_min_cp[i_comp,i_par] = par_Pk[par_name][0]
+            #             self.par_max_cp[i_comp,i_par] = par_Pk[par_name][1]
+            #             self.par_tie_cp[i_comp,i_par] = par_Pk[par_name][2]
+            #         elif isinstance(input_pars[par_name], dict):
+            #             par_PK = input_pars
+            #             self.par_min_cp[i_comp,i_par] = par_PK[par_name]['min']
+            #             self.par_max_cp[i_comp,i_par] = par_PK[par_name]['max']
+            #             self.par_tie_cp[i_comp,i_par] = par_PK[par_name]['tie']
+            # self.par_index_cP.append(par_index_P)
                     
-            self.info_c.append(config_C[self.comp_name_c[i_comp]]['info'])
+            self.info_c.append(config_C[comp_name]['info'])
+            self.info_c[i_comp]['comp_name'] = comp_name
 
             # group used model elements in an array
             for item in ['mod_used', 'line_used']:
-                if item in [*self.info_c[i_comp]]: 
+                if item in self.info_c[i_comp]: 
                     if isinstance(self.info_c[i_comp][item], str): self.info_c[i_comp][item] = [self.info_c[i_comp][item]]
                     self.info_c[i_comp][item] = np.array(self.info_c[i_comp][item])
 
             # rename sign for absorption/emission
-            if 'sign' in [*self.info_c[i_comp]]:
+            if 'sign' in self.info_c[i_comp]:
                 if casefold(self.info_c[i_comp]['sign']) in ['absorption', 'negative', '-']:
                     self.info_c[i_comp]['sign'] = 'absorption'
                 if casefold(self.info_c[i_comp]['sign']) in ['emission', 'positive', '+']:
@@ -71,14 +111,129 @@ class ConfigFrame(object):
             else:
                 self.info_c[i_comp]['sign'] = 'emission' # default
 
-            self.info_c[i_comp]['comp_name'] = self.comp_name_c[i_comp]
-        # self.info_c = np.array(self.info_c)
+        self.num_pars_tot = sum(self.num_pars_c)
+        self.num_pars = self.num_pars_tot
 
-    def reshape_by_comp(self, array_x):
-        # _x can be 1) _p, for pars, where len(array_x)/self.num_comps = self.num_pars_c_max
-        # or 2) _e, for coeffs or elements, only if components have the same number of _e
-        array_cx = array_x.reshape(self.num_comps, int(len(array_x)/self.num_comps))
-        return array_cx
+    ###################################
+
+    # add the synchronized _C/_CP views of _c/_cp lists
+    # they can be callback, e.g., self.info_C (without '()') but cannot be modified directly
+    @property
+    def info_C(self):
+        return self.convert_c_to_C(self.info_c)
+    @property
+    def num_pars_C(self):
+        return self.convert_c_to_C(self.num_pars_c)
+    @property
+    def par_name_Cp(self):
+        return self.convert_c_to_C(self.par_name_cp)
+    @property
+    def par_index_CP(self):
+        return self.convert_c_to_C(self.par_index_cP)
+    @property
+    def par_min_CP(self):
+        return self.convert_c_to_C(self.convert_cp_to_cP(self.par_min_cp))
+    @property
+    def par_max_CP(self):
+        return self.convert_c_to_C(self.convert_cp_to_cP(self.par_max_cp))
+    @property
+    def par_tie_CP(self):
+        return self.convert_c_to_C(self.convert_cp_to_cP(self.par_tie_cp))
+
+        # self.info_C = self.convert_c_to_C(self.info_c)
+        # self.num_pars_C = self.convert_c_to_C(self.num_pars_c)
+        # self.par_name_Cp = self.convert_c_to_C(self.par_name_cp)
+        # self.par_index_CP = self.convert_c_to_C(self.par_index_cP)
+
+        # self.par_min_CP = self.convert_c_to_C(self.convert_cp_to_cP(self.par_min_cp))
+        # self.par_max_CP = self.convert_c_to_C(self.convert_cp_to_cP(self.par_max_cp))
+        # self.par_tie_CP = self.convert_c_to_C(self.convert_cp_to_cP(self.par_tie_cp))
+
+    # add the synchronized flattened _p views of _cp lists
+    @property
+    def par_min_p(self):
+        return self.flatten_in_comp(self.par_min_cp)
+    @property
+    def par_max_p(self):
+        return self.flatten_in_comp(self.par_max_cp)
+    @property
+    def par_tie_p(self):
+        return self.flatten_in_comp(self.par_tie_cp)
+    @property
+    def par_name_p(self):
+        return self.flatten_in_comp(self.par_name_cp)
+    @property
+    def comp_name_p(self):
+        return [comp_name for comp_name in self.par_name_Cp for par_name in self.par_name_Cp[comp_name]]
+
+    ###################################
+
+    def convert_c_to_C(self, list_c):
+        dict_C = {comp_name:x for (comp_name, x) in zip(self.comp_name_c, list_c)}
+        return dict_C
+
+    def convert_C_to_c(self, dict_C):
+        list_c = [dict_C[comp_name] for comp_name in dict_C]
+        return list_c
+
+    def convert_cp_to_cP(self, input_cp):
+        if isinstance(input_cp, list):
+            list_cp = copy(input_cp)
+            list_cP = copy(input_cp)
+            for (i_comp, comp_name) in enumerate(self.comp_name_c):
+                list_cP[i_comp] = {par_name:x for (par_name, x) in zip(self.par_name_cp[i_comp], list_cp[i_comp])}
+            return list_cP
+        elif isinstance(input_cp, dict):
+            dict_Cp = copy(input_cp)
+            dict_CP = copy(input_cp)
+            for (i_comp, comp_name) in enumerate(self.comp_name_c):
+                dict_CP[comp_name] = {par_name:x for (par_name, x) in zip(self.par_name_cp[i_comp], dict_Cp[comp_name])}
+            return dict_CP
+
+    def convert_cP_to_cp(self, input_cP):
+        if isinstance(input_cP, list):
+            list_cP = copy(input_cP)
+            list_cp = copy(input_cP)
+            for (i_comp, comp_name) in enumerate(self.comp_name_c):
+                list_cp[i_comp] = [list_cP[i_comp][par_name] for par_name in list_cP[i_comp]]
+            return list_cp
+        elif isinstance(input_cP, dict):
+            dict_CP = copy(input_cP)
+            dict_Cp = copy(input_cP)
+            for (i_comp, comp_name) in enumerate(self.comp_name_c):
+                dict_Cp[comp_name] = [dict_CP[comp_name][par_name] for par_name in dict_CP[comp_name]]
+            return dict_Cp
+
+    def flatten_in_comp(self, input_cx):
+        if isinstance(input_cx, list): 
+            list_cx = copy(input_cx)
+            list_flat_x = [x for list_x in list_cx for x in list_x]
+        elif isinstance(input_cx, dict): 
+            dict_Cx = copy(input_cx)
+            list_flat_x = [dict_Cx[comp_name][x] if isinstance(dict_Cx[comp_name], dict) else x for comp_name in dict_Cx for x in dict_Cx[comp_name]]
+        return list_flat_x
+
+    def reshape_by_comp(self, list_flat_x, num_x_c=None, num_x_C=None, ret='list_c'):
+        if (num_x_c is None) and (num_x_C is not None): num_x_c = self.convert_C_to_c(num_x_C)
+
+        list_cx = []
+        i_x_0 = 0
+        i_x_1 = 0
+        for (i_comp, comp_name) in enumerate(self.comp_name_c):
+            i_x_0 += 0 if i_comp == 0 else num_x_c[i_comp-1]
+            i_x_1 += num_x_c[i_comp]
+            list_cx.append(list_flat_x[i_x_0:i_x_1])
+
+        if ret in ['list_c', 'list', '_c']:
+            return list_cx
+        elif ret in ['dict_C', 'dict', '_C']:
+            return self.convert_c_to_C(list_cx)
+
+    # def reshape_by_comp(self, array_x):        
+    #     # _x can be 1) _p, for pars, where len(array_x)/self.num_comps = self.num_pars_c_max
+    #     # or 2) _e, for coeffs or elements, only if components have the same number of _e
+    #     array_cx = array_x.reshape(self.num_comps, int(len(array_x)/self.num_comps))
+    #     return array_cx
 
 ###################################################################################################
 ###################################################################################################

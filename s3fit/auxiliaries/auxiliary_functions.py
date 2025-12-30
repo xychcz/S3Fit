@@ -43,6 +43,9 @@ def casefold(x):
     elif isinstance(x, (int, float)):
         return x
     raise ValueError((f"casefold() only supports string, list, or 1-d np.ndarray."))
+
+def var_name(var):
+    return f"{var=}".split('=')[0]
         
 # convert roman numbers
 def roman_to_int(roman_num):

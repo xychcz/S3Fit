@@ -42,7 +42,7 @@ Examples of the usage of S<sup>3</sup>Fit are provided in
 
 ## Installation
 
-You can install S<sup>3</sup>Fit with [pip](https://pypi.org/project/s3fit/):
+You can install S<sup>3</sup>Fit with [pip](https://pypi.org/project/s3fit/) (or any pip-compatible installer):
 ```
 pip install s3fit
 ```

@@ -39,7 +39,7 @@ class LineFrame(object):
         ############################################################
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cP[0]) == 0:
-            self.cframe.par_name_cp = np.array([['voff', 'fwhm', 'Av', 'log_e_den', 'log_e_tem'] for i_comp in range(self.num_comps)])
+            self.cframe.par_name_cp  = [['voff', 'fwhm', 'Av', 'log_e_den', 'log_e_tem'] for i_comp in range(self.num_comps)]
             self.cframe.par_index_cP = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_den': 3, 'log_e_tem': 4} for i_comp in range(self.num_comps)]
         self.tie_pair = self.tie_line_fluxes
         self.release_pair = self.untie_line_fluxes
@@ -47,11 +47,11 @@ class LineFrame(object):
 
         # set default info if not specified in config
         for i_comp in range(self.num_comps):
-            if not ('line_used'  in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
-            if not ('line_ties'  in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['line_ties'] = ['default']
-            if not ('H_hi_order' in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['H_hi_order'] = False
-            if not ('sign'       in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['sign'] = 'emission'
-            if not ('profile'    in [*self.cframe.info_c[i_comp]]) : self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
+            if not ('line_used'  in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
+            if not ('line_ties'  in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['line_ties'] = ['default']
+            if not ('H_hi_order' in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['H_hi_order'] = False
+            if not ('sign'       in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['sign'] = 'emission'
+            if not ('profile'    in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
             # group line info to a list
             if isinstance(self.cframe.info_c[i_comp]['line_used'], str): self.cframe.info_c[i_comp]['line_used'] = [self.cframe.info_c[i_comp]['line_used']]
             self.cframe.info_c[i_comp]['line_used'] = np.array(self.cframe.info_c[i_comp]['line_used'])
@@ -70,11 +70,11 @@ class LineFrame(object):
         self.plot_style_C['sum'] = {'color': 'C2', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
         i_red, i_green, i_purple = 0, 0, 0
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
-            self.plot_style_C[str(comp_name)] = {'color': 'None', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 0.75}
+            self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 0.75}
             i_par_voff = self.cframe.par_index_cP[i_comp]['voff']
             i_par_fwhm = self.cframe.par_index_cP[i_comp]['fwhm']
-            voff_mid = 0.5 * (self.cframe.par_min_cp[i_comp, i_par_voff] + self.cframe.par_max_cp[i_comp, i_par_voff])
-            fwhm_mid = 0.5 * (self.cframe.par_min_cp[i_comp, i_par_fwhm] + self.cframe.par_max_cp[i_comp, i_par_fwhm])
+            voff_mid = 0.5 * (self.cframe.par_min_cp[i_comp][i_par_voff] + self.cframe.par_max_cp[i_comp][i_par_voff])
+            fwhm_mid = 0.5 * (self.cframe.par_min_cp[i_comp][i_par_fwhm] + self.cframe.par_max_cp[i_comp][i_par_fwhm])
             if abs(voff_mid) < 500:
                 if fwhm_mid < 1500: # narrow line
                     self.plot_style_C[comp_name]['alpha'] = 1
@@ -462,7 +462,7 @@ class LineFrame(object):
 
         if name in self.H_levels_dict:
             element = 'H'; notation = 1
-            if not (element+str(notation) in [*self.pyneblib['RecAtom']]):
+            if not (element+str(notation) in self.pyneblib['RecAtom']):
                 atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
                 dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                 wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -484,7 +484,7 @@ class LineFrame(object):
                     element, notation = ion.split(' ')
             notation = roman_to_int(notation)
             if element+str(notation) in ['H1', 'He2']:
-                if not (element+str(notation) in [*self.pyneblib['RecAtom']]):
+                if not (element+str(notation) in self.pyneblib['RecAtom']):
                     atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -501,7 +501,7 @@ class LineFrame(object):
                         return None, None, None
                     else:
                         return None, None
-                if not (element+str(notation) in [*self.pyneblib['Atom']]):
+                if not (element+str(notation) in self.pyneblib['Atom']):
                     atomdata = self.pyneb.Atom(element, notation) # , noExtrapol=True
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -685,9 +685,9 @@ class LineFrame(object):
             for i_comp in range(self.num_comps):
                 i_par_voff = self.cframe.par_index_cP[i_comp]['voff']
                 i_par_fwhm = self.cframe.par_index_cP[i_comp]['fwhm']
-                voff_min = self.cframe.par_min_cp[i_comp,i_par_voff] if ~np.isnan(self.cframe.par_min_cp[i_comp,i_par_voff]) else np.nanmin(self.cframe.par_min_cp[:,i_par_voff])
-                voff_max = self.cframe.par_max_cp[i_comp,i_par_voff] if ~np.isnan(self.cframe.par_max_cp[i_comp,i_par_voff]) else np.nanmax(self.cframe.par_max_cp[:,i_par_voff])
-                fwhm_max = self.cframe.par_max_cp[i_comp,i_par_fwhm] if ~np.isnan(self.cframe.par_max_cp[i_comp,i_par_fwhm]) else np.nanmax(self.cframe.par_max_cp[:,i_par_fwhm])
+                voff_min = self.cframe.par_min_cp[i_comp][i_par_voff] if ~np.isnan(self.cframe.par_min_cp[i_comp][i_par_voff]) else -500
+                voff_max = self.cframe.par_max_cp[i_comp][i_par_voff] if ~np.isnan(self.cframe.par_max_cp[i_comp][i_par_voff]) else  500
+                fwhm_max = self.cframe.par_max_cp[i_comp][i_par_fwhm] if ~np.isnan(self.cframe.par_max_cp[i_comp][i_par_fwhm]) else 2000
                 # check exceptions for tied pars
                 for i_line in range(self.num_lines):
                     voff_w = (rest_wave_w/self.linerest_n[i_line]-1) * 299792.458
@@ -846,19 +846,19 @@ class LineFrame(object):
                             def func_ratio_dt(pars): return [np.interp(pars[0], pok14_log_e_dens, pok14_Rs)]
                             if self.verbose:
                                 print_log(f"    Line tying: [S II]:6718,6733 are tied with flux ratio from Proxauf et al.(2014) under the best-fit electron density, "+
-                                          f" for the components {self.cframe.comp_name_c[mask_sharetie_c]}.", self.log_message)
+                                          f" for the components {np.array(self.cframe.comp_name_c)[mask_sharetie_c]}.", self.log_message)
                         else:
                             if ratio is None:
                                 tmp = self.lineratio_n[i_tied] / self.lineratio_n[i_ref] * 1.0 # to avoid overwrite in following updating
                                 if self.verbose:
                                     print_log(f"    Line tying: {tied_name} is tied to {ref_name} with flux ratio, {tmp:.3f}, under electron density of 100 cm-3 and temperature of 10000 K, "+
-                                              f" for the components {self.cframe.comp_name_c[mask_sharetie_c]}.", self.log_message)
+                                              f" for the components {np.array(self.cframe.comp_name_c)[mask_sharetie_c]}.", self.log_message)
                             else:
                                 if isinstance(ratio, list): raise ValueError((f"Please input a single ratio for {tied_name}, not a list."))
                                 tmp = ratio * 1.0 # force to input value
                                 if self.verbose:
                                     print_log(f"    Line tying: {tied_name} is tied to {ref_name} with the user input flux ratio, {tmp}, "+
-                                              f" for the components {self.cframe.comp_name_c[mask_sharetie_c]}.", self.log_message)
+                                              f" for the components {np.array(self.cframe.comp_name_c)[mask_sharetie_c]}.", self.log_message)
                             def func_ratio_dt(pars, ret=tmp): return [ret]
                 
                     for j_comp in range(self.num_comps):
@@ -867,8 +867,8 @@ class LineFrame(object):
                             self.linelink_dict_cn[j_comp][tied_name] = {'ref_name': ref_name, 'func_ratio_dt': func_ratio_dt}
 
                 if use_pyneb & self.verbose:
-                    if len(tied_names)  > 1: print_log(f"    {tied_names} --> {ref_name} for the components {self.cframe.comp_name_c[mask_sharetie_c]}.", self.log_message)
-                    if len(tied_names) == 1: print_log(f"    {tied_names[0]} --> {ref_name} for the components {self.cframe.comp_name_c[mask_sharetie_c]}.", self.log_message)
+                    if len(tied_names)  > 1: print_log(f"    {tied_names} --> {ref_name} for the components {np.array(self.cframe.comp_name_c)[mask_sharetie_c]}.", self.log_message)
+                    if len(tied_names) == 1: print_log(f"    {tied_names[0]} --> {ref_name} for the components {np.array(self.cframe.comp_name_c)[mask_sharetie_c]}.", self.log_message)
 
     def untie_line_fluxes(self, tied_names, components=None):
         if not isinstance(tied_names, list): tied_names = [tied_names]
@@ -880,7 +880,7 @@ class LineFrame(object):
         for i_comp in range(self.num_comps):
             if self.cframe.comp_name_c[i_comp] in components: 
                 for tied_name in tied_names:
-                    if tied_name in [*self.linelink_dict_cn[i_comp]]:
+                    if tied_name in self.linelink_dict_cn[i_comp]:
                         i_tied = np.where(self.linename_n == tied_name)[0][0]                    
                         self.linelink_name_cn[i_comp,i_tied] = 'free'
                         self.linelink_dict_cn[i_comp].pop(tied_name)
@@ -930,11 +930,11 @@ class LineFrame(object):
     ##########################################################################
 
     def models_single_comp(self, obs_wave_w, par_cp, i_comp):
-        voff      = par_cp[i_comp, self.cframe.par_index_cP[i_comp]['voff']]
-        fwhm      = par_cp[i_comp, self.cframe.par_index_cP[i_comp]['fwhm']]
-        Av        = par_cp[i_comp, self.cframe.par_index_cP[i_comp]['Av']]
-        log_e_den = par_cp[i_comp, self.cframe.par_index_cP[i_comp]['log_e_den']]
-        log_e_tem = par_cp[i_comp, self.cframe.par_index_cP[i_comp]['log_e_tem']]
+        voff      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
+        fwhm      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
+        Av        = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['Av']]
+        log_e_den = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_den']]
+        log_e_tem = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
 
         # update lineratio_cn
         self.update_lineratio(Av, log_e_den, log_e_tem, i_comp)
@@ -966,7 +966,7 @@ class LineFrame(object):
     
     def models_unitnorm_obsframe(self, obs_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
-        par_cp = self.cframe.reshape_by_comp(par_p)
+        par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
 
         obs_flux_mcomp_ew = None
         for i_comp in range(self.num_comps):
@@ -1001,9 +1001,9 @@ class LineFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if 'print_results'  in [*kwargs]: if_print_results = kwargs['print_results']
-        if 'return_results' in [*kwargs]: if_return_results = kwargs['return_results']
-        if 'show_average'   in [*kwargs]: if_show_average = kwargs['show_average']
+        if 'print_results'  in kwargs: if_print_results = kwargs['print_results']
+        if 'return_results' in kwargs: if_return_results = kwargs['return_results']
+        if 'show_average'   in kwargs: if_show_average = kwargs['show_average']
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
@@ -1024,14 +1024,37 @@ class LineFrame(object):
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
         par_name_cp = self.cframe.par_name_cp
-        num_pars_per_comp = self.cframe.num_pars_c_max
 
+        # list the properties to be output
+        value_names_additive = self.linename_n.tolist()
+        value_names_C = {}
+        for (i_comp, comp_name) in enumerate(comp_name_c): value_names_C[comp_name] = value_names_additive
+
+        # format of results
+        # output_C['comp']['par_lp'][i_l,i_p]: parameters
+        # output_C['comp']['coeff_le'][i_l,i_e]: coefficients
+        # output_C['comp']['value_Vl']['name_l'][i_l]: calculated values
+        output_C = {}
+        for (i_comp, comp_name) in enumerate(comp_name_c):
+            output_C[comp_name] = {} # init results for each comp
+            output_C[comp_name]['value_Vl'] = {}
+            for val_name in par_name_cp[i_comp] + value_names_C[comp_name]:
+                output_C[comp_name]['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
+        output_C['sum'] = {}
+        output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
+        for val_name in value_names_additive:
+            output_C['sum']['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
+
+        # locate the results of the model in the full fitting results
         i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_model_type)
-        # extract parameters of emission lines
-        par_lcp = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod].reshape(self.num_loops, num_comps, num_pars_per_comp)
+
+        # extract parameters of emission lines; all comp have the same num of pars
+        par_lcp = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod].reshape(self.num_loops, num_comps, self.cframe.num_pars_c[0])
+
         # extract coefficients of all free lines to matrix
         coeff_lcn = np.zeros((self.num_loops, num_comps, self.num_lines))
         coeff_lcn[:, self.mask_free_cn] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
+
         # update lineratio_cn to calculate tied lines
         for i_comp in range(num_comps):
             list_linked = np.where(np.isin(self.linename_n, [*self.linelink_dict_cn[i_comp]]))[0]
@@ -1044,29 +1067,17 @@ class LineFrame(object):
                     self.update_lineratio(Av, log_e_den, log_e_tem, i_comp)
                     coeff_lcn[i_loop, i_comp, i_line] = coeff_lcn[i_loop, i_comp, i_main] * self.lineratio_cn[i_comp, i_line] * self.mask_valid_cn[i_comp, i_line]
 
-        # format of results
-        # output_C['comp']['par_lp'][i_l,i_p]: parameters
-        # output_C['comp']['coeff_le'][i_l,i_n]: coefficients of all emission lines (not only free lines)
-        # output_C['comp']['value_Vl']['name_l'][i_l]: calculated values
-        output_C = {}
-        output_C['sum'] = {}
-        output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
-        for line_name in self.linename_n:
-            output_C['sum']['value_Vl'][str(line_name)] = np.zeros(self.num_loops, dtype='float')
-
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            output_C[str(comp_name)] = {} # init results for each comp
             output_C[comp_name]['par_lp']   = par_lcp[:, i_comp, :]
             output_C[comp_name]['coeff_le'] = coeff_lcn[:, i_comp, :]
-            output_C[comp_name]['value_Vl'] = {}
             for (i_par, par_name) in enumerate(par_name_cp[i_comp]):
-                output_C[comp_name]['value_Vl'][str(par_name)] = par_lcp[:, i_comp, i_par]
-            for (i_line, line_name) in enumerate(self.linename_n):
+                output_C[comp_name]['value_Vl'][par_name] = par_lcp[:, i_comp, i_par]
+            for (i_line, line_name) in enumerate(self.linename_n.tolist()):
                 flux_sign = -1.0 if self.cframe.info_c[i_comp]['sign'] == 'absorption' else 1.0
-                output_C[comp_name]['value_Vl'][str(line_name)] = coeff_lcn[:, i_comp, i_line] * flux_sign
+                output_C[comp_name]['value_Vl'][line_name] = coeff_lcn[:, i_comp, i_line] * flux_sign
                 output_C['sum']['value_Vl'][line_name] += coeff_lcn[:, i_comp, i_line] * flux_sign
 
-        output_C['sum'] = output_C.pop('sum') # move sum to the end
+        # output_C['sum'] = output_C.pop('sum') # move sum to the end
 
         ############################################################
         # keep aliases for output in old version <= 2.2.4
@@ -1102,7 +1113,7 @@ class LineFrame(object):
         print_log(tbl_border, log)
 
         # set the print name for each value
-        value_names = [value_name for comp_name in self.output_C for value_name in [*self.output_C[comp_name]['value_Vl']]]
+        value_names = [value_name for comp_name in self.output_C for value_name in self.output_C[comp_name]['value_Vl']]
         value_names = list(dict.fromkeys(value_names)) # remove duplicates
         print_names = {}
         for value_name in value_names: print_names[value_name] = value_name
