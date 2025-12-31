@@ -168,7 +168,7 @@ class FitFrame(object):
 
         # load model configuration
         self.mod_config_M = copy(mod_config_M) # use copy to avoid changing the input config
-        # set wavelength and width (in AA) used to normalize model spectra
+        # set wavelength and width (in Angstrom) used to normalize model spectra
         self.norm_wave = norm_wave
         self.norm_width = norm_width
         # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument
@@ -300,7 +300,7 @@ class FitFrame(object):
         if len(self.spec_R_inst_w) == len(self.spec_wave_w):
             self.spec['R_inst_rw'] = np.vstack((self.spec['wave_w'], self.spec_R_inst_w[mask_keep_w]))
         else:
-            print_log(f"[Note] A single value of spectral resolution {self.spec_R_inst_w[1]:.3f} is given at {self.spec_R_inst_w[0]:.3f}AA.", 
+            print_log(f"[Note] A single value of spectral resolution {self.spec_R_inst_w[1]:.3f} is given at {self.spec_R_inst_w[0]:.3f}Å.", 
                       self.log_message, verbose)
             print_log(f"[Note] Assume a linear wavelength-dependency of spectral resolution in the fitting.", self.log_message, verbose)
             lin_R_inst_w = self.spec['wave_w'] / self.spec_R_inst_w[0] * self.spec_R_inst_w[1]
@@ -316,7 +316,7 @@ class FitFrame(object):
         self.spec_wmin = self.spec['wave_w'].min() / (1+self.v0_redshift) / (1+voff_tol/299792.458) * (1-dw_pad_per_w) #- 100
         self.spec_wmax = self.spec['wave_w'].max() / (1+self.v0_redshift) / (1-voff_tol/299792.458) * (1+dw_pad_per_w) #+ 100
         self.spec_wmin = np.maximum(self.spec_wmin, 912) # set lower limit of wavelength to 912A
-        print_log(f"Spectral fitting will be performed in wavelength range (rest frame, AA): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}", self.log_message, verbose)
+        print_log(f"Spectral fitting will be performed in wavelength range (rest frame, Å): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}", self.log_message, verbose)
         print_log(f"[Note] The wavelength range is extended for tolerances of redshift of {self.v0_redshift}+-{voff_tol/299792.458:.4f} (+-{voff_tol} km/s) "+
                   f"and convolution/dispersion FWHM of max {fwhm_tol} km/s.", self.log_message, verbose)
 
@@ -324,7 +324,7 @@ class FitFrame(object):
         if (self.norm_wave < self.spec_wmin) | (self.norm_wave > self.spec_wmax):
             med_wave = np.median(self.spec['wave_w'][self.spec['mask_valid_w']]) / (1+self.v0_redshift)
             med_wave = round(med_wave/100)*100
-            print_log(f"[WARNING] The input normalization wavelength (rest frame, AA) {self.norm_wave} is out of the valid range, which is forced to the median valid wavelength {med_wave}.", 
+            print_log(f"[WARNING] The input normalization wavelength (rest frame, Å) {self.norm_wave} is out of the valid range, which is forced to the median valid wavelength {med_wave}.", 
                       self.log_message, verbose)
             self.norm_wave = med_wave
 
@@ -363,7 +363,7 @@ class FitFrame(object):
             # set fitting wavelength range (rest frame)
             self.sed_wmin = self.pframe.wave_w.min() / (1+self.v0_redshift)
             self.sed_wmax = self.pframe.wave_w.max() / (1+self.v0_redshift)
-            print_log(f"SED fitting is performed in wavelength range (rest frame, AA): from {self.sed_wmin:.3f} to {self.sed_wmax:.3f}", self.log_message, verbose) 
+            print_log(f"SED fitting is performed in wavelength range (rest frame, Å): from {self.sed_wmin:.3f} to {self.sed_wmax:.3f}", self.log_message, verbose) 
 
             if self.phot_calib_b is not None:
                 # corrent spectrum based on selected photometeic points
@@ -424,11 +424,11 @@ class FitFrame(object):
                                                                         config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
                                                                         v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                         w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                                        dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
+                                                                        dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 Angstrom
                                                                         verbose=False) 
                     self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
             ############################################################
-            if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['agn', 'quasar', 'qso', 'seyfert'] ): 
+            if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['agn', 'quasar', 'qso', 'seyfert', 'basic', 'simple', 'fundamental'] ): 
                 print_log(center_string('Initialize AGN UV/optical continuum models', 80), self.log_message)
                 from .model_frames.agn_frame import AGNFrame
                 self.mod_name_T['agn'] = mod_name
@@ -439,15 +439,15 @@ class FitFrame(object):
                                                                  w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
                                                                  Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                  log_message=self.log_message) 
-                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
+                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e7)
                 if self.have_phot:
                     self.mod_dict_M[mod_name]['sed_mod'] = AGNFrame(mod_name=mod_name, fframe=self, 
                                                                     config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
                                                                     v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                     w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                                    dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000AA
+                                                                    dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 Angstrom
                                                                     verbose=False) 
-                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
+                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
             ############################################################
             if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['torus'] ): 
                 print_log(center_string('Initialize AGN torus models', 80), self.log_message)
@@ -459,10 +459,10 @@ class FitFrame(object):
                                                                    v0_redshift=self.v0_redshift, 
                                                                    flux_scale=self.spec_flux_scale, 
                                                                    log_message=self.log_message) 
-                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 1e4) & (self.spec_wmin < 1e6)
+                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 1e4) & (self.spec_wmin < 1e7)
                 if self.have_phot:
                     self.mod_dict_M[mod_name]['sed_mod'] = self.mod_dict_M[mod_name]['spec_mod'] # just copy
-                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e6)
+                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e7)
             ############################################################
             if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['line'] ): 
                 print_log(center_string('Initialize line models', 80), self.log_message)
@@ -475,10 +475,10 @@ class FitFrame(object):
                                                                   v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                                   w_min=self.spec_wmin, w_max=self.spec_wmax, mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']], 
                                                                   log_message=self.log_message) 
-                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5) # set range from Lyman break to 10 micron
+                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e7) 
                 if self.have_phot:
                     self.mod_dict_M[mod_name]['sed_mod'] = self.mod_dict_M[mod_name]['spec_mod'] # just copy, only fit lines in spectral wavelength range
-                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
+                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
             ############################################################
 
         print_log(center_string('Model summary', 80), self.log_message)
@@ -544,9 +544,9 @@ class FitFrame(object):
                 raise ValueError((f"Please input the reference of systemic redshift, e.g., rev_v0_reference='model:component'; otherwise set if_rev_v0_redshift=False."))
             elif len(self.rev_v0_reference.split(':')) != 2:
                 raise ValueError((f"Please correct for the reference of systemic redshift with the format, rev_v0_reference='model:component'."))
-            elif not (self.rev_v0_reference.split(':')[0] in self.mod_dict_M):
+            elif self.rev_v0_reference.split(':')[0] not in self.mod_dict_M:
                 raise ValueError((f"The reference model of systemic redshift, '{self.rev_v0_reference.split(':')[0]}', is not available in the imported models: {[*self.mod_dict_M]}."))
-            elif not (self.rev_v0_reference.split(':')[1] in self.mod_dict_M[self.rev_v0_reference.split(':')[0]]['cframe'].comp_name_c):
+            elif self.rev_v0_reference.split(':')[1] not in self.mod_dict_M[self.rev_v0_reference.split(':')[0]]['cframe'].comp_name_c:
                 raise ValueError((f"The reference component of systemic redshift, '{self.rev_v0_reference.split(':')[1]}', is not available in the model: '{self.rev_v0_reference.split(':')[0]}'."))
 
     def get_mod_term(self, mod_name):
@@ -712,13 +712,16 @@ class FitFrame(object):
                     else:
                         raise ValueError((f"The format of the tying relation {single_tie} is not supported. Please follow the format: 'mod_name:comp_name:par_name(:+/x:fix)'."))
 
-                    if not (ref_mod_name in self.full_mod_type.split('+')):
+                    if ref_mod_name not in self.full_mod_type.split('+'):
                         raise ValueError((f"The reference model '{ref_mod_name}' in tying relation {single_tie} is not provided in {self.full_mod_type.split('+')}."))
-                    if not (ref_mod_name in mod_type.split('+')): continue # skip if the tied mod is not used in this fitting step
+                    if ref_mod_name not in mod_type.split('+'): 
+                        # skip if the tied mod is not used in this fitting step
+                        n_freepars += 1
+                        continue 
                     ref_mod_cframe = self.mod_dict_M[ref_mod_name]['cframe']
                     ref_i_pars_0_of_mod, ref_i_pars_1_of_mod = self.search_mod_index(ref_mod_name, mod_type)[0:2]
 
-                    if not (ref_comp_name in ref_mod_cframe.comp_name_c):
+                    if ref_comp_name not in ref_mod_cframe.comp_name_c:
                         raise ValueError((f"The reference component '{ref_comp_name}' in tying relation {single_tie} is not available in {ref_mod_cframe.comp_name_c}"))
                     ref_i_pars_0_of_comp_in_mod, ref_i_pars_1_of_comp_in_mod = self.search_comp_index(ref_comp_name, ref_mod_name)[0:2]
 
@@ -841,7 +844,7 @@ class FitFrame(object):
                 specphot_reverr_w = np.sqrt(specphot_ferr_w**2 + specphot_flux_w**2 * self.inst_calib_ratio**2)
             else:
                 # create smoothed spectrum
-                if not ('joint_fit_1' in self.output_S):
+                if 'joint_fit_1' not in self.output_S:
                     # if not fit yet
                     spec_flux_smoothed_w = convolve_var_width_fft(spec_wave_w[mask_valid_w], spec_flux_w[mask_valid_w], dv_fwhm_obj=self.inst_calib_smooth, num_bins=self.conv_nbin_max, reset_edge=False)
                     spec_flux_smoothed_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_flux_smoothed_w)
@@ -877,7 +880,7 @@ class FitFrame(object):
                 phot_fres_b = fres_w[-self.num_phot_band:]
 
             # perfrom low-pass filter to residuals 
-            window_length = int(50*(1+self.v0_redshift)/np.median(spec_wave_w[1:]-spec_wave_w[:-1])) # smooth high-frequency noise within rest 50AA
+            window_length = int(50*(1+self.v0_redshift)/np.median(spec_wave_w[1:]-spec_wave_w[:-1])) # smooth high-frequency noise within rest 50 Angstrom
             spec_fres_lowpass_w = savgol_filter(spec_fres_w[mask_valid_w], window_length=min(window_length, len(spec_fres_w[mask_valid_w])), polyorder=2)
             spec_fres_lowpass_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_fres_lowpass_w)
             spec_flux_intrinsic_w = spec_fmod_w + spec_fres_lowpass_w
@@ -1289,7 +1292,7 @@ class FitFrame(object):
         # save the best-fit results to the FitFrame class
         if save_best_fit:
             step_id = fit_message.split(':')[0]
-            if not (step_id in self.output_S):
+            if step_id not in self.output_S:
                 # copy the format template
                 self.output_S[step_id] = copy(self.output_S['empty_step'])
 
@@ -1481,7 +1484,7 @@ class FitFrame(object):
                     print_log(f"#### Emission lines are too faint, only {line_comps} is enabled.", self.log_message, self.if_print_steps)                    
                 # fix the parameters of disabled components (to reduce number of free parameters)
                 for i_comp in range(self.line.num_comps):
-                    if not (self.line.cframe.comp_name_c[i_comp] in line_comps):  self.line.cframe.par_tie_cp[i_comp] = ['fix'] * self.line.cframe.num_pars_c[i_comp]
+                    if self.line.cframe.comp_name_c[i_comp] not in line_comps:  self.line.cframe.par_tie_cp[i_comp] = ['fix'] * self.line.cframe.num_pars_c[i_comp]
                 # update mask_lite_Me with emission line examination results, i.e., only keep enabled line components
                 mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['line'], self.line.mask_lite_with_comps(enabled_comps=line_comps), input_mask_lite_Me=mask_lite_Me)
             ########################################
@@ -1737,7 +1740,7 @@ class FitFrame(object):
         for mod_name in self.full_mod_type.split('+'):
             for i_loop in range(self.num_loops): 
                 if mod_name in best_ret_dict_l[i_loop]['mod_type'].split('+'):
-                    if not (mod_name in rev_mod_type.split('+')):
+                    if mod_name not in rev_mod_type.split('+'):
                         rev_mod_type += mod_name + '+'
         rev_mod_type = rev_mod_type[:-1] # remove the last '+'
         self.rev_mod_type = rev_mod_type # save for indexing output_MC

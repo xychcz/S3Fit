@@ -10,7 +10,7 @@ from scipy.interpolate import RegularGridInterpolator
 
 from ..auxiliaries.auxiliary_frames import ConfigFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters, roman_to_int, color_list_dict, lamb_air_to_vac, convolve_fix_width_fft
-from ..auxiliaries.basic_model_functions import single_line
+# from ..auxiliaries.basic_model_functions import single_line
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
@@ -47,11 +47,11 @@ class LineFrame(object):
 
         # set default info if not specified in config
         for i_comp in range(self.num_comps):
-            if not ('line_used'  in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
-            if not ('line_ties'  in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['line_ties'] = ['default']
-            if not ('H_hi_order' in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['H_hi_order'] = False
-            if not ('sign'       in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['sign'] = 'emission'
-            if not ('profile'    in self.cframe.info_c[i_comp]) : self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
+            if 'line_used'  not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
+            if 'line_ties'  not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['line_ties'] = ['default']
+            if 'H_hi_order' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['H_hi_order'] = False
+            if 'sign'       not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['sign'] = 'emission'
+            if 'profile'    not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
             # group line info to a list
             if isinstance(self.cframe.info_c[i_comp]['line_used'], str): self.cframe.info_c[i_comp]['line_used'] = [self.cframe.info_c[i_comp]['line_used']]
             self.cframe.info_c[i_comp]['line_used'] = np.array(self.cframe.info_c[i_comp]['line_used'])
@@ -462,7 +462,7 @@ class LineFrame(object):
 
         if name in self.H_levels_dict:
             element = 'H'; notation = 1
-            if not (element+str(notation) in self.pyneblib['RecAtom']):
+            if element+str(notation) not in self.pyneblib['RecAtom']:
                 atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
                 dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                 wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -484,7 +484,7 @@ class LineFrame(object):
                     element, notation = ion.split(' ')
             notation = roman_to_int(notation)
             if element+str(notation) in ['H1', 'He2']:
-                if not (element+str(notation) in self.pyneblib['RecAtom']):
+                if element+str(notation) not in self.pyneblib['RecAtom']:
                     atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -494,14 +494,14 @@ class LineFrame(object):
                     self.pyneblib['RecAtom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
                 atomlib = self.pyneblib['RecAtom'][element+str(notation)]
             else:
-                if not (element+str(notation) in self.pyneblib['Atom']['list']):
+                if element+str(notation) not in self.pyneblib['Atom']['list']:
                     if verbose: 
                         print_log(f"[WARNING] {name} not provided in pyneb, please add it manually with FitFrame.line.add_line(use_pyneb=False).", self.log_message)
                     if ret_atomlib: 
                         return None, None, None
                     else:
                         return None, None
-                if not (element+str(notation) in self.pyneblib['Atom']):
+                if element+str(notation) not in self.pyneblib['Atom']:
                     atomdata = self.pyneb.Atom(element, notation) # , noExtrapol=True
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
@@ -605,7 +605,7 @@ class LineFrame(object):
         spectra_full = spectra_full[~np.isin(spectra_full, linelist_H)]
         spectra_uniq = []
         for spectrum in spectra_full:
-            if not (spectrum in spectra_uniq): spectra_uniq.append(str(spectrum))
+            if spectrum not in spectra_uniq: spectra_uniq.append(str(spectrum))
         spectra_uniq = np.array(spectra_uniq)
         self.linelist_spectra = {}
         self.linelist_spectra['H I'] = linelist_H
@@ -617,7 +617,7 @@ class LineFrame(object):
             if notations_full[i][-1] == ']': notations_full[i] = notations_full[i][:-1]
         notations_uniq = []
         for notation in notations_full:
-            if not (notation in notations_uniq): notations_uniq.append(str(notation))
+            if notation not in notations_uniq: notations_uniq.append(str(notation))
         notations_uniq = np.array(notations_uniq)
         self.linelist_notations = {}
         self.linelist_notations['H I'] = linelist_H
@@ -628,7 +628,7 @@ class LineFrame(object):
             elements_full[i] = elements_full[i].split(' ')[0]
         elements_uniq = []
         for element in elements_full:
-            if not (element in elements_uniq): elements_uniq.append(str(element))
+            if element not in elements_uniq: elements_uniq.append(str(element))
         elements_uniq = np.array(elements_uniq)
         self.linelist_elements = {}
         self.linelist_elements['H'] = linelist_H
@@ -779,12 +779,12 @@ class LineFrame(object):
                 print_log(f"[WARNING] The specified line(s), {np.array(ref_names)[~np.isin(ref_names, self.linelist_full)]}, are not available. " + 
                           f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
         elif ref_line_name is not None:
-            if not (ref_line_name in self.linelist_full):
+            if ref_line_name not in self.linelist_full:
                 print_log(f"[WARNING] The reference line, {ref_line_name}, is not available. " + 
                           f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
                 return # skip the following steps
         elif tied_line_name is not None:
-            if not (tied_line_name in self.linelist_full):
+            if tied_line_name not in self.linelist_full:
                 print_log(f"[WARNING] The tied line, {tied_line_name}, is not available. " + 
                           f"Please check the available line name list with FitFrame.line.linelist_full, or add it manually with FitFrame.line.add_line() .", self.log_message)
                 return # skip the following steps
@@ -929,6 +929,37 @@ class LineFrame(object):
 
     ##########################################################################
 
+    def single_line(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
+        if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
+        if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
+
+        lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
+        mu =   (1 + voff/299792.458) * lamb_c_obs
+        fwhm_line = fwhm/299792.458  * lamb_c_obs
+
+        if np.isscalar(R_inst_rw):
+            local_R_inst = copy(R_inst_rw)
+        else:
+            local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
+        fwhm_inst = 1 / local_R_inst * lamb_c_obs
+
+        if casefold(profile) in ['gaussian', 'gauss']:
+            fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
+            sigma_tot = fwhm_tot / np.sqrt(np.log(256))
+            model = np.exp(-0.5 * ((obs_wave_w-mu) / sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
+        elif casefold(profile) in ['lorentzian', 'lorentz']:
+            gamma_line = fwhm_line / 2
+            model = 1 / (1 + ((obs_wave_w-mu) / gamma_line)**2) / (gamma_line * np.pi)
+            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
+        elif casefold(profile) in ['exponential', 'exp', 'laplace']:
+            b_line = fwhm_line / np.log(4)
+            model = np.exp(-np.abs(obs_wave_w-mu) / b_line) / (b_line * 2)
+            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
+        else:
+            raise ValueError((f"Please specify one of the line profiles: Gaussian, Lorentzian, or Exponential."))
+
+        return model * flux
+
     def models_single_comp(self, obs_wave_w, par_cp, i_comp):
         voff      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
         fwhm      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
@@ -943,15 +974,15 @@ class LineFrame(object):
         list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
         models_scomp = []
         for i_free in list_free:
-            model_sline = single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
-                                      1,  # flux=1
-                                      self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
+            model_sline = self.single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
+                                           1,  # flux=1
+                                           self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
             list_linked = np.where(self.linelink_name_cn[i_comp] == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
-                model_sline += single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
-                                           self.lineratio_cn[i_comp, i_linked], 
-                                           self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
+                model_sline += self.single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
+                                                self.lineratio_cn[i_comp, i_linked], 
+                                                self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
             # detect and exclude weak lines
             int_flux_list = [1] + [self.lineratio_cn[i_comp, i_linked] for i_linked in list_linked]
             peak_flux_min = min(int_flux_list) / (fwhm / np.sqrt(np.log(256)) * np.sqrt(2*np.pi)) 
@@ -1038,12 +1069,12 @@ class LineFrame(object):
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[comp_name] = {} # init results for each comp
             output_C[comp_name]['value_Vl'] = {}
-            for val_name in par_name_cp[i_comp] + value_names_C[comp_name]:
-                output_C[comp_name]['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
+            for value_name in par_name_cp[i_comp] + value_names_C[comp_name]:
+                output_C[comp_name]['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
         output_C['sum'] = {}
         output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
-        for val_name in value_names_additive:
-            output_C['sum']['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
+        for value_name in value_names_additive:
+            output_C['sum']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
 
         # locate the results of the model in the full fitting results
         i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_mod_type)
@@ -1123,13 +1154,13 @@ class LineFrame(object):
         print_names['log_e_den'] = 'log e-density (cm-3)'
         print_names['log_e_tem'] = 'log e-temperature(K)'
 
-        for i_value in range(len(value_names)): 
+        for (i_value, value_name) in enumerate(value_names):
             tbl_row = []
-            tbl_row.append(print_names[value_names[i_value]])
-            for i_comp in range(self.num_comps):
-                tmp_values_vl = self.output_C[[*self.output_C][i_comp]]['value_Vl']
-                tbl_row.append(tmp_values_vl[[*tmp_values_vl][i_value]][mask_l].mean())
-                tbl_row.append(tmp_values_vl[[*tmp_values_vl][i_value]].std())
+            tbl_row.append(print_names[value_name])
+            for (i_comp, comp_name) in enumerate(self.comp_name_c): # skip 'sum'
+                value_l = self.output_C[comp_name]['value_Vl'][value_name]
+                tbl_row.append(value_l[mask_l].mean())
+                tbl_row.append(value_l.std())
             print_log(fmt_numbers.format(*tbl_row), log)
         print_log(tbl_border, log)  
         print_log(f'[Note] Rows starting with a line name show the observed line flux, in unit of {self.spec_flux_scale:.0e} erg/s/cm2.', log)

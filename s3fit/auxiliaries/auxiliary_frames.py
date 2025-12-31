@@ -255,7 +255,7 @@ class PhotFrame(object):
 
         self.wave_w = copy(wave_w)
         self.wave_unit = wave_unit
-        if (self.wave_w is not None) & (self.wave_unit in ['micron', 'um']): self.wave_w *= 1e4 # convert to AA
+        if (self.wave_w is not None) & (self.wave_unit in ['micron', 'um']): self.wave_w *= 1e4 # convert to Angstrom
         self.wave_num = wave_num
                 
         self.trans_dict, self.trans_bw, self.wave_w = self.read_transmission(name_b=self.name_b, 
@@ -266,8 +266,8 @@ class PhotFrame(object):
         self.wave_b = self.spec2phot(self.wave_w, self.wave_w, self.trans_bw)
         
         if self.flux_unit == 'mJy': 
-            self.flux_b /= self.rFnuFlam_b # convert to erg/s/cm2/AA
-            self.ferr_b /= self.rFnuFlam_b # convert to erg/s/cm2/AA
+            self.flux_b /= self.rFnuFlam_b # convert to erg/s/cm2/A
+            self.ferr_b /= self.rFnuFlam_b # convert to erg/s/cm2/A
         
     def read_transmission(self, name_b=None, trans_dir=None, trans_rsmp=None, wave_w=None, wave_num=None):        
         if trans_dir[-1] != '/': trans_dir += '/'
@@ -322,10 +322,10 @@ class PhotFrame(object):
         unitflam = (1 * u.erg/u.s/u.cm**2/u.angstrom)
         rDnuDlam = const.c.to('angstrom Hz') / (wave_w * u.angstrom)**2
         if trans_bw is None:
-            # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/AA); wave in AA
+            # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in Angstrom
             return (unitflam / rDnuDlam).to('mJy').value
         else:
-            # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/AA); wave in AA
+            # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in Angstrom
             unitfint = unitflam * (1 * u.angstrom)
             # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
             width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)

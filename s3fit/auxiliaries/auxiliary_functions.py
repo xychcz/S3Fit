@@ -103,7 +103,7 @@ def lamb_vac_to_air(lamb_vac, extrapolate=True):
     mask = lamb_vac < 3000
     if any(mask) & extrapolate:
         r = 0.999634933 + 3.52626553e-08*lamb_vac[mask] - 3.64256777e-12*lamb_vac[mask]**2
-        # obtained via fitting lamb_air/lamb_vac in 2500-5000 AA
+        # obtained via fitting lamb_air/lamb_vac in 2500-5000 A
         lamb_air[mask] = lamb_vac[mask] * r
     
     return lamb_air
@@ -120,7 +120,7 @@ def lamb_air_to_vac(lamb_air, extrapolate=True):
     mask = lamb_air < 3000
     if any(mask) & extrapolate:
         r = 1.000365120 - 3.52546427e-08*lamb_air[mask] + 3.64165604e-12*lamb_air[mask]**2
-        # obtained via fitting lamb_vac/lamb_air in 2500-5000 AA
+        # obtained via fitting lamb_vac/lamb_air in 2500-5000 A
         lamb_vac[mask] = lamb_air[mask] * r
         
     return lamb_vac

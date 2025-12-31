@@ -56,6 +56,19 @@ class StellarFrame(object):
             if 'met_sel' in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['ssp_metallicity'] = self.cframe.info_c[i_comp]['met_sel']
         ############################################################
 
+        # # set default info if not specified in config
+        # for i_comp in range(self.num_comps):
+        #     if 'lum_range' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['lum_range'] = [(5,38), (8,1000), (1,1000)]
+        #     if 'lum_unit'  not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['lum_unit']  = {'lum': 'Lsun', 'wave': 'Angstrom'}
+        #     if isinstance(self.cframe.info_c[i_comp]['lum_unit'], str): self.cframe.info_c[i_comp]['lum_unit']  = {'lum': self.cframe.info_c[i_comp]['lum_unit'], 'wave': 'micron'}
+
+        # # group line info to a list
+        # for i_comp in range(self.num_comps):
+        #     if isinstance(self.cframe.info_c[i_comp]['lum_range'], tuple): self.cframe.info_c[i_comp]['lum_range'] = [self.cframe.info_c[i_comp]['lum_range']]
+        #     if isinstance(self.cframe.info_c[i_comp]['lum_range'], list):
+        #         if all( isinstance(i, (int,float)) for i in self.cframe.info_c[i_comp]['lum_range'] ):
+        #             if len(self.cframe.info_c[i_comp]['lum_range']) == 2: self.cframe.info_c[i_comp]['lum_range'] = [self.cframe.info_c[i_comp]['lum_range']]
+
         # read SFH setup from input config file; check alternative names
         for i_comp in range(self.num_comps):
             if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['exponential']: 
@@ -136,7 +149,7 @@ class StellarFrame(object):
         ##############################################################
         ###### Modify this section to use a different SSP model ######
         ssp_lib = fits.open(self.file_path)
-        # template resolution step of 0.1 AA, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
+        # template resolution step of 0.1 Angstrom, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
         self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
         self.header = ssp_lib[0].header
@@ -178,29 +191,29 @@ class StellarFrame(object):
         orig_wave_w = orig_wave_w[mask_select_w]
         orig_flux_ew = orig_flux_ew[:, mask_select_w]
 
-        # calculate the mean flux at both 5500 AA and the user given wavelength
+        # calculate the mean flux at both 5500 Angstrom and the user given wavelength
         mask_5500_w = np.abs(orig_wave_w - 5500) < 25
         flux_5500_e = np.mean(orig_flux_ew[:, mask_5500_w], axis=1)
         mask_norm_w = np.abs(orig_wave_w - self.w_norm) < self.dw_norm
         flux_norm_e = np.mean(orig_flux_ew[:, mask_norm_w], axis=1)
         self.flux_norm_ratio_e = flux_norm_e / flux_5500_e
 
-        # normalize models at 5500+/-25 AA
+        # normalize models at 5500+/-25 Angstrom
         orig_flux_ew /= flux_5500_e[:, None]
-        # The original spectra of SSP models are normalized by 1 Msun in unit Lsun/AA.
-        # The spectra used here is re-normalized to 1 Lsun/AA at rest 5500AA,
+        # The original spectra of SSP models are normalized by 1 Msun in unit Lsun/Angstrom.
+        # The spectra used here is re-normalized to 1 Lsun/Angstrom at rest 5500 Angstrom,
         # i.e., the norm-factor is norm=L5500 before re-normalization.  
         # The re-normalized spectra corresponds to mass of (1/norm) Msun, 
-        # i.e., mass-to-lum(5500) ratio is (1/norm) Msun / (1 Lsun/AA) = (1/norm) Msun/(Lsun/AA),
+        # i.e., mass-to-lum(5500) ratio is (1/norm) Msun / (1 Lsun/Angstrom) = (1/norm) Msun/(Lsun/Angstrom),
         # i.e., mtol = 1/norm = 1/L5500
-        self.mtol_e = 1 / flux_5500_e # i.e., (1 Msun) / (flux_5500_e Lsun/AA)
+        self.mtol_e = 1 / flux_5500_e # i.e., (1 Msun) / (flux_5500_e Lsun/Angstrom)
         # The corresponding SFR of normalized spectra is 
         # mtol_e Msun / (duration_e Gyr) = mtol_e/duration_e Msun/Gyr, duration_e in unit of Gyr (as age)
         # Name sfrtol_e = mtol_e/duration_e * 1e-9, and 
         # self.orig_flux_ew / sfrtol_e return models renormalized to unit SFR, i.e., 1 Mun/yr.
         self.sfrtol_e = self.mtol_e / (self.duration_e * 1e9)
 
-        # determine the required model resolution and bin size (in AA) to downsample the model
+        # determine the required model resolution and bin size (in Angstrom) to downsample the model
         if self.Rratio_mod is not None:
             ds_R_mod_w = np.interp(orig_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw in observed frame
             self.dw_fwhm_dsp_w = orig_wave_w / ds_R_mod_w # required resolving width in rest frame
@@ -223,14 +236,14 @@ class StellarFrame(object):
             if self.dpix_dsp > 1:
                 if preconvolving:
                     if self.verbose: 
-                        print_log(f'Downsample preconvolved SSP models with bin width of {self.dw_dsp:.3f} AA in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} AA', 
+                        print_log(f'Downsample preconvolved SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', 
                                   self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # here assume the internal dispersion in the original model (e.g., in stellar atmosphere) is indepent from the measured dispersion (i.e., stellar motion) in the fitting
                     orig_flux_ew = convolve_fix_width_fft(orig_wave_w, orig_flux_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
                 else:
                     if self.verbose: 
-                        print_log(f'Downsample original SSP models with bin width of {self.dw_dsp:.3f} AA in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} AA', 
+                        print_log(f'Downsample original SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', 
                                   self.log_message)  
                 orig_wave_w = orig_wave_w[::self.dpix_dsp]
                 orig_flux_ew = orig_flux_ew[:,::self.dpix_dsp]
@@ -266,7 +279,7 @@ class StellarFrame(object):
         # full expression of ltosfr_e = (self.duration_e * 1e9) / self.mtol_e.
         # Following this way, sfh_factor_e is the lum(rest5500)_e to achieve a given SFR(csp_age-ssp_age_e), i.e., sfh_func_e. 
         # The returned models are ssp_spec_ew = self.orig_flux_ew * sfh_factor_e.
-        # The corresponding lum(rest5500) is 1 * sfh_factor_e, in unit of Lsun/AA,
+        # The corresponding lum(rest5500) is 1 * sfh_factor_e, in unit of Lsun/Angstrom,
         # the corresponding mass is mtol_e * sfh_factor_e = SFR(csp_age-ssp_age_e) * (duration_e*1e9), in unit of Msun.
         csp_age = 10.0**par_p[self.cframe.par_index_cP[i_comp]['log_csp_age']]
         ssp_age_e = self.age_e
@@ -304,13 +317,13 @@ class StellarFrame(object):
         sfh_factor_e = sfh_func_e / self.sfrtol_e
         return sfh_factor_e
         # The total csp model is csp_spec_w = ssp_spec_ew.sum(axis=0) = (self.orig_flux_ew * sfh_factor_e).sum(axis=0)
-        # The corresponding lum(at 5500) is (1 * sfh_factor_e).sum(axis=0), in unit of Lsun/AA.
+        # The corresponding lum(at 5500) is (1 * sfh_factor_e).sum(axis=0), in unit of Lsun/Angstrom.
         # The corresponding mass is (mtol_e * sfh_factor_e * remain_e).sum(axis=0), in unit of Msun, 
         # remain_e is the remaining mass fraction. 
 
         # If the best-fit csp has csp_coeff, 
-        # the corresponding lum(at 5500) of csp is csp_coeff * (1 * sfh_factor_e).sum(axis=0) Lsun/AA;
-        # the corresponding lum(at 5500) of ssp_e is csp_coeff * sfh_factor_e Lsun/AA, 
+        # the corresponding lum(at 5500) of csp is csp_coeff * (1 * sfh_factor_e).sum(axis=0) Lsun/Angstrom;
+        # the corresponding lum(at 5500) of ssp_e is csp_coeff * sfh_factor_e Lsun/Angstrom, 
         # which equals to ssp_coeff_e = (csp_coeff * sfh_factor_e) for direct usage of self.orig_flux_ew (i.e., nonparametic SFH).
         # Here the meanning of csp_coeff is the value of SFR in SFH peak epoch (due to the above normalization) in Mun/yr; 
         # the meanning of converted ssp_coeff_e is still lum(at 5500) of each unit-normalized ssp model template.  
@@ -320,11 +333,11 @@ class StellarFrame(object):
 
     def models_unitnorm_obsframe(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
                                  if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, if_redshift=True, if_convolve=True, conv_nbin=None):
-        # The input model is spectra per unit Lsun/AA at rest 5500AA before dust reddening and redshift, 
-        # corresponds to mass of 1/L5500 Msun (L5500 is the lum-value in unit of Lsun/AA from original models normalized per unit Msun).
-        # In the fitting for the observed spectra in unit of in erg/s/AA/cm2, 
-        # the output model can be considered to be re-normlized to 1 erg/s/AA/cm2 at rest 5500AA before dust reddening and redshift.
-        # The corresponding lum is (1/3.826e33*Area) Lsun/AA, where Area is the lum-area in unit of cm2, 
+        # The input model is spectra per unit Lsun/Angstrom at rest 5500 Angstrom before dust reddening and redshift, 
+        # corresponds to mass of 1/L5500 Msun (L5500 is the lum-value in unit of Lsun/Angstrom from original models normalized per unit Msun).
+        # In the fitting for the observed spectra in unit of in erg/s/Angstrom/cm2, 
+        # the output model can be considered to be re-normlized to 1 erg/s/Angstrom/cm2 at rest 5500 Angstrom before dust reddening and redshift.
+        # The corresponding lum is (1/3.826e33*Area) Lsun/Angstrom, where Area is the lum-area in unit of cm2, 
         # and the corresponding mass is (1/3.826e33*Area) * (1/L5500) Msun, 
         # i.e., the real mtol is (1/3.826e33*Area) * (1/L5500) = (1/3.826e33*Area) * self.mtol
         # The values will be used to calculate the stellar mass from the best-fit results. 
@@ -506,12 +519,12 @@ class StellarFrame(object):
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[comp_name] = {} # init results for each comp
             output_C[comp_name]['value_Vl']   = {}
-            for val_name in par_name_cp[i_comp] + value_names_C[comp_name]:
-                output_C[comp_name]['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
+            for value_name in par_name_cp[i_comp] + value_names_C[comp_name]:
+                output_C[comp_name]['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
         output_C['sum'] = {}
         output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
-        for val_name in value_names_additive:
-            output_C['sum']['value_Vl'][val_name] = np.zeros(self.num_loops, dtype='float')
+        for value_name in value_names_additive:
+            output_C['sum']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
 
         # locate the results of the model in the full fitting results
         i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_mod_type)
@@ -534,7 +547,7 @@ class StellarFrame(object):
                 output_C[comp_name]['value_Vl']['sigma'][i_loop] = fwhm/np.sqrt(np.log(256))
 
                 tmp_spec_w = self.fframe.output_MC[self.mod_name][comp_name]['spec_lw'][i_loop, :]
-                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 AA
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 Angstrom
                 if mask_norm_w.sum() > 0:
                     output_C[comp_name]['value_Vl']['flux_5500'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_5500'][i_loop] += tmp_spec_w[mask_norm_w].mean()
@@ -553,11 +566,11 @@ class StellarFrame(object):
                     # if use csp with a sfh, coeff_e*unitconv means the value of SFH of this csp element in Mun/yr at the peak SFH epoch
                     # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element
                     coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e 
-                Lum_5500_e = coeff_e * unitconv # intrinsic L5500, in Lsun/AA
+                Lum_5500_e = coeff_e * unitconv # intrinsic L5500, in Lsun/Angstrom
                 lambLum_5500_e = Lum_5500_e * 5500
                 lambLum_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.w_norm
                 if lum_unit == 'erg/s': Lum_5500_e /= const.L_sun.to('erg/s').value
-                Mass_formed_e = Lum_5500_e * self.mtol_e # mtol_e is in unit of Msun/(Lsun/AA)
+                Mass_formed_e = Lum_5500_e * self.mtol_e # mtol_e is in unit of Msun/(Lsun/Angstrom)
                 Mass_remaining_e = Mass_formed_e * self.remainmassfrac_e
 
                 output_C[comp_name]['value_Vl']['log_lambLum_5500'][i_loop]   = np.log10(lambLum_5500_e.sum())
@@ -641,8 +654,8 @@ class StellarFrame(object):
             print_names[value_name] += ' '*(print_length-len(print_names[value_name]))
 
         for i_comp in range(len(self.output_C)):
-            values_vl = self.output_C[[*self.output_C][i_comp]]['value_Vl']
-            value_names = [*values_vl]
+            value_Vl = self.output_C[[*self.output_C][i_comp]]['value_Vl']
+            value_names = [*value_Vl]
             msg = ''
             if i_comp < self.cframe.num_comps: # print best-fit pars for each comp
                 print_log(f"# Stellar component <{self.cframe.comp_name_c[i_comp]}> with {self.sfh_name_c[i_comp]} SFH:", log)
@@ -657,7 +670,7 @@ class StellarFrame(object):
                 value_names.remove('flux_wavenorm')
                 value_names.remove('log_lambLum_wavenorm')
             for value_name in value_names:
-                msg += '| ' + print_names[value_name] + f" = {values_vl[value_name][mask_l].mean():10.4f}" + f" +/- {values_vl[value_name].std():<10.4f}|\n"
+                msg += '| ' + print_names[value_name] + f" = {value_Vl[value_name][mask_l].mean():10.4f}" + f" +/- {value_Vl[value_name].std():<10.4f}|\n"
             msg = msg[:-1] # remove the last \n
             bar = '=' * len(msg.split('\n')[-1])
             print_log(bar, log)
@@ -690,7 +703,7 @@ class StellarFrame(object):
                 tbl_row.append(np.log10(self.mtol_e[i_e]))
                 print_log(fmt_numbers.format(*tbl_row), log)
             print_log(tbl_border, log)
-            print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 AA.", log)
+            print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 Å.", log)
             print_log(f"[Note] only SSPs with Coeff over 1% are listed.", log)
             print_log('', log)
 

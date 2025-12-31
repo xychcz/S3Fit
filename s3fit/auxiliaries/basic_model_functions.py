@@ -114,7 +114,7 @@ def blackbody_func(wavelength, log_tem=None, if_norm=True, wave_norm=None):
         C2 = 1.4387768775039336e8  # const.h.value * const.c.value / const.k_B.value * 1e10
         tmp = C2 / (wavelength * 10.0**log_tem)
         tmp = np.minimum(tmp, 700) # avoid overflow warning in np.exp()
-        return C1 / wavelength**5 / (np.exp(tmp) - 1) # in erg/s/cm2/AA/sr
+        return C1 / wavelength**5 / (np.exp(tmp) - 1) # in erg/s/cm2/A/sr
     
     ret_bb_w = get_bb(wavelength) 
     if if_norm: ret_bb_w /= get_bb(wave_norm)
@@ -123,7 +123,7 @@ def blackbody_func(wavelength, log_tem=None, if_norm=True, wave_norm=None):
 
 # def bac_func(wavelength, log_e_tem=None, log_tau_be=None):
 #     # parameters: electron temperature (K), optical depth at balmer edge (3646)
-#     # normalize at rest 3000 AA (default)
+#     # normalize at rest 3000 A (default)
 #     wave_norm = 3000
 #     balmer_edge = 3646.0
 
@@ -151,7 +151,7 @@ def recombination_func(wavelength, log_e_tem=None, log_tau_be=None, H_series=Non
         rec_w = np.zeros_like(wavelength, dtype=float)
         bb_w = blackbody_func(wavelength, log_tem=log_e_tem, if_norm=False)
         for lv_n in H_series:
-            wave_edge = lv_n**2 / 1.0973731568160e-3 # n**2 / const.Ryd.value * 1e10, in AA
+            wave_edge = lv_n**2 / 1.0973731568160e-3 # n**2 / const.Ryd.value * 1e10, in A
             if min(wavelength) > wave_edge: continue
             # assume the bound-free cross section at threshold scales prop to n**(-5)
             tau_edge = 10.0**log_tau_be * (2.0/lv_n)**5
@@ -162,7 +162,7 @@ def recombination_func(wavelength, log_e_tem=None, log_tau_be=None, H_series=Non
             rec_w += tmp_rec_w
         return rec_w
 
-    # normalize at rest 3000 AA (default)
+    # normalize at rest 3000 A (default)
     ret_rec_w = get_rec(wavelength) / get_rec(wave_norm)
 
     return ret_rec_w
