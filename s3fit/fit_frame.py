@@ -671,8 +671,53 @@ class FitFrame(object):
 
         return i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1
 
+    def search_ref_par(self, input_tie=None, mod_type=None):
+
+        if len(input_tie.split(':')) == 3:
+            ref_mod_name, ref_comp_name, ref_par = input_tie.split(':')
+            tie_sign, tie_fix = None, False
+        elif len(input_tie.split(':')) == 4:
+            ref_mod_name, ref_comp_name, ref_par, tie_sign = input_tie.split(':')
+            tie_fix = False
+        elif len(input_tie.split(':')) == 5:
+            ref_mod_name, ref_comp_name, ref_par, tie_sign, tie_fix = input_tie.split(':')
+            tie_fix = True if tie_fix == 'fix' else False
+        else:
+            raise ValueError((f"The format of the tying relation {input_tie} is not supported. Please follow the format: 'mod_name:comp_name:par_name(:+/x:fix)'."))
+
+        if ref_mod_name not in self.full_mod_type.split('+'):
+            raise ValueError((f"The reference model '{ref_mod_name}' in tying relation {input_tie} is not provided in {self.full_mod_type.split('+')}."))
+        # skip if the tied mod is not used in this fitting step
+        if ref_mod_name not in mod_type.split('+'): return None, None, False
+
+        ref_mod_cframe = self.mod_dict_M[ref_mod_name]['cframe']
+        if ref_comp_name not in ref_mod_cframe.comp_name_c:
+            raise ValueError((f"The reference component '{ref_comp_name}' in tying relation {input_tie} is not available in {ref_mod_cframe.comp_name_c}"))
+
+        ref_par_index_P = ref_mod_cframe.par_index_CP[ref_comp_name]
+        if ref_par.isascii() and ref_par.isdigit(): 
+            # use par index in tying relation
+            ref_i_par_in_comp = int(ref_par) 
+            if ref_i_par_in_comp not in [ref_par_index_P[par_name] for par_name in ref_par_index_P]:
+                raise ValueError((f"The reference par id '{ref_i_par_in_comp}' in tying relation {input_tie} is out of the available rage."))
+        else: 
+            ref_par_name = ref_par
+            if ref_par_name in ref_par_index_P:
+                ref_i_par_in_comp = ref_par_index_P[ref_par_name]
+            else:
+                raise ValueError((f"The reference par '{ref_par_name}' in tying relation {input_tie} is not available in the parameter list, {[*ref_par_index_P]}."))
+
+        if tie_sign is not None:
+            if tie_sign not in ['+','x','*']:
+                raise ValueError((f"The sign '{tie_sign}' of the tying relation {single_tie} is not supported. Please use the one in ['+','x','*']."))
+
+        ref_i_pars_0_of_mod, ref_i_pars_1_of_mod = self.search_mod_index(ref_mod_name, mod_type)[0:2]
+        ref_i_pars_0_of_comp_in_mod, ref_i_pars_1_of_comp_in_mod = self.search_comp_index(ref_comp_name, ref_mod_name)[0:2]
+        ref_i_par_in_selmods = ref_i_pars_0_of_mod + ref_i_pars_0_of_comp_in_mod + ref_i_par_in_comp
+
+        return ref_i_par_in_selmods, tie_sign, tie_fix
+
     def update_tied_pars(self, mod_type=None, input_par_p=None):
-        par_p = copy(input_par_p) # avoid changing input_par_p to make confilicts with the outer non-linear process
 
         min_p = np.array([])
         max_p = np.array([])
@@ -685,93 +730,79 @@ class FitFrame(object):
         min_p = min_p.astype('float')
         max_p = max_p.astype('float')
 
+        # avoid conflict of bounds in least_squares; actually not used since they are fixed pars        
+        min_p[np.isnan(min_p)] = 0
+        max_p[np.isnan(max_p)] = min_p[np.isnan(max_p)] + 0.01 
+
+        if input_par_p is None: return min_p, max_p, tie_p
+
+        ##########
+
+        par_p = copy(input_par_p) # avoid changing input_par_p to make confilicts with the outer non-linear process
         n_freepars = 0
         for i_par in range(len(tie_p)):
             if tie_p[i_par] == 'None': continue
+            n_freepars += 1 # consider it as free par by default
             if tie_p[i_par] == 'free': 
-                if par_p is not None:
-                    par_p[i_par] = max(par_p[i_par], min_p[i_par]) # re-check if x matches bounds
-                    par_p[i_par] = min(par_p[i_par], max_p[i_par])
-                    n_freepars += 1
+                par_p[i_par] = max(par_p[i_par], min_p[i_par]) # re-check if x matches bounds
+                par_p[i_par] = min(par_p[i_par], max_p[i_par])
             elif tie_p[i_par] == 'fix': 
-                if par_p is not None:
-                    par_p[i_par] = min_p[i_par] * 1.0 # avoid changing min_p
-                else:
-                    max_p[i_par] = min_p[i_par] + 0.01 # avoid conflict of bounds in least_squares; actually not used
+                par_p[i_par] = min_p[i_par] * 1.0 # avoid changing min_p
+                n_freepars -= 1 # reduce one free par
             else:
-                for single_tie in tie_p[i_par].split(';'):
-                    if len(single_tie.split(':')) == 3:
-                        ref_mod_name, ref_comp_name, ref_par = single_tie.split(':')
-                        tie_sign, tie_fix = None, False
-                    elif len(single_tie.split(':')) == 4:
-                        ref_mod_name, ref_comp_name, ref_par, tie_sign = single_tie.split(':')
-                        tie_fix = False
-                    elif len(single_tie.split(':')) == 5:
-                        ref_mod_name, ref_comp_name, ref_par, tie_sign, tie_fix = single_tie.split(':')
-                        tie_fix = True if tie_fix == 'fix' else False
+                tied_i_par = copy(i_par)
+                if_stop_search = False
+                iter_ties = []
+                while not if_stop_search:
+                    for single_tie in tie_p[tied_i_par].split(';'):
+                        ref_i_par, tie_sign, tie_fix = self.search_ref_par(single_tie, mod_type=mod_type)
+                        if ref_i_par is not None: 
+                            if tie_p[ref_i_par] in ['free', 'fix']: break
+                            # pick up the 1st free or fix ref par
+
+                    if ref_i_par is None: 
+                        # the ref mod is not available in this fitting step, exit the searching 
+                        if_stop_search = True
+                    elif tie_p[ref_i_par] == 'None': 
+                        # the ref par is not used in full fitting, exit the searching 
+                        if_stop_search = True                    
+                    elif tie_p[ref_i_par] in ['free', 'fix']:
+                        # success searching if the ref par is free or fix par
+                        if_stop_search = True
+                        iter_ties.append([ref_i_par, tie_sign, tie_fix])
                     else:
-                        raise ValueError((f"The format of the tying relation {single_tie} is not supported. Please follow the format: 'mod_name:comp_name:par_name(:+/x:fix)'."))
+                        # if the ref par is tied to the other par, loop searching the deeper ref
+                        tied_i_par = copy(ref_i_par)
+                        iter_ties.append([ref_i_par, tie_sign, tie_fix])
 
-                    if ref_mod_name not in self.full_mod_type.split('+'):
-                        raise ValueError((f"The reference model '{ref_mod_name}' in tying relation {single_tie} is not provided in {self.full_mod_type.split('+')}."))
-                    if ref_mod_name not in mod_type.split('+'): 
-                        # skip if the tied mod is not used in this fitting step
-                        n_freepars += 1
-                        continue 
-                    ref_mod_cframe = self.mod_dict_M[ref_mod_name]['cframe']
-                    ref_i_pars_0_of_mod, ref_i_pars_1_of_mod = self.search_mod_index(ref_mod_name, mod_type)[0:2]
+                if len(iter_ties) > 0:
+                    # iterative parameter tying via reversely tracing tying sequence. 
+                    iter_ties = iter_ties[::-1]
+                    for i_iter in range(len(iter_ties)):
+                        ref_i_par, tie_sign, tie_fix = iter_ties[i_iter]
+                        tied_i_par = iter_ties[i_iter+1] if (i_iter+1) < len(iter_ties) else copy(i_par)
 
-                    if ref_comp_name not in ref_mod_cframe.comp_name_c:
-                        raise ValueError((f"The reference component '{ref_comp_name}' in tying relation {single_tie} is not available in {ref_mod_cframe.comp_name_c}"))
-                    ref_i_pars_0_of_comp_in_mod, ref_i_pars_1_of_comp_in_mod = self.search_comp_index(ref_comp_name, ref_mod_name)[0:2]
-
-                    if ref_par.isascii() and ref_par.isdigit(): 
-                        ref_i_par_in_comp = int(ref_par) # use par index in tying relation
-                    else: 
-                        ref_par_name = ref_par
-                        ref_par_index_P = ref_mod_cframe.par_index_CP[ref_comp_name]
-                        if ref_par_name in ref_par_index_P:
-                            ref_i_par_in_comp = ref_par_index_P[ref_par_name]
+                    if tie_sign is None: # i.e., fully equivalent 
+                        par_p[tied_i_par] = copy(par_p[ref_i_par])
+                    elif tie_sign == '+':
+                        if tie_fix: 
+                            par_p[tied_i_par] = min_p[tied_i_par] + par_p[ref_i_par]
                         else:
-                            raise ValueError((f"The reference par '{ref_par_name}' in tying relation {single_tie} is not available in the parameter list, {[*ref_par_index_P]}."))
-
-                    if par_p is not None:
-                        ref_value = par_p[ref_i_pars_0_of_mod:ref_i_pars_1_of_mod][ref_i_pars_0_of_comp_in_mod:ref_i_pars_1_of_comp_in_mod][ref_i_par_in_comp]
-                        if tie_sign is None:
-                            par_p[i_par] = ref_value
-                        elif tie_sign == '+':
-                            if tie_fix: 
-                                par_p[i_par] = min_p[i_par] + ref_value
-                            else:
-                                par_p[i_par] += ref_value
-                                n_freepars += 1
-                        elif tie_sign in ['x', '*']:
-                            if tie_fix: 
-                                par_p[i_par] = min_p[i_par] * ref_value
-                            else:
-                                par_p[i_par] *= ref_value
-                                n_freepars += 1
+                            par_p[tied_i_par] += par_p[ref_i_par]
+                    elif tie_sign in ['x', '*']:
+                        if tie_fix: 
+                            par_p[tied_i_par] = min_p[tied_i_par] * par_p[ref_i_par]
                         else:
-                            raise ValueError((f"The sign '{tie_sign}' of the tying relation {single_tie} is not supported. Please use the one in ['+','x','*']."))
+                            par_p[tied_i_par] *= par_p[ref_i_par]
 
-                        break # only select the 1st effective tie relation
-                    else:
-                        ref_par_min = min_p[ref_i_pars_0_of_mod:ref_i_pars_1_of_mod][ref_i_pars_0_of_comp_in_mod:ref_i_pars_1_of_comp_in_mod][ref_i_par_in_comp]
-                        ref_par_max = max_p[ref_i_pars_0_of_mod:ref_i_pars_1_of_mod][ref_i_pars_0_of_comp_in_mod:ref_i_pars_1_of_comp_in_mod][ref_i_par_in_comp]
-                        if tie_sign is None:
-                            # copy bounds to replace the input None bounds. 
-                            # non-linear process use these values to generate new par_p but the par_p transfered to linear process will be replaced above
-                            # --> deprecated since fully fixed pars are not generated in non-linear process
-                            min_p[i_par] = ref_par_min
-                            max_p[i_par] = ref_par_max
-                        elif tie_fix:
-                            # copy bounds to replace the input None par_max. 
-                            max_p[i_par] = min_p[i_par] + 0.01 # avoid conflict of bounds in least_squares; actually not used        
+                    # check the direct tie to i_par
+                    tie_sign, tie_fix = iter_ties[-1][1:]
+                    if tie_sign is None: # i.e., fully equivalent 
+                        n_freepars -= 1 # reduce one free par
+                    elif tie_fix: # fixed float tie
+                        n_freepars -= 1 # reduce one free par
 
-        if par_p is not None: 
-            return par_p, n_freepars
-        else:
-            return min_p, max_p, tie_p
+        return par_p, n_freepars
     
     def examine_fmod_SN(self, fmod_w, ferr_w, accept_SN=2):
         if len(fmod_w) > 0:
