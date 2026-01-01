@@ -10,7 +10,7 @@ from copy import deepcopy as copy
 import astropy.units as u
 import astropy.constants as const
 
-from .auxiliary_functions import casefold, var_name
+from .auxiliary_functions import casefold
 
 class ConfigFrame(object):
     def __init__(self, config_C):
@@ -255,7 +255,7 @@ class PhotFrame(object):
 
         self.wave_w = copy(wave_w)
         self.wave_unit = wave_unit
-        if (self.wave_w is not None) & (self.wave_unit in ['micron', 'um']): self.wave_w *= 1e4 # convert to Angstrom
+        if (self.wave_w is not None) & (self.wave_unit in ['micron', 'um']): self.wave_w *= 1e4 # convert to angstrom
         self.wave_num = wave_num
                 
         self.trans_dict, self.trans_bw, self.wave_w = self.read_transmission(name_b=self.name_b, 
@@ -322,10 +322,10 @@ class PhotFrame(object):
         unitflam = (1 * u.erg/u.s/u.cm**2/u.angstrom)
         rDnuDlam = const.c.to('angstrom Hz') / (wave_w * u.angstrom)**2
         if trans_bw is None:
-            # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in Angstrom
+            # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
             return (unitflam / rDnuDlam).to('mJy').value
         else:
-            # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in Angstrom
+            # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
             unitfint = unitflam * (1 * u.angstrom)
             # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
             width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)

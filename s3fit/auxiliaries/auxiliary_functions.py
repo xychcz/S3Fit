@@ -44,8 +44,8 @@ def casefold(x):
         return x
     raise ValueError((f"casefold() only supports string, list, or 1-d np.ndarray."))
 
-def var_name(var):
-    return f"{var=}".split('=')[0]
+# def var_name(var):
+#     return f"{var=}".split('=')[0]
         
 # convert roman numbers
 def roman_to_int(roman_num):
@@ -90,7 +90,7 @@ color_list_dict = {'red':    get_colors_by_hue(0,   hue_width=20, min_s=0.3,  ma
 #####################################################################
 #################### wavelength conversion ##########################
 # https://www.astro.uu.se/valdwiki/Air-to-vacuum%20conversion
-# input wavelength in Angstrom
+# input wavelength in angstrom
 # extrapolate to < 2000 A to avoid singularity
 def lamb_vac_to_air(lamb_vac, extrapolate=True):
     if np.isscalar(lamb_vac): lamb_vac = np.array([lamb_vac])

@@ -37,7 +37,7 @@ class FitFrame(object):
                  spec_R_inst_w=None, spec_valid_range=None, spec_flux_scale=None, 
                  # photometirc data
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
-                 sed_wave_w=None, sed_wave_unit='Angstrom', sed_wave_num=None, phot_trans_rsmp=10, 
+                 sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, phot_trans_rsmp=10, 
                  # connection between spectral and photometric data
                  phot_calib_b=None, inst_calib_ratio=0.1, if_rev_inst_calib_ratio=True, inst_calib_smooth=1e4, 
                  if_keep_invalid=False, 
@@ -168,7 +168,7 @@ class FitFrame(object):
 
         # load model configuration
         self.mod_config_M = copy(mod_config_M) # use copy to avoid changing the input config
-        # set wavelength and width (in Angstrom) used to normalize model spectra
+        # set wavelength and width (in angstrom) used to normalize model spectra
         self.norm_wave = norm_wave
         self.norm_width = norm_width
         # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument
@@ -424,7 +424,7 @@ class FitFrame(object):
                                                                         config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
                                                                         v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                         w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                                        dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 Angstrom
+                                                                        dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 angstrom
                                                                         verbose=False) 
                     self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
             ############################################################
@@ -445,7 +445,7 @@ class FitFrame(object):
                                                                     config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
                                                                     v0_redshift=self.v0_redshift, R_inst_rw=None, 
                                                                     w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                                    dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 Angstrom
+                                                                    dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 angstrom
                                                                     verbose=False) 
                     self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
             ############################################################
@@ -500,9 +500,9 @@ class FitFrame(object):
             self.mod_dict_M[mod_name]['cframe'] = self.mod_dict_M[mod_name]['spec_mod'].cframe
             self.mod_dict_M[mod_name]['num_pars'] = self.mod_dict_M[mod_name]['spec_mod'].cframe.num_pars
             self.mod_dict_M[mod_name]['num_coeffs'] = self.mod_dict_M[mod_name]['spec_mod'].num_coeffs
-            self.mod_dict_M[mod_name]['spec_func'] = self.mod_dict_M[mod_name]['spec_mod'].models_unitnorm_obsframe
+            self.mod_dict_M[mod_name]['spec_func'] = self.mod_dict_M[mod_name]['spec_mod'].create_models
             if self.have_phot:
-                self.mod_dict_M[mod_name]['sed_func'] = self.mod_dict_M[mod_name]['sed_mod'].models_unitnorm_obsframe
+                self.mod_dict_M[mod_name]['sed_func'] = self.mod_dict_M[mod_name]['sed_mod'].create_models
 
         # create non-line mask if line is enabled
         if 'line' in self.get_mod_term(self.full_mod_type.split('+')): 
@@ -911,7 +911,7 @@ class FitFrame(object):
                 phot_fres_b = fres_w[-self.num_phot_band:]
 
             # perfrom low-pass filter to residuals 
-            window_length = int(50*(1+self.v0_redshift)/np.median(spec_wave_w[1:]-spec_wave_w[:-1])) # smooth high-frequency noise within rest 50 Angstrom
+            window_length = int(50*(1+self.v0_redshift)/np.median(spec_wave_w[1:]-spec_wave_w[:-1])) # smooth high-frequency noise within rest 50 angstrom
             spec_fres_lowpass_w = savgol_filter(spec_fres_w[mask_valid_w], window_length=min(window_length, len(spec_fres_w[mask_valid_w])), polyorder=2)
             spec_fres_lowpass_w = np.interp(spec_wave_w, spec_wave_w[mask_valid_w], spec_fres_lowpass_w)
             spec_flux_intrinsic_w = spec_fmod_w + spec_fres_lowpass_w
@@ -1718,7 +1718,7 @@ class FitFrame(object):
 
         if self.if_plot_results:
             self.plot_results(step='spec', if_plot_phot=False, if_plot_comp=True, 
-                              plot_range='spec', wave_type='rest', wave_unit='Angstrom', 
+                              plot_range='spec', wave_type='rest', wave_unit='angstrom', 
                               flux_type='Flam', res_type='residual', ferr_num=3, xyscale=('linear','linear'), 
                               title='Best-fit models of pure-spectral fitting with all components ' + r'($\chi^2_{\nu}$ = ' + f"{self.output_S['joint_fit_2']['chi_sq_l'][0]:.3f})")
 
@@ -2036,7 +2036,7 @@ class FitFrame(object):
     ##################################################
 
     def plot_results(self, step=None, if_plot_phot=False, if_plot_comp=True, 
-                     plot_range=None, wave_type='rest', wave_unit='Angstrom', 
+                     plot_range=None, wave_type='rest', wave_unit='angstrom', 
                      flux_type='Flam', res_type='residual', ferr_num=3, 
                      xyscale=('log','log'), figsize=(10, 6), dpi=300, 
                      title=None, legend_loc=None, if_plot_icon=False, 
@@ -2045,7 +2045,7 @@ class FitFrame(object):
         # plot_range = ('spec', 'pure-spec'), 'SED'; check if 'SED'
         # flux_type: ('Flam'), 'Fnu'; check if 'Fnu'
         # wave_type: 'rest', ('obs', 'observed'); check if 'rest'
-        # wave_unit: ('Angstrom'), 'um', 'micron'; check if 'um' or 'micron'
+        # wave_unit: ('angstrom'), 'um', 'micron'; check if 'um' or 'micron'
         # res_type: 'residual', 'residual/data', 'residual/model'
         # ferr_num: n-sigma error
         # xyscale: 'linear', 'log'

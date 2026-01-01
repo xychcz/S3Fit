@@ -555,11 +555,11 @@ class LineFrame(object):
                 self.linelist_default = np.hstack((self.linelist_default, linename))
                 if verbose: 
                     if use_pyneb | (lineratios[i_line] is None):
-                        print_log(f"{linename} with rest wavelength {linerest} (Angstrom) is added into the line list.", self.log_message)
+                        print_log(f"{linename} with rest wavelength {linerest} (Å) is added into the line list.", self.log_message)
                     else:
-                        print_log(f"{linename} with rest wavelength {linerest} (Angstrom) and a fixed flux linkratio={lineratio} is added into the line list.", self.log_message)
+                        print_log(f"{linename} with rest wavelength {linerest} (Å) and a fixed flux linkratio={lineratio} is added into the line list.", self.log_message)
             else:
-                if verbose: print_log(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest} (< 1 Angstrom), "+
+                if verbose: print_log(f"There is a line {self.linename_n[i_close], self.linerest_n[i_close]} close to the input one {linename, linerest} (< 1 Å), "+
                                       f"set force=True to add this line forcibly.", self.log_message)
         self.update_linelist()
 
@@ -995,7 +995,7 @@ class LineFrame(object):
 
         return models_scomp
     
-    def models_unitnorm_obsframe(self, obs_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
+    def create_models(self, obs_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
 
@@ -1028,7 +1028,7 @@ class LineFrame(object):
     ##########################################################################
     ########################## Output functions ##############################
 
-    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, lum_unit=None, **kwargs):
+    def extract_results(self, step=None, if_print_results=True, if_return_results=False, if_rev_v0_redshift=False, if_show_average=False, **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
@@ -1119,10 +1119,10 @@ class LineFrame(object):
         
         self.output_C = output_C # save to model frame
 
-        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average, lum_unit=lum_unit)
+        if if_print_results: self.print_results(log=self.fframe.log_message, if_show_average=if_show_average)
         if if_return_results: return output_C
 
-    def print_results(self, log=[], if_show_average=False, lum_unit=None):
+    def print_results(self, log=[], if_show_average=False):
         print_log('#### Best-fit line model properties ####', log)
 
         mask_l = np.ones(self.num_loops, dtype='bool')
