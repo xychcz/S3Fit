@@ -415,7 +415,7 @@ class AGNFrame(object):
             # read and append intrinsic templates in rest frame
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 alpha_lambda = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda']]
-                pl = self.powerlaw_func(orig_wave_w, wave_norm=self.w_norm, alpha_lambda1=alpha_lambda, alpha_lambda2=None, curvature=None, bending=False)
+                pl = self.powerlaw_func(orig_wave_w, wave_norm=self.cframe.mod_info_I['w_norm'], alpha_lambda1=alpha_lambda, alpha_lambda2=None, curvature=None, bending=False)
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                 alpha_lambda1 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda1']]
@@ -426,7 +426,7 @@ class AGNFrame(object):
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 log_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tem']]
-                bb = self.blackbody_func(orig_wave_w, log_tem=log_tem, wave_norm=self.w_norm)
+                bb = self.blackbody_func(orig_wave_w, log_tem=log_tem, wave_norm=self.cframe.mod_info_I['w_norm'])
                 orig_flux_int_ew = bb[None,:] # convert to (1,w) format
             if self.cframe.comp_info_cI[i_comp]['mod_used'] =='recombination':
                 log_e_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
@@ -591,7 +591,7 @@ class AGNFrame(object):
                 if mask_norm_w.sum() > 0:
                     output_C[comp_name]['value_Vl']['flux_5100'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_5100'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm'] # for observed flux at user given wavenorm
                 if mask_norm_w.sum() > 0:
                     output_C[comp_name]['value_Vl']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
@@ -601,8 +601,8 @@ class AGNFrame(object):
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                     alpha_lambda = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda']]
-                    for (wave, wave_str) in zip([3000, 5100, self.w_norm], ['3000', '5100', 'wavenorm']):
-                        flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=self.w_norm, alpha_lambda1=alpha_lambda, alpha_lambda2=None, 
+                    for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm']], ['3000', '5100', 'wavenorm']):
+                        flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=self.cframe.mod_info_I['w_norm'], alpha_lambda1=alpha_lambda, alpha_lambda2=None, 
                                                                     curvature=None, bending=False)
                         lambLum_wave = flux_wave * unitconv * wave
                         output_C[comp_name]['value_Vl']['log_lambLum_'+wave_str][i_loop] = np.log10(lambLum_wave)
@@ -612,23 +612,23 @@ class AGNFrame(object):
                     alpha_lambda2 = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda2']]
                     wave_turn     = par_p[self.cframe.par_index_cP[i_comp]['wave_turn']]
                     curvature     = par_p[self.cframe.par_index_cP[i_comp]['curvature']]
-                    for (wave, wave_str) in zip([3000, 5100, self.w_norm, wave_turn], ['3000', '5100', 'wavenorm', 'waveturn']):
+                    for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm'], wave_turn], ['3000', '5100', 'wavenorm', 'waveturn']):
                         flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, 
                                                                     curvature=curvature, bending=True)
                         lambLum_wave = flux_wave * unitconv * wave
                         output_C[comp_name]['value_Vl']['log_lambLum_'+wave_str][i_loop] = np.log10(lambLum_wave)
-                    mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - wave_turn) < self.dw_norm 
+                    mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - wave_turn) < self.cframe.mod_info_I['dw_norm'] 
                     if mask_norm_w.sum() > 0:
                         output_C[comp_name]['value_Vl']['flux_waveturn'][i_loop] = tmp_spec_w[mask_norm_w].mean()
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     log_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_tem']]
-                    for (wave, wave_str) in zip([3000, 5100, self.w_norm], ['3000', '5100', 'wavenorm']):
-                        flux_wave = coeff_e[0] * self.blackbody_func(wave, log_tem=log_tem, wave_norm=self.w_norm)
+                    for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm']], ['3000', '5100', 'wavenorm']):
+                        flux_wave = coeff_e[0] * self.blackbody_func(wave, log_tem=log_tem, wave_norm=self.cframe.mod_info_I['w_norm'])
                         lambLum_wave = flux_wave * unitconv * wave
                         output_C[comp_name]['value_Vl']['log_lambLum_'+wave_str][i_loop] = np.log10(lambLum_wave)
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
-                    tmp_bb_w = self.blackbody_func(tmp_wave_w, log_tem=log_tem, wave_norm=self.w_norm)
+                    tmp_bb_w = self.blackbody_func(tmp_wave_w, log_tem=log_tem, wave_norm=self.cframe.mod_info_I['w_norm'])
                     output_C[comp_name]['value_Vl']['log_Lum_int'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_bb_w, x=tmp_wave_w))
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
@@ -719,10 +719,10 @@ class AGNFrame(object):
             print_name_CV[comp_name]['Av'] = 'Extinction (Av)'
             print_name_CV[comp_name]['log_lambLum_3000'] = f"λL3000 (rest,intrinsic) "
             print_name_CV[comp_name]['log_lambLum_5100'] = f"λL5100 (rest,intrinsic) "
-            print_name_CV[comp_name]['log_lambLum_wavenorm'] = f"λL{self.w_norm:.0f} (rest,intrinsic) "
+            print_name_CV[comp_name]['log_lambLum_wavenorm'] = f"λL{self.cframe.mod_info_I['w_norm']:.0f} (rest,intrinsic) "
             print_name_CV[comp_name]['flux_3000'] = f"F3000 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
             print_name_CV[comp_name]['flux_5100'] = f"F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.w_norm:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
+            print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.cframe.mod_info_I['w_norm']:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 print_name_CV[comp_name]['alpha_lambda'] = 'Powerlaw α_λ'
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
@@ -799,13 +799,13 @@ class AGNFrame(object):
                     value_names += ['log_Lum_uv', 'log_Lum_opt']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody']:
                     value_names += ['log_lambLum_3000', 'log_lambLum_5100']
-                    if self.w_norm not in [3000,5100]: value_names += ['log_lambLum_wavenorm']
+                    if self.cframe.mod_info_I['w_norm'] not in [3000,5100]: value_names += ['log_lambLum_wavenorm']
             elif self.cframe.num_comps >= 2: # print sum only if using >= 2 comps
                 print_log(f"# Best-fit properties of the sum of all AGN components.", log)
             else: 
                 continue
             value_names += ['flux_3000', 'flux_5100']
-            if self.w_norm not in [3000,5100]: value_names += ['flux_wavenorm']
+            if self.cframe.mod_info_I['w_norm'] not in [3000,5100]: value_names += ['flux_wavenorm']
 
             value_names += [value_name for value_name in [*value_Vl] if (value_name[:8] in ['log_Lum_', 'log_lamb']) & (value_name not in value_names)]
 

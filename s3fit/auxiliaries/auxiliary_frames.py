@@ -234,7 +234,7 @@ class ConfigFrame(object):
         elif ret in ['dict_C', 'dict', '_C']:
             return self.convert_c_to_C(list_cx)
 
-    def retrieve_inherited_info(self, info_name=None, alt_names=None, comp_name=None, i_comp=None, root_info_I={}, default=None):
+    def retrieve_inherited_info(self, info_name=None, alt_names=[None], comp_name=None, i_comp=None, root_info_I={}, default=None):
         if isinstance(alt_names, str): alt_names = [alt_names]
 
         if (comp_name is not None) | (i_comp is not None):
