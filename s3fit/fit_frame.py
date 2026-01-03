@@ -41,13 +41,13 @@ class FitFrame(object):
                  # connection between spectral and photometric data
                  phot_calib_b=None, inst_calib_ratio=0.1, if_rev_inst_calib_ratio=True, inst_calib_smooth=1e4, 
                  if_keep_invalid=False, 
-                 # model setup
-                 mod_config_M=None, norm_wave=5500, norm_width=25, model_R_ratio=2, 
                  v0_redshift=None, if_rev_v0_redshift=False, rev_v0_reference=None, 
+                 # model setup
+                 model_config=None, # norm_wave=5500, norm_width=25, model_R_ratio=2, 
                  # mock setup
                  num_mocks=0, if_use_multi_thread=False, num_multi_thread=-1, 
                  # basic fitting control
-                 fit_grid='linear', if_examine_result=True, accept_fmod_SN=2, accept_absorption_SN=None, 
+                 fit_grid='linear', if_examine_result=True, # accept_fmod_SN=2, accept_absorption_SN=None, 
                  # detailed fitting quality control
                  accept_chi_sq=3, nlfit_ntry_max=3, nllsq_ftol_ratio=0.01, conv_nbin_max=5, 
                  if_run_init_annealing=True, da_niter_max=10, perturb_scale=0.02, 
@@ -60,16 +60,16 @@ class FitFrame(object):
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if 'inst_calib_ratio_rev' in kwargs: if_rev_inst_calib_ratio = kwargs['inst_calib_ratio_rev']
-        if 'keep_invalid'         in kwargs: if_keep_invalid = kwargs['keep_invalid']
-        if 'model_config'         in kwargs: mod_config_M = kwargs['model_config']
-        if 'use_multi_thread'     in kwargs: if_use_multi_thread = kwargs['use_multi_thread']
-        if 'examine_result'       in kwargs: if_examine_result = kwargs['examine_result']
-        if 'accept_model_SN'      in kwargs: accept_fmod_SN = kwargs['accept_model_SN']
-        if 'init_annealing'       in kwargs: if_run_init_annealing = kwargs['init_annealing']
-        if 'print_step'           in kwargs: if_print_steps = kwargs['print_step']
-        if 'plot_step'            in kwargs: if_plot_steps = kwargs['plot_step']
-        if 'save_per_loop'        in kwargs: if_save_per_loop = kwargs['save_per_loop']
-        if 'save_test'            in kwargs: if_save_test = kwargs['save_test']
+        if 'keep_invalid'         in kwargs: if_keep_invalid         = kwargs['keep_invalid']
+        #if 'model_config'         in kwargs: model_config            = kwargs['model_config']
+        if 'use_multi_thread'     in kwargs: if_use_multi_thread     = kwargs['use_multi_thread']
+        if 'examine_result'       in kwargs: if_examine_result       = kwargs['examine_result']
+        if 'accept_model_SN'      in kwargs: accept_fmod_SN          = kwargs['accept_model_SN']
+        if 'init_annealing'       in kwargs: if_run_init_annealing   = kwargs['init_annealing']
+        if 'print_step'           in kwargs: if_print_steps          = kwargs['print_step']
+        if 'plot_step'            in kwargs: if_plot_steps           = kwargs['plot_step']
+        if 'save_per_loop'        in kwargs: if_save_per_loop        = kwargs['save_per_loop']
+        if 'save_test'            in kwargs: if_save_test            = kwargs['save_test']
         ############################################################
 
         ############################################################
@@ -121,7 +121,7 @@ class FitFrame(object):
             self.have_phot = False
 
         # check necessary model arguments
-        mod_arg_names = ['mod_config_M', 'v0_redshift']
+        mod_arg_names = ['model_config', 'v0_redshift']
         for i_arg, name in enumerate(self.input_args):
             if name in mod_arg_names:
                 if mask_isdefault_a[i_arg]:
@@ -166,17 +166,62 @@ class FitFrame(object):
         # whether to keep invalid wavelength range; if true, mock data and models will be created in invalid range
         self.if_keep_invalid = if_keep_invalid
 
-        # load model configuration
-        self.mod_config_M = copy(mod_config_M) # use copy to avoid changing the input config
-        # set wavelength and width (in angstrom) used to normalize model spectra
-        self.norm_wave = norm_wave
-        self.norm_width = norm_width
-        # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument
-        self.model_R_ratio = model_R_ratio
         # set initial guess of systemic redshift, all velocity shifts are in relative to v0_redshift
         self.v0_redshift = v0_redshift
+        # if update systemic redshift with given reference
         self.if_rev_v0_redshift = if_rev_v0_redshift
         self.rev_v0_reference = rev_v0_reference
+
+        #########################################
+        # load model configuration
+        self.model_config = copy(model_config) # use copy to avoid changing the input config
+
+        # collect registry for each model
+        if 'mod_reg_M' in self.model_config: 
+            self.mod_reg_M = self.model_config['mod_reg_M']
+        elif 'mods' in self.model_config: 
+            self.mod_reg_M = self.model_config['mods']
+        else: # allow old format used in old version <= 2.2.5
+            self.mod_reg_M = self.model_config
+            for mod_name in self.mod_reg_M:
+                mod_info_I = {}
+                for item in self.mod_reg_M[mod_name]:
+                    if item == 'config':
+                        comp_reg_C       = self.mod_reg_M[mod_name][item]
+                    else:
+                        mod_info_I[item] = self.mod_reg_M[mod_name][item]
+                self.mod_reg_M[mod_name]['comp_reg_C'] = comp_reg_C
+                self.mod_reg_M[mod_name]['mod_info_I'] = mod_info_I
+
+        # collect global info, which are applicable for all models and components (unless specially specified in each model or each component)
+        if 'root_info_I' in self.model_config: 
+            self.root_info_I = self.model_config['root_info_I']
+        elif 'root_info' in self.model_config: 
+            self.root_info_I = self.model_config['root_info']
+        elif 'info' in self.model_config: 
+            self.root_info_I = self.model_config['info']
+        else:
+            self.root_info_I = {}
+
+        # allow global info input as args of FitFrame
+        for kv in [['norm_wave', 5500], ['norm_width', 25], 
+                    # set wavelength and width (in angstrom) used to normalize model spectra
+                   ['model_R_ratio', 2], 
+                   # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument                   
+                   ['accept_fmod_SN', 2], ['accept_absorption_SN', 2], 
+                   # accepted min peak-SN of each best-fit model, and of the total absorption components
+                  ]:
+            if kv[0] not in self.root_info_I: 
+                if kv[0] in kwargs: 
+                    self.root_info_I[kv[0]] = kwargs[kv[0]]
+                else:
+                    self.root_info_I[kv[0]] = kv[1]
+        # self.norm_wave = norm_wave
+        # self.norm_width = norm_width
+        # self.model_R_ratio = model_R_ratio
+        # self.accept_fmod_SN = accept_fmod_SN
+        # self.accept_absorption_SN = accept_absorption_SN if accept_absorption_SN is not None else accept_fmod_SN
+        #########################################
 
         # number of mock data
         self.num_mocks = num_mocks
@@ -195,10 +240,9 @@ class FitFrame(object):
             print_log(f"[Note] Pure line fitting (i.e., after subtracting continuum), if enabled, is always in linear space.", self.log_message)
         # fitting steps
         self.if_examine_result = if_examine_result 
-        self.accept_fmod_SN = accept_fmod_SN
-        self.accept_absorption_SN = accept_absorption_SN if accept_absorption_SN is not None else accept_fmod_SN
         if self.if_examine_result: 
-            print_log(f"All continuum models and line components with peak S/N < {self.accept_fmod_SN} (set with 'accept_fmod_SN') will be automatically disabled in examination.", self.log_message)
+            print_log(f"All continuum models and line components with peak S/N < {self.root_info_I['accept_fmod_SN']} (set with 'accept_fmod_SN') will be automatically disabled in examination.", 
+                      self.log_message)
         else:
             print_log(f"[Note] The examination of S/N of models and the updating of fitting will be skipped since 'if_examine_result' is set to False.", self.log_message)
 
@@ -234,17 +278,17 @@ class FitFrame(object):
         # self.input_args = {arg.name: copy(getattr(self,arg.name,None)) for arg in arg_list if arg.name != 'self'}
 
         # initialize input formats
-        self.init_input_data()
+        self.initialize_input_data()
         # import all available models; should be after set_masks to select covered lines
-        self.load_models()
+        self.initialize_models()
         # set constraints of fitting parameters 
-        self.init_par_constraints()
-        # initialize output formats; should be after init_par_constraints
-        self.init_output_results()
+        self.initialize_par_constraints()
+        # initialize output formats; should be after initialize_par_constraints
+        self.initialize_output_results()
 
         print_log(center_string('Initialization finishes', 80), self.log_message)
 
-    def init_input_data(self, verbose=True):
+    def initialize_input_data(self, verbose=True):
         print_log(center_string('Read spectral data', 80), self.log_message, verbose)
 
         ##############################
@@ -321,12 +365,12 @@ class FitFrame(object):
                   f"and convolution/dispersion FWHM of max {fwhm_tol} km/s.", self.log_message, verbose)
 
         # check if norm_wave is coverd in input wavelength range
-        if (self.norm_wave < self.spec_wmin) | (self.norm_wave > self.spec_wmax):
+        if (self.root_info_I['norm_wave'] < self.spec_wmin) | (self.root_info_I['norm_wave'] > self.spec_wmax):
             med_wave = np.median(self.spec['wave_w'][self.spec['mask_valid_w']]) / (1+self.v0_redshift)
             med_wave = round(med_wave/100)*100
-            print_log(f"[WARNING] The input normalization wavelength (rest frame, Å) {self.norm_wave} is out of the valid range, which is forced to the median valid wavelength {med_wave}.", 
-                      self.log_message, verbose)
-            self.norm_wave = med_wave
+            print_log(f"[WARNING] The input normalization wavelength (rest frame, Å) {self.root_info_I['norm_wave']} is out of the valid range, "+
+                      f"which is forced to the median valid wavelength {med_wave}.", self.log_message, verbose)
+            self.root_info_I['norm_wave'] = med_wave
 
         # create a dictionary for photometric-SED data
         # self.have_phot = True if self.phot_name_b is not None else False
@@ -387,75 +431,71 @@ class FitFrame(object):
             self.archived_input['phot'] = copy(self.phot)
             self.archived_input['sed']  = copy(self.sed)
 
+    ############################################################
+
     def load_models(self):
-        # models init setup
-        self.mod_dict_M = {} # main dict to save libs of each model (_M)
-        self.mod_name_T = {} # get the given model name (_M) with internal term (_T)
 
-        # ############################################################
-        # # update old mod_name, 'ssp' and 'el', in mod_config_M to be compatible with old version <= 2.2.4
-        # for mod_name in self.mod_config_M:
-        #     if mod_name == 'ssp': self.mod_config_M['stellar'] = self.mod_config_M.pop('ssp')
-        #     if mod_name == 'el' : self.mod_config_M['line']    = self.mod_config_M.pop('el')
-        # ############################################################
-
-        for mod_name in self.mod_config_M:
-            if 'file' not in self.mod_config_M[mod_name]: 
-                self.mod_config_M[mod_name]['file'] = None
-            if 'enable' in self.mod_config_M[mod_name]: 
-                if not self.mod_config_M[mod_name]['enable']: 
+        for mod_name in self.mod_reg_M:
+            if 'file' not in self.mod_reg_M[mod_name]['mod_info_I']: 
+                self.mod_reg_M[mod_name]['mod_info_I']['file'] = None
+            if 'enable' in self.mod_reg_M[mod_name]['mod_info_I']: 
+                if not self.mod_reg_M[mod_name]['mod_info_I']['enable']: 
                     continue
 
             ############################################################
-            if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['stellar', 'star', 'ssp', 'galaxy', 'host'] ): 
+            mod_term = 'stellar'
+            keywords = ['stellar', 'star', 'galaxy', 'host']
+            if any( casefold(mod_name).split(keyword)[0] != casefold(mod_name) for keyword in keywords ) | (mod_name == 'ssp'): # allow old mod_name 'ssp' used in old version <= 2.2.4
+                self.mod_name_T[mod_term] = mod_name
+                self.mod_dict_M[mod_name] = {'term': mod_term}
                 print_log(center_string('Initialize stellar continuum models', 80), self.log_message)
                 from .model_frames.stellar_frame import StellarFrame
-                self.mod_name_T['stellar'] = mod_name
-                self.mod_dict_M[mod_name] = {'term': 'stellar'}
-                self.mod_dict_M[mod_name]['spec_mod'] = StellarFrame(mod_name=mod_name, fframe=self, 
-                                                                     config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
+                self.mod_dict_M[mod_name]['spec_mod'] = StellarFrame(fframe=self, mod_name=mod_name, config=self.mod_reg_M[mod_name], 
                                                                      v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                                     w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                                     Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
+                                                                     w_min=self.spec_wmin, w_max=self.spec_wmax, 
+                                                                     Rratio_mod=self.root_info_I['model_R_ratio'], dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                      log_message=self.log_message) 
                 self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
-                    self.mod_dict_M[mod_name]['sed_mod'] = StellarFrame(mod_name=mod_name, fframe=self, 
-                                                                        config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
+                    self.mod_dict_M[mod_name]['sed_mod'] = StellarFrame(fframe=self, mod_name=mod_name, config=self.mod_reg_M[mod_name], 
                                                                         v0_redshift=self.v0_redshift, R_inst_rw=None, 
-                                                                        w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                                        w_min=self.sed_wmin, w_max=self.sed_wmax, 
                                                                         dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 angstrom
                                                                         verbose=False) 
                     self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
             ############################################################
-            if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['agn', 'quasar', 'qso', 'seyfert', 'basic', 'simple', 'fundamental'] ): 
+            mod_term = 'agn'
+            keywords = ['agn', 'quasar', 'qso', 'seyfert', 'basic', 'simple', 'fundamental']
+            if any( casefold(mod_name).split(keyword)[0] != casefold(mod_name) for keyword in keywords ): 
+                self.mod_name_T[mod_term] = mod_name
+                self.mod_dict_M[mod_name] = {'term': mod_term}
                 print_log(center_string('Initialize AGN UV/optical continuum models', 80), self.log_message)
                 from .model_frames.agn_frame import AGNFrame
-                self.mod_name_T['agn'] = mod_name
-                self.mod_dict_M[mod_name] = {'term': 'agn'}
                 self.mod_dict_M[mod_name]['spec_mod'] = AGNFrame(mod_name=mod_name, fframe=self, 
-                                                                 config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
+                                                                 config=self.mod_reg_M[mod_name], 
                                                                  v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
-                                                                 w_min=self.spec_wmin, w_max=self.spec_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
-                                                                 Rratio_mod=self.model_R_ratio, dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
+                                                                 w_min=self.spec_wmin, w_max=self.spec_wmax, 
+                                                                 Rratio_mod=self.root_info_I['model_R_ratio'], dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                  log_message=self.log_message) 
                 self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e7)
                 if self.have_phot:
                     self.mod_dict_M[mod_name]['sed_mod'] = AGNFrame(mod_name=mod_name, fframe=self, 
-                                                                    config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
+                                                                    config=self.mod_reg_M[mod_name], 
                                                                     v0_redshift=self.v0_redshift, R_inst_rw=None, 
-                                                                    w_min=self.sed_wmin, w_max=self.sed_wmax, w_norm=self.norm_wave, dw_norm=self.norm_width, 
+                                                                    w_min=self.sed_wmin, w_max=self.sed_wmax,
                                                                     dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 angstrom
                                                                     verbose=False) 
                     self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
             ############################################################
-            if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['torus'] ): 
+            mod_term = 'torus'
+            keywords = ['torus']
+            if any( casefold(mod_name).split(keyword)[0] != casefold(mod_name) for keyword in keywords ): 
+                self.mod_name_T[mod_term] = mod_name
+                self.mod_dict_M[mod_name] = {'term': mod_term}
                 print_log(center_string('Initialize AGN torus models', 80), self.log_message)
                 from .model_frames.torus_frame import TorusFrame
-                self.mod_name_T['torus'] = mod_name
-                self.mod_dict_M[mod_name] = {'term': 'torus'}
                 self.mod_dict_M[mod_name]['spec_mod'] = TorusFrame(mod_name=mod_name, fframe=self, 
-                                                                   config=self.mod_config_M[mod_name]['config'], file_path=self.mod_config_M[mod_name]['file'], 
+                                                                   config=self.mod_reg_M[mod_name], 
                                                                    v0_redshift=self.v0_redshift, 
                                                                    flux_scale=self.spec_flux_scale, 
                                                                    log_message=self.log_message) 
@@ -464,14 +504,15 @@ class FitFrame(object):
                     self.mod_dict_M[mod_name]['sed_mod'] = self.mod_dict_M[mod_name]['spec_mod'] # just copy
                     self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e7)
             ############################################################
-            if any( casefold(mod_name).split(standard_name)[0] != casefold(mod_name) for standard_name in ['line'] ): 
+            mod_term = 'line'
+            keywords = ['line']
+            if any( casefold(mod_name).split(keyword)[0] != casefold(mod_name) for keyword in keywords ) | (mod_name == 'el'): # allow old mod_name 'el' used in old version <= 2.2.4
+                self.mod_name_T[mod_term] = mod_name
+                self.mod_dict_M[mod_name] = {'term': mod_term}
                 print_log(center_string('Initialize line models', 80), self.log_message)
                 from .model_frames.line_frame import LineFrame
-                self.mod_name_T['line'] = mod_name
-                self.mod_dict_M[mod_name] = {'term': 'line'}
                 self.mod_dict_M[mod_name]['spec_mod'] = LineFrame(mod_name=mod_name, fframe=self, 
-                                                                  config=self.mod_config_M[mod_name]['config'], 
-                                                                  use_pyneb=self.mod_config_M[mod_name]['use_pyneb'] if 'use_pyneb' in self.mod_config_M[mod_name] else False, 
+                                                                  config=self.mod_reg_M[mod_name], 
                                                                   v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
                                                                   w_min=self.spec_wmin, w_max=self.spec_wmax, mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']], 
                                                                   log_message=self.log_message) 
@@ -480,6 +521,13 @@ class FitFrame(object):
                     self.mod_dict_M[mod_name]['sed_mod'] = self.mod_dict_M[mod_name]['spec_mod'] # just copy, only fit lines in spectral wavelength range
                     self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
             ############################################################
+
+    def initialize_models(self):
+        # models init setup
+        self.mod_dict_M = {} # main dict to save libs of each model (_M)
+        self.mod_name_T = {} # get the given model name (_M) with internal term (_T)
+
+        self.load_models()
 
         print_log(center_string('Model summary', 80), self.log_message)
         print_log(f"S3Fit imports these models: {[*self.mod_dict_M]}.", self.log_message)
@@ -519,21 +567,6 @@ class FitFrame(object):
         self.archived_input['spec']['mask_noline_w'] = copy(self.spec['mask_noline_w'])
 
         ############################################################
-        # # check old mod_name, 'ssp' and 'el', in tying relations to be compatible with old version <= 2.2.4
-        # for mod_name in self.mod_dict_M:
-        #     mod_cframe = self.mod_dict_M[mod_name]['cframe']
-        #     for i_comp in range(mod_cframe.num_comps):
-        #         for i_par in range(mod_cframe.num_pars_c[i_comp]):
-        #             tmp_tie = mod_cframe.par_tie_cp[i_comp][i_par]
-        #             if tmp_tie.split(':')[0] == 'ssp': tmp_tie = 'stellar' + tmp_tie[3:]
-        #             tmp_tie = tmp_tie.replace(';ssp:', ';stellar:')
-        #             if tmp_tie.split(':')[0] == 'el' : tmp_tie = 'line' + tmp_tie[2:]
-        #             tmp_tie = tmp_tie.replace(';el:', ';line:')
-        #             mod_cframe.par_tie_cp[i_comp][i_par] = tmp_tie
-        # # allow old mod_name, 'ssp' and 'el', in mod_dict_M to be compatible with old version <= 2.2.4
-        # for mod_name in self.mod_dict_M:
-        #     if mod_name == 'stellar': self.mod_dict_M['ssp'] = self.mod_dict_M['stellar']
-        #     if mod_name == 'line'   : self.mod_dict_M['el']  = self.mod_dict_M['line']
         # add alias used in example of old version <= 2.2.4
         self.model_dict = self.mod_dict_M
         ############################################################
@@ -556,7 +589,9 @@ class FitFrame(object):
             mod_names = copy(mod_name)
             return [self.mod_dict_M[mod_name]['term'] for mod_name in mod_names]
 
-    def init_par_constraints(self):
+    ############################################################
+
+    def initialize_par_constraints(self):
         self.mod_name_p  = np.array([])
         self.comp_name_p = np.array([])
         self.par_name_p  = np.array([])
@@ -573,7 +608,7 @@ class FitFrame(object):
         # update bounds to match requirement of fitting fucntion, to avoid making conflict in non linear process
         self.par_min_p, self.par_max_p, self.par_tie_p = self.update_tied_pars(mod_type=self.full_mod_type)
 
-    def init_output_results(self):
+    def initialize_output_results(self):
         self.num_loops = self.num_mocks+1
         # format to save fitting quality, chi_sq, parameters, and coefficients (normalization factors) of final best-fits    
         self.output_S = {}
@@ -1427,16 +1462,16 @@ class FitFrame(object):
         ########################################
         if 'line' in self.get_mod_term(self.full_mod_type.split('+')): 
             # examine if absorption line components are necessary
-            line_disabled_comps = [self.line.cframe.comp_name_c[i_comp] for i_comp in range(self.line.num_comps) if self.line.cframe.info_c[i_comp]['sign'] == 'absorption']
+            line_disabled_comps = [self.line.cframe.comp_name_c[i_comp] for i_comp in range(self.line.num_comps) if self.line.cframe.comp_info_cI[i_comp]['sign'] == 'absorption']
             if len(line_disabled_comps) > 0:
                 mask_abs_w = mask_valid_w & (line_fit_init['line_spec_fmod_w'] < 0)
-                line_abs_peak_SN, line_abs_examine = self.examine_fmod_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.accept_absorption_SN)
+                line_abs_peak_SN, line_abs_examine = self.examine_fmod_SN(-line_fit_init['line_spec_fmod_w'][mask_abs_w], spec_ferr_w[mask_abs_w], accept_SN=self.root_info_I['accept_absorption_SN'])
                 if not line_abs_examine:
-                    print_log(f"Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.accept_absorption_SN} (set by accept_absorption_SN).",
-                              self.log_message, self.if_print_steps)                 
+                    print_log(f"Absorption components {line_disabled_comps} are disabled due to low peak S/N = {line_abs_peak_SN:.3f} (abs) < {self.root_info_I['accept_absorption_SN']} "+
+                              f"(set by 'accept_absorption_SN')", self.log_message, self.if_print_steps)                 
                     # fix the parameters of disabled components (to reduce number of free parameters)
                     for i_comp in range(self.line.num_comps):
-                        if self.line.cframe.info_c[i_comp]['sign'] == 'absorption':  self.line.cframe.par_tie_cp[i_comp] = ['fix'] * self.line.cframe.num_pars_c[i_comp]
+                        if self.line.cframe.comp_info_cI[i_comp]['sign'] == 'absorption':  self.line.cframe.par_tie_cp[i_comp] = ['fix'] * self.line.cframe.num_pars_c[i_comp]
                     # update mask_lite_Me with emission line examination results, i.e., only keep enabled line components
                     mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['line'], self.line.mask_lite_with_comps(disabled_comps=line_disabled_comps), input_mask_lite_Me=mask_lite_Me)
             # obtain a better fit of emission lines after subtracting continuum models of cont_fit_1
@@ -1464,7 +1499,7 @@ class FitFrame(object):
         if self.if_examine_result: 
             ########################################
             ########### Examine models #############
-            print_log(center_string(f"Examine if each continuum model is indeed required, i.e., with peak S/N >= {self.accept_fmod_SN} (set by accept_fmod_SN).", 80), 
+            print_log(center_string(f"Examine if each continuum model is indeed required, i.e., with peak S/N >= {self.root_info_I['accept_fmod_SN']} (set by 'accept_fmod_SN').", 80), 
                       self.log_message, self.if_print_steps)
             cont_type = '' # reset
             for mod_name in joint_fit_1['mod_type'].split('+'):
@@ -1472,7 +1507,7 @@ class FitFrame(object):
                 i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1 = self.search_mod_index(mod_name, joint_fit_1['mod_type'], joint_fit_1['mask_lite_Me'])
                 spec_fmod_ew = self.mod_dict_M[mod_name]['spec_func'](spec_wave_w, joint_fit_1['par_p'][i_pars_0:i_pars_1], mask_lite_e=joint_fit_1['mask_lite_Me'][mod_name], conv_nbin=1)
                 spec_fmod_w = joint_fit_1['coeff_e'][i_coeffs_0:i_coeffs_1] @ spec_fmod_ew
-                mod_peak_SN, mod_examine = self.examine_fmod_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_fmod_SN)
+                mod_peak_SN, mod_examine = self.examine_fmod_SN(spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.root_info_I['accept_fmod_SN'])
                 if mod_examine: 
                     cont_type += mod_name + '+'
                     print_log(f"{mod_name} continuum peak S/N = {mod_peak_SN:.3f} --> remaining", self.log_message, self.if_print_steps)
@@ -1491,7 +1526,7 @@ class FitFrame(object):
                 mod_cframe = self.mod_dict_M[mod_name]['cframe']
                 for i_comp in range(mod_cframe.num_comps): mod_cframe.par_tie_cp[i_comp] = ['fix'] * mod_cframe.num_pars_c[i_comp]
             ########################################
-            print_log(center_string(f"Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.accept_fmod_SN} (set by accept_fmod_SN).", 80), 
+            print_log(center_string(f"Examine if each emission line component is indeed required, i.e., with peak S/N >= {self.root_info_I['accept_fmod_SN']} (set by 'accept_fmod_SN').", 80), 
                       self.log_message, self.if_print_steps)
             if 'line' in self.get_mod_term(joint_fit_1['mod_type'].split('+')): 
                 i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1 = self.search_mod_index(self.mod_name_T['line'], joint_fit_1['mod_type'], joint_fit_1['mask_lite_Me'])
@@ -1502,7 +1537,7 @@ class FitFrame(object):
                     line_comp = self.line.cframe.comp_name_c[i_comp]
                     line_comp_mask_lite_e = self.line.mask_lite_with_comps(enabled_comps=[line_comp])[joint_fit_1['mask_lite_Me'][self.mod_name_T['line']]]
                     line_comp_spec_fmod_w  = joint_fit_1['coeff_e'][i_coeffs_0:i_coeffs_1][line_comp_mask_lite_e] @ line_spec_fmod_ew[line_comp_mask_lite_e, :]
-                    line_comp_peak_SN, line_comp_examine = self.examine_fmod_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.accept_fmod_SN)
+                    line_comp_peak_SN, line_comp_examine = self.examine_fmod_SN(line_comp_spec_fmod_w[mask_valid_w], spec_ferr_w[mask_valid_w], accept_SN=self.root_info_I['accept_fmod_SN'])
                     if line_comp_examine: 
                         line_comps.append(line_comp)
                         print_log(f"{line_comp} peak S/N = {line_comp_peak_SN:.3f} --> remaining", self.log_message, self.if_print_steps)
@@ -1737,7 +1772,7 @@ class FitFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if 'print_results'  in kwargs: if_print_results = kwargs['print_results']
+        if 'print_results'  in kwargs: if_print_results  = kwargs['print_results']
         if 'return_results' in kwargs: if_return_results = kwargs['return_results']
         ############################################################
 
@@ -1944,9 +1979,6 @@ class FitFrame(object):
         self.output_MC = output_MC
 
         ############################################################
-        # # allow old mod_name, 'ssp' and 'el', in output_MC to be compatible with old version <= 2.2.4
-        # if 'stellar' in self.full_mod_type.split('+'): self.output_MC['ssp'] = output_MC['stellar']
-        # if 'line'    in self.full_mod_type.split('+'): self.output_MC['el']  = output_MC['line']
         # keep aliases for output in old version <= 2.2.4
         for mod_name in rev_mod_type.split('+'):
             comp_name_c = self.mod_dict_M[mod_name]['cframe'].comp_name_c

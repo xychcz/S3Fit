@@ -18,23 +18,19 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class AGNFrame(object):
-    def __init__(self, mod_name=None, fframe=None, 
-                 config=None, file_path=None, 
+    def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, R_inst_rw=None, 
-                 w_min=None, w_max=None, w_norm=5100, dw_norm=25, 
+                 w_min=None, w_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.file_path = file_path
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw        
         self.w_min = w_min
         self.w_max = w_max
-        self.w_norm = w_norm
-        self.dw_norm = dw_norm
         self.Rratio_mod = Rratio_mod # resolution ratio of model / instrument
         self.dw_fwhm_dsp = dw_fwhm_dsp # model convolving width for downsampling (rest frame)
         self.dw_pix_inst = dw_pix_inst # data sampling width (obs frame)
@@ -44,98 +40,23 @@ class AGNFrame(object):
         self.cframe=ConfigFrame(self.config)
         self.comp_name_c = self.cframe.comp_name_c
         self.num_comps = self.cframe.num_comps
-
-        # check alternative model names
-        for i_comp in range(self.num_comps):
-            if casefold(self.cframe.info_c[i_comp]['mod_used']) in ['powerlaw', 'pl']: 
-                self.cframe.info_c[i_comp]['mod_used'] = 'powerlaw'
-            if casefold(self.cframe.info_c[i_comp]['mod_used']) in ['bending-powerlaw', 'bending_powerlaw', 'bending powerlaw', 'bending-pl', 'bending_pl', 'bending pl']: 
-                self.cframe.info_c[i_comp]['mod_used'] = 'bending-powerlaw'
-            if casefold(self.cframe.info_c[i_comp]['mod_used']) in ['blackbody', 'black_body', 'black body', 'bb']: 
-                self.cframe.info_c[i_comp]['mod_used'] = 'blackbody'
-            if casefold(self.cframe.info_c[i_comp]['mod_used']) in ['recombination', 'recombination_continuum', 'recombination continuum', 'rec', 'balmer_continuum', 'balmer continuum', 'bac']: 
-                self.cframe.info_c[i_comp]['mod_used'] = 'recombination'
-            if casefold(self.cframe.info_c[i_comp]['mod_used']) in ['iron', 'feii', 'fe ii']: 
-                self.cframe.info_c[i_comp]['mod_used'] = 'iron'
-
-        ############################################################
-        # to be compatible with old version <= 2.2.4
-        if len(self.cframe.par_index_cP[0]) == 0:
-            for i_comp in range(self.num_comps):
-                if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':
-                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'alpha_lambda']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda': 3}
-                if self.cframe.info_c[i_comp]['mod_used'] == 'bending-powerlaw':
-                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda1': 3, 'alpha_lambda2': 4, 'wave_turn': 5, 'curvature': 6}
-                if self.cframe.info_c[i_comp]['mod_used'] == 'blackbody':
-                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_tem',]
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_tem': 3}
-                if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
-                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_e_tem', 'log_tau_be']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_tem': 3, 'log_tau_be': 4}
-                if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
-                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2}
-        ############################################################
-
-        # set default info if not specified in config
-        for i_comp in range(self.num_comps):
-            if 'int_wave_range' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_wave_range'] = [(912,30000)]
-            if 'int_wave_unit'  not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_wave_unit']  = 'angstrom'
-            if 'int_wave_frame' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_wave_frame'] = 'rest'
-            if 'int_lum_unit'   not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_lum_unit']   = 'erg/s'
-            if 'int_lum_type'   not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_lum_type']   = ['intrinsic', 'observed', 'absorbed']
-            if self.cframe.info_c[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
-                # truncated range and index of powerlaw, either nested tuple or dict format, e.g., {'wave_range': (5, None), 'wave_unit': 'micron', 'alpha_lambda': -4}
-                if 'truncation' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['truncation'] = [((None, 0.01), 'micron', 0.2), ((0.01,  0.1), 'micron',  -1), ((5, None), 'micron',  -4)]
-                # the adopted values follow Schartmann et al. 2005; Feltre et al. 2012; Stalevski et al. 2016
-            if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
-                if 'H_series' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['H_series'] = [2,3,4,5]
-            if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
-                if 'segments' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['segments'] = False
-
-        # group single info to a list
-        for i_comp in range(self.num_comps):
-            if isinstance(self.cframe.info_c[i_comp]['int_wave_range'], tuple): self.cframe.info_c[i_comp]['int_wave_range'] = [self.cframe.info_c[i_comp]['int_wave_range']]
-            if isinstance(self.cframe.info_c[i_comp]['int_wave_range'], list):
-                if all( isinstance(i, (int,float)) for i in self.cframe.info_c[i_comp]['int_wave_range'] ):
-                    if len(self.cframe.info_c[i_comp]['int_wave_range']) == 2: self.cframe.info_c[i_comp]['int_wave_range'] = [self.cframe.info_c[i_comp]['int_wave_range']]
-            if isinstance(self.cframe.info_c[i_comp]['int_lum_type'], str): self.cframe.info_c[i_comp]['int_lum_type'] = [self.cframe.info_c[i_comp]['int_lum_type']] 
-            if self.cframe.info_c[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
-                if isinstance(self.cframe.info_c[i_comp]['truncation'], (tuple, dict)): self.cframe.info_c[i_comp]['truncation'] = [self.cframe.info_c[i_comp]['truncation']]
-            if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
-                if isinstance(self.cframe.info_c[i_comp]['H_series'], (str, int)): self.cframe.info_c[i_comp]['H_series'] = [self.cframe.info_c[i_comp]['H_series']]
-
-        # check alternative info
-        for i_comp in range(self.num_comps):
-            # int_lum_type
-            self.cframe.info_c[i_comp]['int_lum_type'] = ['intrinsic' if casefold(lum_type) in ['intrinsic', 'original'] else lum_type for lum_type in self.cframe.info_c[i_comp]['int_lum_type']]
-            self.cframe.info_c[i_comp]['int_lum_type'] = ['observed'  if casefold(lum_type) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct'] else lum_type 
-                                                          for lum_type in self.cframe.info_c[i_comp]['int_lum_type']]
-            self.cframe.info_c[i_comp]['int_lum_type'] = ['absorbed'  if casefold(lum_type) in ['absorbed', 'dust'] else lum_type for lum_type in self.cframe.info_c[i_comp]['int_lum_type']]
-            self.cframe.info_c[i_comp]['int_lum_type'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['int_lum_type'])) # remove duplicates
-            if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
-                # translate greek notations to number of lower-level number
-                H_series_dict = {'balmer': 2, 'paschen': 3, 'brackett': 4, 'pfund': 5, 'humphreys': 6}
-                self.cframe.info_c[i_comp]['H_series'] = [H_series_dict[casefold(series)] if casefold(series) in H_series_dict else series for series in self.cframe.info_c[i_comp]['H_series']]
-                self.cframe.info_c[i_comp]['H_series'] = list(dict.fromkeys( self.cframe.info_c[i_comp]['H_series'] )) # remove duplicate
+        self.check_config()
 
         # set original wavelength grid, required to project iron template
         orig_wave_logbin = 0.05
         orig_wave_num = int(np.round(np.log10(w_max/w_min) / orig_wave_logbin))
         self.orig_wave_w = np.logspace(np.log10(w_min), np.log10(w_max), num=orig_wave_num)
         # load iron template
-        if 'iron' in [self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]: 
+        if 'iron' in [self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]: 
             self.read_iron()
 
         # count the number of independent model elements
         self.num_coeffs_c = np.zeros(self.num_comps, dtype='int')
         for i_comp in range(self.num_comps):
-            if self.cframe.info_c[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody', 'recombination']:
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody', 'recombination']:
                 self.num_coeffs_c[i_comp] = 1 # one independent element per component
-            if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
-                if self.cframe.info_c[i_comp]['segments']: 
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                if self.cframe.comp_info_cI[i_comp]['segments']: 
                     self.num_coeffs_c[i_comp] = self.iron_dict['orig_flux_ew'].shape[0] # multiple independent segments
                 else:
                     self.num_coeffs_c[i_comp] = 1 # one independent segment
@@ -143,38 +64,124 @@ class AGNFrame(object):
 
         # currently do not consider negative spectra 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
-        
+
+        if self.verbose:
+            print_log(f"AGN UV/optical/NIR continuum components: {[self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]}", self.log_message)
+            for i_comp in range(self.num_comps):
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
+                    print_log(f"Lower-level principal quantum number of Hydrogen recombination continuum: {self.cframe.comp_info_cI[i_comp]['H_series']}", self.log_message)
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                    if self.cframe.comp_info_cI[i_comp]['segments']: 
+                        wave_ranges = [wave_range for wave_range in self.iron_dict['wave_segments'] if (wave_range[1] > self.w_min) & (wave_range[0] < self.w_max)]
+                        print_log(f"Wavelength segments for fitting of Fe II template: {wave_ranges}", self.log_message)
+
         # set plot styles
         self.plot_style_C = {}
         self.plot_style_C['sum'] = {'color': 'C3', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
         i_red, i_yellow, i_green, i_purple = 0, 0, 0, 0
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
-            if self.cframe.info_c[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
                 self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.5, 'linestyle': '--', 'linewidth': 1}
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['purple'], i_purple, mode="wrap"))
                 i_purple += 1
-            if self.cframe.info_c[i_comp]['mod_used'] == 'blackbody':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.5, 'linestyle': '--', 'linewidth': 1}
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['red'], i_red, mode="wrap"))
                 i_red += 1
-            if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                 self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.5, 'linestyle': '--', 'linewidth': 1}
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['green'], i_green, mode="wrap"))
                 i_green += 1
-            if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                 self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.5, 'linestyle': '-', 'linewidth': 0.75}
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['yellow'], i_yellow, mode="wrap"))
                 i_yellow += 1
 
-        if self.verbose:
-            print_log(f"AGN UV/optical/NIR continuum components: {[self.cframe.info_c[i_comp]['mod_used'] for i_comp in range(self.num_comps)]}", self.log_message)
+    ##########################################################################
+
+    def check_config(self):
+
+        # check alternative model names
+        for i_comp in range(self.num_comps):
+            if casefold(self.cframe.comp_info_cI[i_comp]['mod_used']) in ['powerlaw', 'pl']: 
+                self.cframe.comp_info_cI[i_comp]['mod_used'] = 'powerlaw'
+            if casefold(self.cframe.comp_info_cI[i_comp]['mod_used']) in ['bending-powerlaw', 'bending_powerlaw', 'bending powerlaw', 'bending-pl', 'bending_pl', 'bending pl']: 
+                self.cframe.comp_info_cI[i_comp]['mod_used'] = 'bending-powerlaw'
+            if casefold(self.cframe.comp_info_cI[i_comp]['mod_used']) in ['blackbody', 'black_body', 'black body', 'bb']: 
+                self.cframe.comp_info_cI[i_comp]['mod_used'] = 'blackbody'
+            if casefold(self.cframe.comp_info_cI[i_comp]['mod_used']) in ['recombination', 'recombination_continuum', 'recombination continuum', 'rec', 'balmer_continuum', 'balmer continuum', 'bac']: 
+                self.cframe.comp_info_cI[i_comp]['mod_used'] = 'recombination'
+            if casefold(self.cframe.comp_info_cI[i_comp]['mod_used']) in ['iron', 'feii', 'fe ii']: 
+                self.cframe.comp_info_cI[i_comp]['mod_used'] = 'iron'
+
+        ############################################################
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cP[0]) == 0:
             for i_comp in range(self.num_comps):
-                if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
-                    print_log(f"Lower-level principal quantum number of Hydrogen recombination continuum: {self.cframe.info_c[i_comp]['H_series']}", self.log_message)
-                if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
-                    if self.cframe.info_c[i_comp]['segments']: 
-                        wave_ranges = [wave_range for wave_range in self.iron_dict['wave_segments'] if (wave_range[1] > self.w_min) & (wave_range[0] < self.w_max)]
-                        print_log(f"Wavelength segments for fitting of Fe II template: {wave_ranges}", self.log_message)
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
+                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'alpha_lambda']
+                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda': 3}
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
+                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature']
+                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda1': 3, 'alpha_lambda2': 4, 'wave_turn': 5, 'curvature': 6}
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
+                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_tem',]
+                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_tem': 3}
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
+                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_e_tem', 'log_tau_be']
+                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_tem': 3, 'log_tau_be': 4}
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av']
+                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2}
+        ############################################################
+
+        # set inherited or default info if not specified in config
+        # model-level info
+        self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
+        self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
+        # component-level info
+        for i_comp in range(self.num_comps):
+            self.cframe.retrieve_inherited_info('int_wave_range', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=[(912,30000)])
+            self.cframe.retrieve_inherited_info('int_wave_unit' , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='angstrom')
+            self.cframe.retrieve_inherited_info('int_wave_frame', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='rest')
+            self.cframe.retrieve_inherited_info('int_lum_unit'  , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='erg/s')
+            self.cframe.retrieve_inherited_info('int_lum_type'  , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=['intrinsic', 'observed', 'absorbed'])
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
+                # truncated range and index of powerlaw, either nested tuple or dict format, e.g., {'wave_range': (5, None), 'wave_unit': 'micron', 'alpha_lambda': -4}
+                self.cframe.retrieve_inherited_info('truncation', i_comp=i_comp, default=[((None, 0.01), 'micron', 0.2), ((0.01, 0.1), 'micron', -1), ((5, None), 'micron', -4)])
+                # the adopted values follow Schartmann et al. 2005; Feltre et al. 2012; Stalevski et al. 2016
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
+                self.cframe.retrieve_inherited_info('H_series', i_comp=i_comp, default=[2,3,4,5])
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                self.cframe.retrieve_inherited_info('segments', i_comp=i_comp, default=False)
+
+        # group single info to a list
+        for i_comp in range(self.num_comps):
+            if isinstance(self.cframe.comp_info_cI[i_comp]['int_wave_range'], tuple): self.cframe.comp_info_cI[i_comp]['int_wave_range'] = [self.cframe.comp_info_cI[i_comp]['int_wave_range']]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['int_wave_range'], list):
+                if all( isinstance(i, (int,float)) for i in self.cframe.comp_info_cI[i_comp]['int_wave_range'] ):
+                    if len(self.cframe.comp_info_cI[i_comp]['int_wave_range']) == 2: self.cframe.comp_info_cI[i_comp]['int_wave_range'] = [self.cframe.comp_info_cI[i_comp]['int_wave_range']]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['int_lum_type'], str): self.cframe.comp_info_cI[i_comp]['int_lum_type'] = [self.cframe.comp_info_cI[i_comp]['int_lum_type']] 
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
+                if isinstance(self.cframe.comp_info_cI[i_comp]['truncation'], (tuple, dict)): self.cframe.comp_info_cI[i_comp]['truncation'] = [self.cframe.comp_info_cI[i_comp]['truncation']]
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
+                if isinstance(self.cframe.comp_info_cI[i_comp]['H_series'], (str, int)): self.cframe.comp_info_cI[i_comp]['H_series'] = [self.cframe.comp_info_cI[i_comp]['H_series']]
+
+        # check alternative info
+        for i_comp in range(self.num_comps):
+            # int_lum_type
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['intrinsic' if casefold(lum_type) in ['intrinsic', 'original'] else lum_type 
+                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['observed'  if casefold(lum_type) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct'] else lum_type 
+                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['absorbed'  if casefold(lum_type) in ['absorbed', 'dust'] else lum_type 
+                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = list(dict.fromkeys(self.cframe.comp_info_cI[i_comp]['int_lum_type'])) # remove duplicates
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
+                # translate greek notations to number of lower-level number
+                H_series_dict = {'balmer': 2, 'paschen': 3, 'brackett': 4, 'pfund': 5, 'humphreys': 6}
+                self.cframe.comp_info_cI[i_comp]['H_series'] = [H_series_dict[casefold(series)] if casefold(series) in H_series_dict else series for series in self.cframe.comp_info_cI[i_comp]['H_series']]
+                self.cframe.comp_info_cI[i_comp]['H_series'] = list(dict.fromkeys( self.cframe.comp_info_cI[i_comp]['H_series'] )) # remove duplicate
 
     ##########################################################################
 
@@ -299,7 +306,10 @@ class AGNFrame(object):
         # https://arxiv.org/pdf/astro-ph/0312654, Veron-Cetty et al., 2003
         # https://arxiv.org/pdf/astro-ph/0606040, Tsuzuki et al., 2006
 
-        iron_lib = fits.open(self.file_path)
+        for item in ['file', 'file_path']:
+            if item in self.cframe.mod_info_I: iron_file = self.cframe.mod_info_I[item]
+        iron_lib = fits.open(iron_file)
+
         iron_wave_w = iron_lib[0].data[0] # angstrom, in rest frame
         iron_flux_w = iron_lib[0].data[1] # erg/s/cm2/angstrom
         iron_dw_fwhm_w = iron_wave_w * 1100 / 299792.458
@@ -403,39 +413,39 @@ class AGNFrame(object):
 
             orig_wave_w = copy(self.orig_wave_w)
             # read and append intrinsic templates in rest frame
-            if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 alpha_lambda = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda']]
                 pl = self.powerlaw_func(orig_wave_w, wave_norm=self.w_norm, alpha_lambda1=alpha_lambda, alpha_lambda2=None, curvature=None, bending=False)
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
-            if self.cframe.info_c[i_comp]['mod_used'] == 'bending-powerlaw':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                 alpha_lambda1 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda1']]
                 alpha_lambda2 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda2']]
                 wave_turn     = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['wave_turn']]
                 curvature     = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['curvature']]
                 pl = self.powerlaw_func(orig_wave_w, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, bending=True)
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
-            if self.cframe.info_c[i_comp]['mod_used'] == 'blackbody':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 log_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tem']]
                 bb = self.blackbody_func(orig_wave_w, log_tem=log_tem, wave_norm=self.w_norm)
                 orig_flux_int_ew = bb[None,:] # convert to (1,w) format
-            if self.cframe.info_c[i_comp]['mod_used'] =='recombination':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] =='recombination':
                 log_e_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
                 log_tau_be = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tau_be']]
-                rec = self.recombination_func(orig_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.info_c[i_comp]['H_series'])
+                rec = self.recombination_func(orig_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
                 orig_flux_int_ew = rec[None,:] # convert to (1,w) format
-            if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                 if if_full_range:
                     orig_wave_w = copy(self.iron_dict['init_wave_w'])
                     # do not convolve in this case
                     if_convolve = False 
-                    if self.cframe.info_c[i_comp]['segments']:
+                    if self.cframe.comp_info_cI[i_comp]['segments']:
                         iron = self.iron_dict['init_flux_ew']
                         orig_flux_int_ew = copy(iron)
                     else:
                         iron = self.iron_dict['init_flux_w']
                         orig_flux_int_ew = iron[None,:] # convert to (1,w) format
                 else:
-                    if self.cframe.info_c[i_comp]['segments']:
+                    if self.cframe.comp_info_cI[i_comp]['segments']:
                         iron = self.iron_dict['orig_flux_ew']
                         orig_flux_int_ew = copy(iron)
                     else:
@@ -459,7 +469,7 @@ class AGNFrame(object):
                 orig_flux_dz_ew = orig_flux_d_ew
 
             # convolve with intrinsic and instrumental dispersion if self.R_inst_rw is not None; only for iron
-            if if_convolve & ('fwhm' in self.cframe.par_index_cP[i_comp]) & (self.R_inst_rw is not None) & (conv_nbin is not None) & (self.cframe.info_c[i_comp]['mod_used'] == 'iron'):
+            if if_convolve & ('fwhm' in self.cframe.par_index_cP[i_comp]) & (self.R_inst_rw is not None) & (conv_nbin is not None) & (self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron'):
                 fwhm = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
                 orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=fwhm, 
@@ -516,22 +526,22 @@ class AGNFrame(object):
         value_names_additive = ['flux_3000', 'flux_5100', 'flux_wavenorm']
         value_names_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':       
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':       
                 value_names_C[comp_name] = value_names_additive + ['log_lambLum_3000', 'log_lambLum_5100', 'log_lambLum_wavenorm']
-            if self.cframe.info_c[i_comp]['mod_used'] == 'bending-powerlaw':       
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':       
                 value_names_C[comp_name] = value_names_additive + ['log_lambLum_3000', 'log_lambLum_5100', 'log_lambLum_wavenorm', 'log_lambLum_waveturn', 'flux_waveturn']
-            if self.cframe.info_c[i_comp]['mod_used'] == 'blackbody':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 value_names_C[comp_name] = value_names_additive + ['log_lambLum_3000', 'log_lambLum_5100', 'log_lambLum_wavenorm', 'log_Lum_int']
-            if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                 value_names_C[comp_name] = value_names_additive + ['log_Lum_int']
-            if self.cframe.info_c[i_comp]['mod_used'] == 'iron':      
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':      
                 value_names_C[comp_name] = value_names_additive + ['log_Lum_uv', 'log_Lum_opt']
 
             lum_names = []
-            wave_unit_str = 'um' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-            for wave_range in self.cframe.info_c[i_comp]['int_wave_range']:
+            wave_unit_str = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
+            for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']:
                 if wave_range is None: continue
-                for lum_type in self.cframe.info_c[i_comp]['int_lum_type']:
+                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
                     lum_names.append(f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}")
             value_names_C[comp_name] += lum_names
             if i_comp == 0: 
@@ -589,7 +599,7 @@ class AGNFrame(object):
                 dist_lum = cosmo.luminosity_distance(rev_redshift).to('cm').value
                 unitconv = 4*np.pi*dist_lum**2 * self.spec_flux_scale / const.L_sun.to('erg/s').value # convert intrinsic flux in erg/s/cm2/A to Lum in Lsun/A
 
-                if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                     alpha_lambda = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda']]
                     for (wave, wave_str) in zip([3000, 5100, self.w_norm], ['3000', '5100', 'wavenorm']):
                         flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=self.w_norm, alpha_lambda1=alpha_lambda, alpha_lambda2=None, 
@@ -597,7 +607,7 @@ class AGNFrame(object):
                         lambLum_wave = flux_wave * unitconv * wave
                         output_C[comp_name]['value_Vl']['log_lambLum_'+wave_str][i_loop] = np.log10(lambLum_wave)
 
-                if self.cframe.info_c[i_comp]['mod_used'] == 'bending-powerlaw':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                     alpha_lambda1 = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda1']]
                     alpha_lambda2 = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda2']]
                     wave_turn     = par_p[self.cframe.par_index_cP[i_comp]['wave_turn']]
@@ -611,7 +621,7 @@ class AGNFrame(object):
                     if mask_norm_w.sum() > 0:
                         output_C[comp_name]['value_Vl']['flux_waveturn'][i_loop] = tmp_spec_w[mask_norm_w].mean()
 
-                if self.cframe.info_c[i_comp]['mod_used'] == 'blackbody':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     log_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_tem']]
                     for (wave, wave_str) in zip([3000, 5100, self.w_norm], ['3000', '5100', 'wavenorm']):
                         flux_wave = coeff_e[0] * self.blackbody_func(wave, log_tem=log_tem, wave_norm=self.w_norm)
@@ -621,15 +631,15 @@ class AGNFrame(object):
                     tmp_bb_w = self.blackbody_func(tmp_wave_w, log_tem=log_tem, wave_norm=self.w_norm)
                     output_C[comp_name]['value_Vl']['log_Lum_int'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_bb_w, x=tmp_wave_w))
 
-                if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     log_e_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_e_tem']]
                     log_tau_be = par_p[self.cframe.par_index_cP[i_comp]['log_tau_be']]
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
-                    tmp_rec_w = self.recombination_func(tmp_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.info_c[i_comp]['H_series'])
+                    tmp_rec_w = self.recombination_func(tmp_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
                     output_C[comp_name]['value_Vl']['log_Lum_int'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_rec_w, x=tmp_wave_w))
 
-                if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
-                    if self.cframe.info_c[i_comp]['segments']:
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                    if self.cframe.comp_info_cI[i_comp]['segments']:
                         coeff_uv  = (coeff_e[1:4] * self.iron_dict['flux_norm_e'][1:4])[coeff_e[1:4] > 0].sum()
                         coeff_opt = (coeff_e[4:6] * self.iron_dict['flux_norm_e'][4:6])[coeff_e[4:6] > 0].sum()
                     else:
@@ -639,15 +649,15 @@ class AGNFrame(object):
                     output_C[comp_name]['value_Vl']['log_Lum_opt'][i_loop] = np.log10(coeff_opt * unitconv)
 
                 # calculate integrated lum in given wavelength ranges
-                for wave_range in self.cframe.info_c[i_comp]['int_wave_range']: 
+                for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']: 
                     if wave_range is None: continue
-                    wave_unit_str   = 'um' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-                    wave_unit_ratio = 1e4  if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 1
-                    if casefold(self.cframe.info_c[i_comp]['int_wave_frame']) in ['rest']: wave_unit_ratio *= (1+rev_redshift) # rest to obs range
+                    wave_unit_str   = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
+                    wave_unit_ratio = 1e4  if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 1
+                    if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_frame']) in ['rest']: wave_unit_ratio *= (1+rev_redshift) # rest to obs range
                     int_wave_w = np.logspace(np.log10(wave_range[0]*wave_unit_ratio), np.log10(wave_range[1]*wave_unit_ratio), num=1000) # obs frame grid
 
                     tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
-                    for lum_type in self.cframe.info_c[i_comp]['int_lum_type']:
+                    for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
                         if lum_type in ['intrinsic','absorbed']:
                             tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=False, if_redshift=False, if_full_range=True) # flux in rest frame
@@ -670,13 +680,13 @@ class AGNFrame(object):
 
         # updated to requested lum_unit for each comp
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            if casefold(self.cframe.info_c[i_comp]['int_lum_unit']) in ['erg/s', 'erg s-1']: 
+            if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['erg/s', 'erg s-1']: 
                 for value_name in output_C[comp_name]['value_Vl']:
                     if value_name[:8] in ['log_Lum_', 'log_lamb']: 
                         output_C[comp_name]['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
         # if all comp have the same lum unit, also update the sum
-        if len(set(self.cframe.info_c[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
-            if casefold(self.cframe.info_c[0]['int_lum_unit']) in ['erg/s', 'erg s-1']:
+        if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
+            if casefold(self.cframe.comp_info_cI[0]['int_lum_unit']) in ['erg/s', 'erg s-1']:
                 for value_name in output_C['sum']['value_Vl']:
                     if value_name[:8] in ['log_Lum_', 'log_lamb']: 
                         output_C['sum']['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
@@ -713,9 +723,9 @@ class AGNFrame(object):
             print_name_CV[comp_name]['flux_3000'] = f"F3000 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
             print_name_CV[comp_name]['flux_5100'] = f"F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
             print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.w_norm:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 print_name_CV[comp_name]['alpha_lambda'] = 'Powerlaw α_λ'
-            if self.cframe.info_c[i_comp]['mod_used'] == 'bending-powerlaw':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                 print_name_CV[comp_name]['curvature'] = 'Curvature'
                 print_name_CV[comp_name]['wave_turn'] = 'Turning wavelength (rest, Å)'
                 wave_turn = self.output_C[[*self.output_C][i_comp]]['value_Vl']['wave_turn'][0]
@@ -723,21 +733,21 @@ class AGNFrame(object):
                 print_name_CV[comp_name]['alpha_lambda2'] = f"Powerlaw α2_λ (λ > {wave_turn:.0f})"
                 print_name_CV[comp_name]['flux_waveturn'] = f"F{wave_turn:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
                 print_name_CV[comp_name]['log_lambLum_waveturn'] = f"λL{wave_turn:.0f} (rest,intrinsic) "
-            if self.cframe.info_c[i_comp]['mod_used'] == 'blackbody':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 print_name_CV[comp_name]['log_tem'] = 'Blackbody temperature (log K)'
                 print_name_CV[comp_name]['log_Lum_int'] = f"Bolometric Lum. "
-            if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                 print_name_CV[comp_name]['log_e_tem'] = 'Recombination cont. e- temperature (log K)'
                 print_name_CV[comp_name]['log_tau_be'] = 'Recombination cont. optical depth at 3646 Å (log τ)'
                 print_name_CV[comp_name]['log_Lum_int'] = f"Bolometric Lum. "
-            if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                 print_name_CV[comp_name]['log_Lum_uv']  = 'Integrated intrinsic Lum. (UV, 2150-4000 Å) '
                 print_name_CV[comp_name]['log_Lum_opt'] = 'Integrated intrinsic Lum. (optical, 4000-5600 Å) '
 
-            for wave_range in self.cframe.info_c[i_comp]['int_wave_range']: 
-                wave_unit_str_0 = 'um' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-                wave_unit_str_1 = 'µm' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'Å'
-                for lum_type in self.cframe.info_c[i_comp]['int_lum_type']:
+            for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']: 
+                wave_unit_str_0 = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
+                wave_unit_str_1 = 'µm' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'Å'
+                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
                     value_name = f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str_0}_{lum_type}"
                     if lum_type == 'absorbed': lum_type = 'dust-absorbed'
                     print_name_CV[comp_name][value_name] = f"Integrated {lum_type} Lum. "+f"({wave_range[0]}-{wave_range[1]} {wave_unit_str_1}) "
@@ -747,13 +757,13 @@ class AGNFrame(object):
 
         # updated to requested lum_unit for each comp
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
-            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.info_c[i_comp]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
+            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
             for value_name in self.output_C[comp_name]['value_Vl']:
                 if value_name[:8] in ['log_Lum_', 'log_lamb']: 
                     print_name_CV[comp_name][value_name] += lum_unit_str
         # if all comp have the same lum unit, also update the sum
-        if len(set(self.cframe.info_c[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
-            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.info_c[0]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
+        if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
+            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.comp_info_cI[0]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
         else:
             lum_unit_str = '(log Lsun) ' # default
         for value_name in self.output_C['sum']['value_Vl']:
@@ -772,22 +782,22 @@ class AGNFrame(object):
             msg = ''
             if i_comp < self.cframe.num_comps: # print best-fit pars for each comp
                 print_log(f"# AGN component <{self.cframe.comp_name_c[i_comp]}>:", log)
-                if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                     value_names += ['voff', 'fwhm']
                 else:
                     print_log(f"[Note] velocity shift (i.e., redshift) and FWHM are tied following the input model_config.", log)
                 value_names += ['Av']
-                if self.cframe.info_c[i_comp]['mod_used'] == 'powerlaw':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                     value_names += ['alpha_lambda']
-                if self.cframe.info_c[i_comp]['mod_used'] == 'bending-powerlaw':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                     value_names += ['curvature', 'wave_turn', 'alpha_lambda1', 'alpha_lambda2', 'flux_waveturn', 'log_lambLum_waveturn']
-                if self.cframe.info_c[i_comp]['mod_used'] == 'blackbody':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     value_names += ['log_tem', 'log_Lum_int']
-                if self.cframe.info_c[i_comp]['mod_used'] == 'recombination':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     value_names += ['log_e_tem', 'log_tau_be', 'log_Lum_int']
-                if self.cframe.info_c[i_comp]['mod_used'] == 'iron':
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                     value_names += ['log_Lum_uv', 'log_Lum_opt']
-                if self.cframe.info_c[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody']:
+                if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody']:
                     value_names += ['log_lambLum_3000', 'log_lambLum_5100']
                     if self.w_norm not in [3000,5100]: value_names += ['log_lambLum_wavenorm']
             elif self.cframe.num_comps >= 2: # print sum only if using >= 2 comps

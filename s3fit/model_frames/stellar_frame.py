@@ -18,23 +18,19 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
-    def __init__(self, mod_name=None, fframe=None, 
-                 config=None, file_path=None, 
+    def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, R_inst_rw=None, 
-                 w_min=None, w_max=None, w_norm=5500, dw_norm=25, 
+                 w_min=None, w_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.file_path = file_path
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.w_min = w_min
         self.w_max = w_max
-        self.w_norm = w_norm
-        self.dw_norm = dw_norm
         self.Rratio_mod = Rratio_mod # resolution ratio of model / instrument
         self.dw_fwhm_dsp = dw_fwhm_dsp # model convolving width for downsampling (rest frame)
         self.dw_pix_inst = dw_pix_inst # data sampling width (obs frame)
@@ -44,55 +40,9 @@ class StellarFrame(object):
         self.cframe=ConfigFrame(self.config)
         self.comp_name_c = self.cframe.comp_name_c
         self.num_comps = self.cframe.num_comps
+        self.check_config()
 
-        ############################################################
-        # to be compatible with old version <= 2.2.4
-        if len(self.cframe.par_index_cP[0]) == 0:
-            self.cframe.par_name_cp  = [['voff', 'fwhm', 'Av', 'log_csp_age', 'log_csp_tau'][:self.cframe.num_pars_c[i_comp]] for i_comp in range(self.num_comps)]
-            self.cframe.par_index_cP = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_csp_age': 3, 'log_csp_tau': 4} for i_comp in range(self.num_comps)]
-        for i_comp in range(self.num_comps):
-            if 'age_min' in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['log_ssp_age_min'] = self.cframe.info_c[i_comp]['age_min']
-            if 'age_max' in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['log_ssp_age_max'] = self.cframe.info_c[i_comp]['age_max']
-            if 'met_sel' in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['ssp_metallicity'] = self.cframe.info_c[i_comp]['met_sel']
-        ############################################################
-
-        # set default info if not specified in config
-        for i_comp in range(self.num_comps):
-            if 'int_wave_range' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_wave_range'] = [(912,30000)]
-            if 'int_wave_unit'  not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_wave_unit']  = 'angstrom'
-            if 'int_wave_frame' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_wave_frame'] = 'rest'
-            if 'int_lum_unit'   not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_lum_unit']   = 'Lsun'
-            if 'int_lum_type'   not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['int_lum_type']   = ['intrinsic', 'observed', 'absorbed']
-
-        # group line info to a list
-        for i_comp in range(self.num_comps):
-            if isinstance(self.cframe.info_c[i_comp]['int_wave_range'], tuple): self.cframe.info_c[i_comp]['int_wave_range'] = [self.cframe.info_c[i_comp]['int_wave_range']]
-            if isinstance(self.cframe.info_c[i_comp]['int_wave_range'], list):
-                if all( isinstance(i, (int,float)) for i in self.cframe.info_c[i_comp]['int_wave_range'] ):
-                    if len(self.cframe.info_c[i_comp]['int_wave_range']) == 2: self.cframe.info_c[i_comp]['int_wave_range'] = [self.cframe.info_c[i_comp]['int_wave_range']]
-            if isinstance(self.cframe.info_c[i_comp]['int_lum_type'], str): self.cframe.info_c[i_comp]['int_lum_type'] = [self.cframe.info_c[i_comp]['int_lum_type']]
-
-        # check alternative info
-        for i_comp in range(self.num_comps):
-            # int_lum_type
-            self.cframe.info_c[i_comp]['int_lum_type'] = ['intrinsic' if casefold(lum_type) in ['intrinsic', 'original'] else lum_type for lum_type in self.cframe.info_c[i_comp]['int_lum_type']]
-            self.cframe.info_c[i_comp]['int_lum_type'] = ['observed'  if casefold(lum_type) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct'] else lum_type 
-                                                          for lum_type in self.cframe.info_c[i_comp]['int_lum_type']]
-            self.cframe.info_c[i_comp]['int_lum_type'] = ['absorbed'  if casefold(lum_type) in ['absorbed', 'dust'] else lum_type for lum_type in self.cframe.info_c[i_comp]['int_lum_type']]
-            self.cframe.info_c[i_comp]['int_lum_type'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['int_lum_type'])) # remove duplicates
-            # SFH name
-            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['exponential']: 
-                self.cframe.info_c[i_comp]['sfh_name'] = 'exponential'
-            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['delayed']: 
-                self.cframe.info_c[i_comp]['sfh_name'] = 'delayed'
-            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['constant', 'burst', 'starburst']: 
-                self.cframe.info_c[i_comp]['sfh_name'] = 'constant'
-            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['nonparametric', 'non-parametric', 'non_parametric']: 
-                self.cframe.info_c[i_comp]['sfh_name'] = 'nonparametric'
-            if casefold(self.cframe.info_c[i_comp]['sfh_name']) in ['user', 'custom', 'customized']: 
-                self.cframe.info_c[i_comp]['sfh_name'] = 'user'
-
-        self.sfh_name_c = np.array([info['sfh_name'] for info in self.cframe.info_c])
+        self.sfh_name_c = np.array([info['sfh_name'] for info in self.cframe.comp_info_cI])
         if self.num_comps > 1:
             if np.sum(self.sfh_name_c == 'nonparametric') >= 1:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
@@ -129,6 +79,13 @@ class StellarFrame(object):
                 print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{comp_name}' "
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message) 
 
+        if self.verbose:
+            print_log(f"SSP models normalization wavelength: {self.cframe.mod_info_I['w_norm']} +- {self.cframe.mod_info_I['dw_norm']}", self.log_message)
+            print_log(f"SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}", self.log_message)
+            print_log(f"SSP models age range (Gyr): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}", self.log_message)
+            print_log(f"SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}", self.log_message) 
+            print_log(f"SFH functions: {self.sfh_name_c} for {self.cframe.comp_name_c} components, respectively.", self.log_message)
+
         # set plot styles
         self.plot_style_C = {}
         self.plot_style_C['sum'] = {'color': 'C0', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
@@ -147,19 +104,72 @@ class StellarFrame(object):
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['blue'], i_blue, mode="wrap"))
                 i_blue += 1
 
-        if self.verbose:
-            print_log(f"SSP models normalization wavelength: {w_norm} +- {dw_norm}", self.log_message)
-            print_log(f"SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}", self.log_message)
-            print_log(f"SSP models age range (Gyr): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}", self.log_message)
-            print_log(f"SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}", self.log_message) 
-            print_log(f"SFH functions: {self.sfh_name_c} for {self.cframe.comp_name_c} components, respectively.", self.log_message)
+    ##########################################################################
+
+    def check_config(self):
+
+        ############################################################
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cP[0]) == 0:
+            self.cframe.par_name_cp  = [['voff', 'fwhm', 'Av', 'log_csp_age', 'log_csp_tau'][:self.cframe.num_pars_c[i_comp]] for i_comp in range(self.num_comps)]
+            self.cframe.par_index_cP = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_csp_age': 3, 'log_csp_tau': 4} for i_comp in range(self.num_comps)]
+        for i_comp in range(self.num_comps):
+            if 'age_min' in self.cframe.comp_info_cI[i_comp]: self.cframe.comp_info_cI[i_comp]['log_ssp_age_min'] = self.cframe.comp_info_cI[i_comp]['age_min']
+            if 'age_max' in self.cframe.comp_info_cI[i_comp]: self.cframe.comp_info_cI[i_comp]['log_ssp_age_max'] = self.cframe.comp_info_cI[i_comp]['age_max']
+            if 'met_sel' in self.cframe.comp_info_cI[i_comp]: self.cframe.comp_info_cI[i_comp]['ssp_metallicity'] = self.cframe.comp_info_cI[i_comp]['met_sel']
+        ############################################################
+
+        # set inherited or default info if not specified in config
+        # model-level info
+        self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
+        self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
+        # component-level info
+        for i_comp in range(self.num_comps):
+            self.cframe.retrieve_inherited_info('int_wave_range', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=[(912,30000)])
+            self.cframe.retrieve_inherited_info('int_wave_unit' , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='angstrom')
+            self.cframe.retrieve_inherited_info('int_wave_frame', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='rest')
+            self.cframe.retrieve_inherited_info('int_lum_unit'  , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='Lsun')
+            self.cframe.retrieve_inherited_info('int_lum_type'  , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=['intrinsic', 'observed', 'absorbed'])
+
+        # group line info to a list
+        for i_comp in range(self.num_comps):
+            if isinstance(self.cframe.comp_info_cI[i_comp]['int_wave_range'], tuple): self.cframe.comp_info_cI[i_comp]['int_wave_range'] = [self.cframe.comp_info_cI[i_comp]['int_wave_range']]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['int_wave_range'], list):
+                if all( isinstance(i, (int,float)) for i in self.cframe.comp_info_cI[i_comp]['int_wave_range'] ):
+                    if len(self.cframe.comp_info_cI[i_comp]['int_wave_range']) == 2: self.cframe.comp_info_cI[i_comp]['int_wave_range'] = [self.cframe.comp_info_cI[i_comp]['int_wave_range']]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['int_lum_type'], str): self.cframe.comp_info_cI[i_comp]['int_lum_type'] = [self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+
+        # check alternative info
+        for i_comp in range(self.num_comps):
+            # int_lum_type
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['intrinsic' if casefold(lum_type) in ['intrinsic', 'original'] else lum_type 
+                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['observed'  if casefold(lum_type) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct'] else lum_type 
+                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['absorbed'  if casefold(lum_type) in ['absorbed', 'dust'] else lum_type 
+                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = list(dict.fromkeys(self.cframe.comp_info_cI[i_comp]['int_lum_type'])) # remove duplicates
+            # SFH name
+            if casefold(self.cframe.comp_info_cI[i_comp]['sfh_name']) in ['exponential']: 
+                self.cframe.comp_info_cI[i_comp]['sfh_name'] = 'exponential'
+            if casefold(self.cframe.comp_info_cI[i_comp]['sfh_name']) in ['delayed']: 
+                self.cframe.comp_info_cI[i_comp]['sfh_name'] = 'delayed'
+            if casefold(self.cframe.comp_info_cI[i_comp]['sfh_name']) in ['constant', 'burst', 'starburst']: 
+                self.cframe.comp_info_cI[i_comp]['sfh_name'] = 'constant'
+            if casefold(self.cframe.comp_info_cI[i_comp]['sfh_name']) in ['nonparametric', 'non-parametric', 'non_parametric']: 
+                self.cframe.comp_info_cI[i_comp]['sfh_name'] = 'nonparametric'
+            if casefold(self.cframe.comp_info_cI[i_comp]['sfh_name']) in ['user', 'custom', 'customized']: 
+                self.cframe.comp_info_cI[i_comp]['sfh_name'] = 'user'
 
     ##########################################################################
 
     def read_ssp_library(self):
+
         ##############################################################
         ###### Modify this section to use a different SSP model ######
-        ssp_lib = fits.open(self.file_path)
+        for item in ['file', 'file_path']:
+            if item in self.cframe.mod_info_I: ssp_file = self.cframe.mod_info_I[item]
+        ssp_lib = fits.open(ssp_file)
         # template resolution step of 0.1 angstrom, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
         self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
@@ -205,7 +215,7 @@ class StellarFrame(object):
         # calculate the mean flux at both 5500 angstrom and the user given wavelength
         mask_5500_w = np.abs(orig_wave_w - 5500) < 25
         flux_5500_e = np.mean(orig_flux_ew[:, mask_5500_w], axis=1)
-        mask_norm_w = np.abs(orig_wave_w - self.w_norm) < self.dw_norm
+        mask_norm_w = np.abs(orig_wave_w - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm']
         flux_norm_e = np.mean(orig_flux_ew[:, mask_norm_w], axis=1)
         self.flux_norm_ratio_e = flux_norm_e / flux_5500_e
 
@@ -320,7 +330,7 @@ class StellarFrame(object):
         if self.sfh_name_c[i_comp] == 'constant': 
             sfh_func_e = np.ones_like(evo_time_e)
         if self.sfh_name_c[i_comp] == 'user': 
-            sfh_func_e = self.cframe.info_c[i_comp]['sfh_func'](evo_time_e, par_p, i_comp, self)
+            sfh_func_e = self.cframe.comp_info_cI[i_comp]['sfh_func'](evo_time_e, par_p, i_comp, self)
         ##########################################################################
         # a user defined sfh function (input via config) has the following format
         # def sfh_user(*args):
@@ -448,11 +458,11 @@ class StellarFrame(object):
     def mask_lite_allowed(self, i_comp=0, csp=False):
         if not csp: 
             # mask for all SSP elements, for an individual comp
-            log_age_min, log_age_max = self.cframe.info_c[i_comp]['log_ssp_age_min'], self.cframe.info_c[i_comp]['log_ssp_age_max']
+            log_age_min, log_age_max = self.cframe.comp_info_cI[i_comp]['log_ssp_age_min'], self.cframe.comp_info_cI[i_comp]['log_ssp_age_max']
             age_min = self.age_e.min() if log_age_min is None else 10.0**log_age_min
             age_max = cosmo.age(self.v0_redshift).value if log_age_max in ['universe', 'Universe'] else 10.0**log_age_max
             mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
-            met_sel = self.cframe.info_c[i_comp]['ssp_metallicity']
+            met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
             if met_sel != 'all':
                 if met_sel in ['solar', 'Solar']:
                     mask_lite_ssp_e &= self.met_e == 0.02
@@ -465,7 +475,7 @@ class StellarFrame(object):
             mask_lite_csp_e = np.array([], dtype='bool')
             for i_comp in range(self.num_comps):
                 tmp_mask_e = np.ones(self.num_mets, dtype='bool') 
-                met_sel = self.cframe.info_c[i_comp]['ssp_metallicity']
+                met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
                 if met_sel != 'all':
                     if met_sel == 'solar':
                         tmp_mask_e &= np.unique(self.met_e) == 0.02
@@ -565,10 +575,10 @@ class StellarFrame(object):
             value_names_C[comp_name] = ['redshift', 'sigma'] + value_names_additive
 
             lum_names = []
-            wave_unit_str = 'um' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-            for wave_range in self.cframe.info_c[i_comp]['int_wave_range']:
+            wave_unit_str = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
+            for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']:
                 if wave_range is None: continue
-                for lum_type in self.cframe.info_c[i_comp]['int_lum_type']:
+                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
                     lum_names.append(f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}")
             value_names_C[comp_name] += lum_names
             if i_comp == 0: 
@@ -618,7 +628,7 @@ class StellarFrame(object):
                     output_C[comp_name]['value_Vl']['flux_5500'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                     output_C['sum']['value_Vl']['flux_5500'][i_loop] += tmp_spec_w[mask_norm_w].mean()
 
-                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.w_norm) < self.dw_norm # for observed flux at user given wavenorm
+                mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm'] # for observed flux at user given wavenorm
                 output_C[comp_name]['value_Vl']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
                 output_C['sum']['value_Vl']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
 
@@ -633,7 +643,7 @@ class StellarFrame(object):
                     coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e 
                 Lum_5500_e = coeff_e * unitconv # intrinsic L5500, in Lsun/A
                 lambLum_5500_e = Lum_5500_e * 5500
-                lambLum_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.w_norm
+                lambLum_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.cframe.mod_info_I['w_norm']
                 Mass_formed_e = Lum_5500_e * self.mtol_e # mtol_e is in unit of Msun/(Lsun/A)
                 Mass_remaining_e = Mass_formed_e * self.remainmassfrac_e
 
@@ -657,15 +667,15 @@ class StellarFrame(object):
                 output_C['sum']['value_Vl']['log_Z_Mweight'][i_loop] += (Mass_remaining_e * np.log10(self.met_e)).sum()
 
                 # calculate integrated lum in given wavelength ranges
-                for wave_range in self.cframe.info_c[i_comp]['int_wave_range']: 
+                for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']: 
                     if wave_range is None: continue
-                    wave_unit_str   = 'um' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-                    wave_unit_ratio = 1e4  if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 1
-                    if casefold(self.cframe.info_c[i_comp]['int_wave_frame']) in ['rest']: wave_unit_ratio *= (1+rev_redshift) # rest to obs range
+                    wave_unit_str   = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
+                    wave_unit_ratio = 1e4  if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 1
+                    if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_frame']) in ['rest']: wave_unit_ratio *= (1+rev_redshift) # rest to obs range
                     int_wave_w = np.logspace(np.log10(wave_range[0]*wave_unit_ratio), np.log10(wave_range[1]*wave_unit_ratio), num=1000) # obs frame grid
 
                     tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
-                    for lum_type in self.cframe.info_c[i_comp]['int_lum_type']:
+                    for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
                         if lum_type in ['intrinsic','absorbed']:
                             tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=False, if_redshift=False, if_full_range=True, dpix_resample=300) # flux in rest frame
@@ -697,13 +707,13 @@ class StellarFrame(object):
 
         # updated to requested lum_unit for each comp
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            if casefold(self.cframe.info_c[i_comp]['int_lum_unit']) in ['erg/s', 'erg s-1']: 
+            if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['erg/s', 'erg s-1']: 
                 for value_name in output_C[comp_name]['value_Vl']:
                     if value_name[:8] in ['log_Lum_', 'log_lamb']: 
                         output_C[comp_name]['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
         # if all comp have the same lum unit, also update the sum
-        if len(set(self.cframe.info_c[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
-            if casefold(self.cframe.info_c[0]['int_lum_unit']) in ['erg/s', 'erg s-1']:
+        if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
+            if casefold(self.cframe.comp_info_cI[0]['int_lum_unit']) in ['erg/s', 'erg s-1']:
                 for value_name in output_C['sum']['value_Vl']:
                     if value_name[:8] in ['log_Lum_', 'log_lamb']: 
                         output_C['sum']['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
@@ -745,8 +755,8 @@ class StellarFrame(object):
             print_name_CV[comp_name]['redshift'] = 'Redshift (from continuum absorptions)'
             print_name_CV[comp_name]['flux_5500'] = f"F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
             print_name_CV[comp_name]['log_lambLum_5500'] = f"λL5500 (rest,intrinsic) "
-            print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.w_norm:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            print_name_CV[comp_name]['log_lambLum_wavenorm'] = f"λL{self.w_norm:.0f} (rest,intrinsic) "
+            print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.cframe.mod_info_I['w_norm']:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
+            print_name_CV[comp_name]['log_lambLum_wavenorm'] = f"λL{self.cframe.mod_info_I['w_norm']:.0f} (rest,intrinsic) "
             print_name_CV[comp_name]['log_Mass_formed'] = 'Mass (all formed) (log Msun)'
             print_name_CV[comp_name]['log_Mass_remaining'] = 'Mass (remaining) (log Msun)'
             print_name_CV[comp_name]['log_MtoL'] = 'Mass/λL5500 (log Msun/Lsun)'
@@ -755,10 +765,10 @@ class StellarFrame(object):
             print_name_CV[comp_name]['log_Z_Lweight'] = 'λL5500-weight metallicity (log Z)'
             print_name_CV[comp_name]['log_Z_Mweight'] = 'Mass-weight metallicity (log Z)'
 
-            for wave_range in self.cframe.info_c[i_comp]['int_wave_range']: 
-                wave_unit_str_0 = 'um' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-                wave_unit_str_1 = 'µm' if casefold(self.cframe.info_c[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'Å'
-                for lum_type in self.cframe.info_c[i_comp]['int_lum_type']:
+            for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']: 
+                wave_unit_str_0 = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
+                wave_unit_str_1 = 'µm' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'Å'
+                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
                     value_name = f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str_0}_{lum_type}"
                     if lum_type == 'absorbed': lum_type = 'dust-absorbed'
                     print_name_CV[comp_name][value_name] = f"Integrated {lum_type} Lum. "+f"({wave_range[0]}-{wave_range[1]} {wave_unit_str_1}) "
@@ -768,13 +778,13 @@ class StellarFrame(object):
 
         # updated to requested lum_unit for each comp
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
-            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.info_c[i_comp]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
+            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
             for value_name in self.output_C[comp_name]['value_Vl']:
                 if value_name[:8] in ['log_Lum_', 'log_lamb']: 
                     print_name_CV[comp_name][value_name] += lum_unit_str
         # if all comp have the same lum unit, also update the sum
-        if len(set(self.cframe.info_c[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
-            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.info_c[0]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
+        if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
+            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.comp_info_cI[0]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
         else:
             lum_unit_str = '(log Lsun) ' # default
         for value_name in self.output_C['sum']['value_Vl']:
@@ -799,7 +809,7 @@ class StellarFrame(object):
                 print_log(f"# Best-fit properties of the sum of all stellar components.", log)
             else: 
                 continue
-            if self.w_norm == 5500:
+            if self.cframe.mod_info_I['w_norm'] == 5500:
                 value_names.remove('flux_wavenorm')
                 value_names.remove('log_lambLum_wavenorm')
             for value_name in value_names:

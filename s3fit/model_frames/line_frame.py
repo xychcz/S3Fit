@@ -23,7 +23,6 @@ class LineFrame(object):
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.use_pyneb = use_pyneb
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.w_min = w_min
@@ -34,32 +33,11 @@ class LineFrame(object):
 
         self.cframe=ConfigFrame(self.config)
         self.comp_name_c = self.cframe.comp_name_c
-        self.num_comps = len(self.cframe.info_c)
+        self.num_comps = len(self.cframe.comp_info_cI)
+        self.check_config()
 
-        ############################################################
-        # to be compatible with old version <= 2.2.4
-        if len(self.cframe.par_index_cP[0]) == 0:
-            self.cframe.par_name_cp  = [['voff', 'fwhm', 'Av', 'log_e_den', 'log_e_tem'] for i_comp in range(self.num_comps)]
-            self.cframe.par_index_cP = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_den': 3, 'log_e_tem': 4} for i_comp in range(self.num_comps)]
-        self.tie_pair = self.tie_line_fluxes
-        self.release_pair = self.untie_line_fluxes
-        ############################################################
-
-        # set default info if not specified in config
-        for i_comp in range(self.num_comps):
-            if 'line_used'  not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['line_used'] = np.array(['default'])
-            if 'line_ties'  not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['line_ties'] = ['default']
-            if 'H_hi_order' not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['H_hi_order'] = False
-            if 'sign'       not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['sign'] = 'emission'
-            if 'profile'    not in self.cframe.info_c[i_comp]: self.cframe.info_c[i_comp]['profile'] = 'Gaussian'
-            # group line info to a list
-            if isinstance(self.cframe.info_c[i_comp]['line_used'], str): self.cframe.info_c[i_comp]['line_used'] = [self.cframe.info_c[i_comp]['line_used']]
-            self.cframe.info_c[i_comp]['line_used'] = np.array(self.cframe.info_c[i_comp]['line_used'])
-            if isinstance(self.cframe.info_c[i_comp]['line_ties'], str): self.cframe.info_c[i_comp]['line_ties'] = [self.cframe.info_c[i_comp]['line_ties']] # to allow pure hydrogen
-            if isinstance(self.cframe.info_c[i_comp]['line_ties'], tuple): self.cframe.info_c[i_comp]['line_ties'] = [self.cframe.info_c[i_comp]['line_ties']]
-            if isinstance(self.cframe.info_c[i_comp]['line_ties'], list):
-                if all( isinstance(i, str) for i in self.cframe.info_c[i_comp]['line_ties'] ):
-                    if len(self.cframe.info_c[i_comp]['line_ties']) > 1: self.cframe.info_c[i_comp]['line_ties'] = [tuple(self.cframe.info_c[i_comp]['line_ties'])] # to allow pure hydrogen
+        for item in ['use_pyneb', 'if_use_pyneb']:
+            if item in self.cframe.mod_info_I: self.use_pyneb = self.cframe.mod_info_I[item]
 
         # load line list and count the number of independent model elements
         self.initialize_linelist()
@@ -90,6 +68,41 @@ class LineFrame(object):
             else: # outflow line
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['purple'], i_purple, mode="wrap"))
                 i_purple += 1
+
+    ##########################################################################
+
+    def check_config(self):
+
+        ############################################################
+        # to be compatible with old version <= 2.2.4
+        if len(self.cframe.par_index_cP[0]) == 0:
+            self.cframe.par_name_cp  = [['voff', 'fwhm', 'Av', 'log_e_den', 'log_e_tem'] for i_comp in range(self.num_comps)]
+            self.cframe.par_index_cP = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_den': 3, 'log_e_tem': 4} for i_comp in range(self.num_comps)]
+        self.tie_pair = self.tie_line_fluxes
+        self.release_pair = self.untie_line_fluxes
+        ############################################################
+
+        # set inherited or default info if not specified in config
+        # component-level info
+        for i_comp in range(self.num_comps):
+            self.cframe.retrieve_inherited_info('line_used' , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=np.array(['default']))
+            self.cframe.retrieve_inherited_info('line_ties' , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=['default'])
+            self.cframe.retrieve_inherited_info('H_hi_order', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=False)
+            self.cframe.retrieve_inherited_info('sign'      , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='emission')
+            self.cframe.retrieve_inherited_info('profile'   , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='Gaussian')
+
+        # group line info to a list
+        for i_comp in range(self.num_comps):
+            if isinstance(self.cframe.comp_info_cI[i_comp]['line_used'], str): self.cframe.comp_info_cI[i_comp]['line_used'] = [self.cframe.comp_info_cI[i_comp]['line_used']]
+            self.cframe.comp_info_cI[i_comp]['line_used'] = np.array(self.cframe.comp_info_cI[i_comp]['line_used'])
+            if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], str): self.cframe.comp_info_cI[i_comp]['line_ties'] = [self.cframe.comp_info_cI[i_comp]['line_ties']] # to allow pure hydrogen
+            if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], tuple): self.cframe.comp_info_cI[i_comp]['line_ties'] = [self.cframe.comp_info_cI[i_comp]['line_ties']]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], list):
+                if all( isinstance(item, str) for item in self.cframe.comp_info_cI[i_comp]['line_ties'] ):
+                    if len(self.cframe.comp_info_cI[i_comp]['line_ties']) > 1: 
+                        self.cframe.comp_info_cI[i_comp]['line_ties'] = [tuple(self.cframe.comp_info_cI[i_comp]['line_ties'])] # to allow single tied group
+
+    ##########################################################################
 
     def initialize_linelist(self):
         # atomic lines up t0 3.0 micron
@@ -407,7 +420,7 @@ class LineFrame(object):
                                           'Pa-epsilon', 'Pa-delta', 'He I:10833', 'Pa-gamma', 'O I:11290', '[P II]:11886', '[Fe II]:12570', 'Pa-beta', 
                                           '[Fe II]:13209', '[Si X]:14305', '[Fe II]:16440', 'Pa-alpha', 'Br-delta', '[Si VI]:19650', 'He I:20587', 'Br-gamma', 'Br-beta', 'Br-alpha'])
         
-        if any(self.cframe.info_c[i_comp]['H_hi_order'] for i_comp in range(self.num_comps)): 
+        if any(self.cframe.comp_info_cI[i_comp]['H_hi_order'] for i_comp in range(self.num_comps)): 
             self.enable_H_hi_order = True
             self.H_level_upper_max = 40 # limited by pyneb H1._Energy
             if not self.use_pyneb: raise ValueError((f"Please enable pyneb in line config to include high order Hydrogen lines."))
@@ -638,38 +651,38 @@ class LineFrame(object):
         linelist_used_total = np.array([])
         for i_comp in range(self.num_comps):
             # firstly read any specified lines in input config
-            self.cframe.info_c[i_comp]['linelist'] = self.cframe.info_c[i_comp]['line_used'][np.isin(self.cframe.info_c[i_comp]['line_used'], self.linelist_full)]
-            if np.isin(self.cframe.info_c[i_comp]['line_used'], ['all']).any():
+            self.cframe.comp_info_cI[i_comp]['linelist'] = self.cframe.comp_info_cI[i_comp]['line_used'][np.isin(self.cframe.comp_info_cI[i_comp]['line_used'], self.linelist_full)]
+            if np.isin(self.cframe.comp_info_cI[i_comp]['line_used'], ['all']).any():
                 enable_all_lines = True
-                self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_full))
+                self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  self.linelist_full))
             else:
                 enable_all_lines = False
-                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), casefold(['default', 'NLR', 'AGN_NLR', 'AGN NLR', 'HII', 'outflow'])).any():
-                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_default))
-                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), casefold(['BLR', 'AGN_BLR', 'AGN BLR'])).any():
-                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  
-                                                                        self.linelist_allowed[np.isin(self.linelist_allowed, self.linelist_default)],
-                                                                        self.linelist_intercombination[np.isin(self.linelist_intercombination, self.linelist_default)],
-                                                                        self.linelist_elements['H']))
-                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), ['allowed', 'permitted']).any():
-                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_allowed))
-                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), ['intercombination', 'semiforbidden', 'semi-forbidden', 'semipermitted', 'semi-permitted']).any():
-                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_intercombination))
-                if np.isin(casefold(self.cframe.info_c[i_comp]['line_used']), ['forbidden']).any():
-                    self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_forbidden))  
-                if np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_elements]).any():
-                    for element in self.cframe.info_c[i_comp]['line_used'][np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_elements])]:
-                        self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_elements[element]))  
-                if np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_spectra]).any():
-                    for spectrum in self.cframe.info_c[i_comp]['line_used'][np.isin(self.cframe.info_c[i_comp]['line_used'], [*self.linelist_spectra])]:
-                        self.cframe.info_c[i_comp]['linelist'] = np.hstack((self.cframe.info_c[i_comp]['linelist'],  self.linelist_spectra[spectrum])) 
+                if np.isin(casefold(self.cframe.comp_info_cI[i_comp]['line_used']), casefold(['default', 'NLR', 'AGN_NLR', 'AGN NLR', 'HII', 'outflow'])).any():
+                    self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  self.linelist_default))
+                if np.isin(casefold(self.cframe.comp_info_cI[i_comp]['line_used']), casefold(['BLR', 'AGN_BLR', 'AGN BLR'])).any():
+                    self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  
+                                                                              self.linelist_allowed[np.isin(self.linelist_allowed, self.linelist_default)],
+                                                                              self.linelist_intercombination[np.isin(self.linelist_intercombination, self.linelist_default)],
+                                                                              self.linelist_elements['H']))
+                if np.isin(casefold(self.cframe.comp_info_cI[i_comp]['line_used']), ['allowed', 'permitted']).any():
+                    self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  self.linelist_allowed))
+                if np.isin(casefold(self.cframe.comp_info_cI[i_comp]['line_used']), ['intercombination', 'semiforbidden', 'semi-forbidden', 'semipermitted', 'semi-permitted']).any():
+                    self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  self.linelist_intercombination))
+                if np.isin(casefold(self.cframe.comp_info_cI[i_comp]['line_used']), ['forbidden']).any():
+                    self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  self.linelist_forbidden))  
+                if np.isin(self.cframe.comp_info_cI[i_comp]['line_used'], [*self.linelist_elements]).any():
+                    for element in self.cframe.comp_info_cI[i_comp]['line_used'][np.isin(self.cframe.comp_info_cI[i_comp]['line_used'], [*self.linelist_elements])]:
+                        self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  self.linelist_elements[element]))  
+                if np.isin(self.cframe.comp_info_cI[i_comp]['line_used'], [*self.linelist_spectra]).any():
+                    for spectrum in self.cframe.comp_info_cI[i_comp]['line_used'][np.isin(self.cframe.comp_info_cI[i_comp]['line_used'], [*self.linelist_spectra])]:
+                        self.cframe.comp_info_cI[i_comp]['linelist'] = np.hstack((self.cframe.comp_info_cI[i_comp]['linelist'],  self.linelist_spectra[spectrum])) 
             # remove duplicates
-            self.cframe.info_c[i_comp]['linelist'] = self.linename_n[np.isin(self.linename_n, self.cframe.info_c[i_comp]['linelist'])]
+            self.cframe.comp_info_cI[i_comp]['linelist'] = self.linename_n[np.isin(self.linename_n, self.cframe.comp_info_cI[i_comp]['linelist'])]
             # disable high order Hydrogen lines if not specify in config
             if (not enable_all_lines) & self.enable_H_hi_order:
-                if not self.cframe.info_c[i_comp]['H_hi_order']:
-                    self.cframe.info_c[i_comp]['linelist'] = self.cframe.info_c[i_comp]['linelist'][~np.isin(self.cframe.info_c[i_comp]['linelist'], self.linelist_H_hi_order)] 
-            linelist_used_total = np.hstack((linelist_used_total, self.cframe.info_c[i_comp]['linelist']))
+                if not self.cframe.comp_info_cI[i_comp]['H_hi_order']:
+                    self.cframe.comp_info_cI[i_comp]['linelist'] = self.cframe.comp_info_cI[i_comp]['linelist'][~np.isin(self.cframe.comp_info_cI[i_comp]['linelist'], self.linelist_H_hi_order)] 
+            linelist_used_total = np.hstack((linelist_used_total, self.cframe.comp_info_cI[i_comp]['linelist']))
 
         # only keep used lines
         mask_valid_n = np.isin(self.linename_n, linelist_used_total)
@@ -697,7 +710,7 @@ class LineFrame(object):
                         self.mask_valid_cn[i_comp,i_line] = (mask_line_w & self.mask_valid_rw[1]).sum() / mask_line_w.sum() >= 0.1 # at least 10% coverage fraction
         # only keep lines if they are specified 
         for i_comp in range(self.num_comps):
-            self.mask_valid_cn[i_comp] &= np.isin(self.linename_n, self.cframe.info_c[i_comp]['linelist'])
+            self.mask_valid_cn[i_comp] &= np.isin(self.linename_n, self.cframe.comp_info_cI[i_comp]['linelist'])
 
         # only keep used lines
         mask_valid_n = self.mask_valid_cn.any(axis=0)
@@ -734,17 +747,17 @@ class LineFrame(object):
 
         line_ties_collect = []
         for i_comp in range(self.num_comps):
-            self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
-            if any(n in self.cframe.info_c[i_comp]['line_ties'] for n in ['default', 'Default']):
-                # self.cframe.info_c[i_comp]['line_ties'].remove('default')
-                self.cframe.info_c[i_comp]['line_ties'] += line_ties_default
-                self.cframe.info_c[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.info_c[i_comp]['line_ties'])) # remove duplicates
-            line_ties_collect += self.cframe.info_c[i_comp]['line_ties']
+            self.cframe.comp_info_cI[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.comp_info_cI[i_comp]['line_ties'])) # remove duplicates
+            if any(n in self.cframe.comp_info_cI[i_comp]['line_ties'] for n in ['default', 'Default']):
+                # self.cframe.comp_info_cI[i_comp]['line_ties'].remove('default')
+                self.cframe.comp_info_cI[i_comp]['line_ties'] += line_ties_default
+                self.cframe.comp_info_cI[i_comp]['line_ties'] = list(dict.fromkeys(self.cframe.comp_info_cI[i_comp]['line_ties'])) # remove duplicates
+            line_ties_collect += self.cframe.comp_info_cI[i_comp]['line_ties']
         line_ties_collect = list(dict.fromkeys(line_ties_collect)) # remove duplicates
 
         for line_tie in line_ties_collect:
             if line_tie in ['default', 'Default']: continue
-            components = [self.cframe.comp_name_c[i_comp] for i_comp in range(self.num_comps) if line_tie in self.cframe.info_c[i_comp]['line_ties']]
+            components = [self.cframe.comp_name_c[i_comp] for i_comp in range(self.num_comps) if line_tie in self.cframe.comp_info_cI[i_comp]['line_ties']]
             if isinstance(line_tie, str):
                 if casefold(line_tie) in ['hydrogen', 'hydrogen lines', 'hydrogen_lines']:
                     linelist_H = [l for l in self.linelist_elements['H'].tolist() if l[:2] != 'Ly' ] # do not include Lyman series due to gas obscuration and Lya forest
@@ -916,15 +929,15 @@ class LineFrame(object):
         self.comp_name_e = np.array(self.comp_name_e)
 
         # mask free absorption lines
-        absorption_comp_names = np.array([d['comp_name'] for d in self.cframe.info_c if d['sign'] == 'absorption'])
+        absorption_comp_names = np.array([d['comp_name'] for d in self.cframe.comp_info_cI if d['sign'] == 'absorption'])
         self.mask_absorption_e = np.isin(self.comp_name_e, absorption_comp_names)
 
         if self.verbose:
             print_log(f"Free lines in each components: ", self.log_message)
             for i_comp in range(self.num_comps):
-                print_log(f"({i_comp}) '{self.cframe.info_c[i_comp]['comp_name']}' component has "+
+                print_log(f"({i_comp}) '{self.cframe.comp_info_cI[i_comp]['comp_name']}' component has "+
                           f"{self.mask_free_cn[i_comp].sum()} free (out of total {self.mask_valid_cn[i_comp].sum()}) "+
-                          f"{self.cframe.info_c[i_comp]['profile']}, {self.cframe.info_c[i_comp]['sign']} profiles: \n"+
+                          f"{self.cframe.comp_info_cI[i_comp]['profile']}, {self.cframe.comp_info_cI[i_comp]['sign']} profiles: \n"+
                           f"    {self.linename_n[self.mask_free_cn[i_comp]]}", self.log_message)
 
     ##########################################################################
@@ -976,13 +989,13 @@ class LineFrame(object):
         for i_free in list_free:
             model_sline = self.single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
                                            1,  # flux=1
-                                           self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
+                                           self.v0_redshift, self.R_inst_rw, self.cframe.comp_info_cI[i_comp]['profile'])
             list_linked = np.where(self.linelink_name_cn[i_comp] == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
                 model_sline += self.single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
                                                 self.lineratio_cn[i_comp, i_linked], 
-                                                self.v0_redshift, self.R_inst_rw, self.cframe.info_c[i_comp]['profile'])
+                                                self.v0_redshift, self.R_inst_rw, self.cframe.comp_info_cI[i_comp]['profile'])
             # detect and exclude weak lines
             int_flux_list = [1] + [self.lineratio_cn[i_comp, i_linked] for i_linked in list_linked]
             peak_flux_min = min(int_flux_list) / (fwhm / np.sqrt(np.log(256)) * np.sqrt(2*np.pi)) 
@@ -991,7 +1004,7 @@ class LineFrame(object):
             models_scomp.append(model_sline)
 
         models_scomp = np.array(models_scomp)
-        if self.cframe.info_c[i_comp]['sign'] == 'absorption': models_scomp *= -1 # set negative profile for absorption line
+        if self.cframe.comp_info_cI[i_comp]['sign'] == 'absorption': models_scomp *= -1 # set negative profile for absorption line
 
         return models_scomp
     
@@ -1104,7 +1117,7 @@ class LineFrame(object):
             for (i_par, par_name) in enumerate(par_name_cp[i_comp]):
                 output_C[comp_name]['value_Vl'][par_name] = par_lcp[:, i_comp, i_par]
             for (i_line, line_name) in enumerate(self.linename_n.tolist()):
-                flux_sign = -1.0 if self.cframe.info_c[i_comp]['sign'] == 'absorption' else 1.0
+                flux_sign = -1.0 if self.cframe.comp_info_cI[i_comp]['sign'] == 'absorption' else 1.0
                 output_C[comp_name]['value_Vl'][line_name] = coeff_lcn[:, i_comp, i_line] * flux_sign
                 output_C['sum']['value_Vl'][line_name] += coeff_lcn[:, i_comp, i_line] * flux_sign
 
