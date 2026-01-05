@@ -4,11 +4,13 @@
 # Contact: s3fit@xychen.me
 
 import os, sys, time, traceback, inspect, pickle, gzip
+from copy import deepcopy as copy
 import numpy as np
 np.set_printoptions(linewidth=10000)
-from copy import deepcopy as copy
 from scipy.optimize import lsq_linear, least_squares, dual_annealing
 from scipy.signal import savgol_filter
+import astropy.units as u
+import astropy.constants as const
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
@@ -28,7 +30,7 @@ else:
     ##################################
 
 from .auxiliaries.auxiliary_frames import PhotFrame
-from .auxiliaries.auxiliary_functions import print_log, center_string, casefold, convolve_var_width_fft
+from .auxiliaries.auxiliary_functions import print_log, center_string, casefold, Fnu_over_Flam, spec_to_phot, convolve_var_width_fft
 
 class FitFrame(object):
     def __init__(self, 
@@ -356,15 +358,15 @@ class FitFrame(object):
         self.spec['significance_w'] = np.gradient(self.spec['wave_w']) / (self.spec['wave_w']/self.spec['R_inst_rw'][1,:]) # i.e., dw_pix_inst_w / dw_fwhm_inst_w
         self.spec['significance_w'][self.spec['significance_w'] > 1] = 1
 
-        # set fitting wavelength range (rest frame) with tolerance: voff=[-1000,1000] km/s, fwhm max = 1000 km/s
+        # set fitting wavelength range (rest frame) with tolerance: voff=[-1000,1000] km s-1, fwhm max = 1000 km s-1
         voff_tol = 1500; fwhm_tol = 1500
         dw_pad_per_w = 4 * fwhm_tol/np.sqrt(np.log(256))/299792.458 # convolving kernel pad per wavelength (+/-4sigma)
         self.spec_wmin = self.spec['wave_w'].min() / (1+self.v0_redshift) / (1+voff_tol/299792.458) * (1-dw_pad_per_w) #- 100
         self.spec_wmax = self.spec['wave_w'].max() / (1+self.v0_redshift) / (1-voff_tol/299792.458) * (1+dw_pad_per_w) #+ 100
         self.spec_wmin = np.maximum(self.spec_wmin, 912) # set lower limit of wavelength to 912A
         print_log(f"Spectral fitting will be performed in wavelength range (rest frame, Å): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}", self.log_message, verbose)
-        print_log(f"[Note] The wavelength range is extended for tolerances of redshift of {self.v0_redshift}+-{voff_tol/299792.458:.4f} (+-{voff_tol} km/s) "+
-                  f"and convolution/dispersion FWHM of max {fwhm_tol} km/s.", self.log_message, verbose)
+        print_log(f"[Note] The wavelength range is extended for tolerances of redshift of {self.v0_redshift}+-{voff_tol/299792.458:.4f} (+-{voff_tol} km s-1) "+
+                  f"and convolution/dispersion FWHM of max {fwhm_tol} km s-1.", self.log_message, verbose)
 
         # check if norm_wave is coverd in input wavelength range
         if (self.root_info_I['norm_wave'] < self.spec_wmin) | (self.root_info_I['norm_wave'] > self.spec_wmax):
@@ -418,7 +420,7 @@ class FitFrame(object):
                 calib_trans_bw = self.pframe.read_transmission(name_b=self.phot_calib_b, trans_dir=self.phot_trans_dir, wave_w=self.spec['wave_w'])[1]
                 # interplote spectrum by masking out invalid range
                 spec_flux_interp_w = np.interp(self.spec['wave_w'], self.spec['wave_w'][self.spec['mask_valid_w']], self.spec['flux_w'][self.spec['mask_valid_w']])
-                spec_calib_ratio_b = calib_flux_b / self.pframe.spec2phot(self.spec['wave_w'], spec_flux_interp_w, calib_trans_bw)
+                spec_calib_ratio_b = calib_flux_b / spec_to_phot(self.spec['wave_w'], spec_flux_interp_w, calib_trans_bw)
                 self.spec_calib_ratio = spec_calib_ratio_b.mean()
                 self.spec['flux_w'] *= self.spec_calib_ratio
                 self.spec['ferr_w'] *= self.spec_calib_ratio
@@ -1069,7 +1071,7 @@ class FitFrame(object):
             spec_fmod_ew = self.mod_dict_M[mod_name]['spec_func'](spec_wave_w, par_p[i_pars_0:i_pars_1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=conv_nbin)
             if fit_phot:
                 sed_fmod_ew = self.mod_dict_M[mod_name]['sed_func'](sed_wave_w, par_p[i_pars_0:i_pars_1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=None) #convolution not required
-                sed_fmod_eb = self.pframe.spec2phot(sed_wave_w, sed_fmod_ew, self.phot['trans_bw'])
+                sed_fmod_eb = spec_to_phot(sed_wave_w, sed_fmod_ew, self.phot['trans_bw'])
                 spec_fmod_ew = np.hstack((spec_fmod_ew, sed_fmod_eb))
             ####################
             # check model grid
@@ -1341,7 +1343,7 @@ class FitFrame(object):
             if self.have_phot:
                 sed_fmod_ew = self.mod_dict_M[mod_name]['sed_func'](self.sed['wave_w'], par_p[i_pars_0:i_pars_1], mask_lite_e=mask_lite_Me[mod_name], conv_nbin=None) # convolution no required
                 sed_fmod_w = coeff_e[i_coeffs_0:i_coeffs_1] @ sed_fmod_ew
-                phot_fmod_b = self.pframe.spec2phot(self.sed['wave_w'], sed_fmod_w, self.phot['trans_bw'])
+                phot_fmod_b = spec_to_phot(self.sed['wave_w'], sed_fmod_w, self.phot['trans_bw'])
                 if self.mod_dict_M[mod_name]['term'] == 'line': 
                     ret_dict['line_specphot_fmod_w'] += np.hstack((spec_fmod_w, phot_fmod_b))
                 else:
@@ -1770,7 +1772,8 @@ class FitFrame(object):
     ##########################################################################
     ################# Extract best-fit spectra and values ####################
 
-    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=None, if_show_average=False, num_sed_wave=5000, flux_form='Flam', **kwargs):
+    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=None, if_show_average=False, 
+                        num_sed_wave=5000, flux_form='Flam', flux_unit='erg s-1 cm-2 angstrom-1', **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
@@ -1924,7 +1927,7 @@ class FitFrame(object):
                         output_MC['tot']['fmod']['sed_lw'][i_loop, :] += sed_fmod_w
         # convert best-fit model SED to phot
         if self.have_phot:
-            output_MC['tot']['fmod']['phot_lb'] = self.pframe.spec2phot(sed_wave_w, output_MC['tot']['fmod']['sed_lw'], phot_trans_bw)
+            output_MC['tot']['fmod']['phot_lb'] = spec_to_phot(sed_wave_w, output_MC['tot']['fmod']['sed_lw'], phot_trans_bw)
 
         # save fitting residuals
         output_MC['tot']['fres'] = {}
@@ -1937,19 +1940,24 @@ class FitFrame(object):
 
         # convert to flux in mJy if required
         if flux_form in ['Fnu', 'fnu']:
+            if not u.Unit(flux_unit).is_equivalent('mJy'): flux_unit = 'mJy'
+            spec_fnu_flam_w = self.spec_flux_scale * Fnu_over_Flam(spec_wave_w, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=flux_unit)
+            sed_fnu_flam_w  = self.spec_flux_scale * Fnu_over_Flam(sed_wave_w, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=flux_unit)
+            phot_fnu_flam_b = self.spec_flux_scale * Fnu_over_Flam(self.pframe.wave_w, trans_bw=self.phot['trans_bw'], Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=flux_unit)
+            # use self.pframe.wave_w instead of sed_wave_w since the later is modified and does not match self.phot['trans_bw']
             for mod_name in output_MC:
                 for comp_name in output_MC[mod_name]:
                     if 'spec_lw' in output_MC[mod_name][comp_name]: 
-                        output_MC[mod_name][comp_name]['spec_lw'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w) # None is to replace 'self' in PhotFrame definition
+                        output_MC[mod_name][comp_name]['spec_lw'] *= spec_fnu_flam_w
                     if 'sed_lw' in output_MC[mod_name][comp_name]: 
-                        output_MC[mod_name][comp_name]['sed_lw']  *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,sed_wave_w)
+                        output_MC[mod_name][comp_name]['sed_lw']  *= sed_fnu_flam_w
                     if 'phot_lb' in output_MC[mod_name][comp_name]: 
-                        output_MC[mod_name][comp_name]['phot_lb'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
-            self.spec['flux_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
-            self.spec['ferr_w'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w)
+                        output_MC[mod_name][comp_name]['phot_lb'] *= phot_fnu_flam_b
+            self.spec['flux_w'] *= spec_fnu_flam_w
+            self.spec['ferr_w'] *= spec_fnu_flam_w
             if self.have_phot:
-                self.phot['flux_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
-                self.phot['ferr_b'] *= self.spec_flux_scale * self.pframe.rFnuFlam_b
+                self.phot['flux_b'] *= phot_fnu_flam_b
+                self.phot['ferr_b'] *= phot_fnu_flam_b
             self.if_input_modified = True
 
         # calculate average spectra
@@ -1961,7 +1969,7 @@ class FitFrame(object):
             for mod_name in rev_mod_type.split('+'): 
                 self.sed['fmod_'+mod_name+'_w'] = np.average(output_MC[mod_name]['sum']['sed_lw'], weights=1/best_chi_sq_l, axis=0)   
             self.sed['fmod_tot_w'] = np.average(output_MC['tot']['fmod']['sed_lw'], weights=1/best_chi_sq_l, axis=0)
-            self.phot['fmod_b'] = self.pframe.spec2phot(sed_wave_w, self.sed['fmod_tot_w'], phot_trans_bw)
+            self.phot['fmod_b'] = spec_to_phot(sed_wave_w, self.sed['fmod_tot_w'], phot_trans_bw)
             self.phot['fres_b'] = self.phot['flux_b'] - self.phot['fmod_b']
 
         # save best-fit parameters and coefficients of each model, and calculate properties
@@ -2109,7 +2117,7 @@ class FitFrame(object):
         elif wave_type in ['obs', 'observed']:
             z_ratio_wave = 1
             z_ratio_flux = 1
-        if wave_unit in ['um', 'micron']: z_ratio_wave *= 1e4
+        z_ratio_wave *= u.Unit(wave_unit).to('angstrom')
 
         wave_w = self.spec['wave_w']/z_ratio_wave
         flux_grid = 'spec_lw'
@@ -2270,7 +2278,9 @@ class FitFrame(object):
         else:
             ax0.set_ylabel(f"Flux ({self.spec_flux_scale:.0e}"+r' erg s$^{-1}$cm$^{-2}\AA^{-1}$)')
         ax1.set_ylabel(ax1_ylabel)
-        ax1.set_xlabel(('Rest' if wave_type == 'rest' else 'Observed')+' wavelength '+(r'($\mu$m)' if wave_unit in ['um', 'micron'] else r'($\AA$)')) # , labelpad=0
+        # wave_unit_str = r'$\mu$m' if wave_unit in ['um', 'micron'] else r'$\AA$'
+        wave_unit_str = wave_unit.replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
+        ax1.set_xlabel(('Rest' if wave_type == 'rest' else 'Observed')+' wavelength ('+wave_unit_str+')') # , labelpad=0
 
         if title is not None: ax0.set_title(title)
 

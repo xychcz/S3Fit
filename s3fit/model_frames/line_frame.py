@@ -1161,8 +1161,8 @@ class LineFrame(object):
         value_names = list(dict.fromkeys(value_names)) # remove duplicates
         print_names = {}
         for value_name in value_names: print_names[value_name] = value_name
-        print_names['voff']      = 'Voff (km/s)'
-        print_names['fwhm']      = 'FWHM (km/s)'
+        print_names['voff']      = 'Voff (km s-1)'
+        print_names['fwhm']      = 'FWHM (km s-1)'
         print_names['Av']        = 'Av (Balmer decre.)'
         print_names['log_e_den'] = 'log e-density (cm-3)'
         print_names['log_e_tem'] = 'log e-temperature(K)'

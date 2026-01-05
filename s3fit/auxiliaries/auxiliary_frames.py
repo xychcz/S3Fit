@@ -4,13 +4,13 @@
 # Contact: s3fit@xychen.me
 
 import os
+from copy import deepcopy as copy
 import numpy as np
 np.set_printoptions(linewidth=10000)
-from copy import deepcopy as copy
 import astropy.units as u
 import astropy.constants as const
 
-from .auxiliary_functions import casefold
+from .auxiliary_functions import casefold, Fnu_over_Flam, spec_to_phot
 
 class ConfigFrame(object):
 
@@ -297,19 +297,23 @@ class PhotFrame(object):
 
         self.wave_w = copy(wave_w)
         self.wave_unit = wave_unit
-        if (self.wave_w is not None) & (self.wave_unit in ['micron', 'um']): self.wave_w *= 1e4 # convert to angstrom
+        if (self.wave_w is not None): 
+            self.wave_w *= u.Unit(self.wave_unit).to('angstrom') # convert to angstrom
         self.wave_num = wave_num
                 
         self.trans_dict, self.trans_bw, self.wave_w = self.read_transmission(name_b=self.name_b, 
                                                                              trans_dir=self.trans_dir, trans_rsmp=self.trans_rsmp,  
                                                                              wave_w=self.wave_w, wave_num=self.wave_num)
-        self.rFnuFlam_w = self.rFnuFlam_func(self.wave_w)
-        self.rFnuFlam_b = self.rFnuFlam_func(self.wave_w, self.trans_bw)
-        self.wave_b = self.spec2phot(self.wave_w, self.wave_w, self.trans_bw)
-        
-        if self.flux_unit == 'mJy': 
-            self.flux_b /= self.rFnuFlam_b # convert to erg/s/cm2/A
-            self.ferr_b /= self.rFnuFlam_b # convert to erg/s/cm2/A
+        self.wave_b = spec_to_phot(self.wave_w, self.wave_w, self.trans_bw)
+
+        # convert to erg/s/cm2/A
+        if u.Unit(self.flux_unit).is_equivalent('mJy'):
+            rFlamFnu_b = 1 / Fnu_over_Flam(self.wave_w, trans_bw=self.trans_bw, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=self.flux_unit)
+            self.flux_b *= rFlamFnu_b 
+            self.ferr_b *= rFlamFnu_b 
+        elif u.Unit(self.flux_unit).is_equivalent('erg s-1 cm-2 angstrom-1'):
+            self.flux_b *= u.Unit(self.flux_unit).to('erg s-1 cm-2 angstrom-1')
+            self.ferr_b *= u.Unit(self.flux_unit).to('erg s-1 cm-2 angstrom-1')
         
     def read_transmission(self, name_b=None, trans_dir=None, trans_rsmp=None, wave_w=None, wave_num=None):        
         if trans_dir[-1] != '/': trans_dir += '/'
@@ -360,28 +364,28 @@ class PhotFrame(object):
         # Flam (mean) = INT(Flam * Tlam, x=lam) / INT(Tlam, x=lam), where INT(Tlam, x=lam) = 1
         # Fnu (mean) = INT(Flam * Tlam, x=lam) / INT(Tlam * dnu/dlam, x=lam)
         
-    def rFnuFlam_func(self, wave_w, trans_bw=None):
-        unitflam = (1 * u.erg/u.s/u.cm**2/u.angstrom)
-        rDnuDlam = const.c.to('angstrom Hz') / (wave_w * u.angstrom)**2
-        if trans_bw is None:
-            # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
-            return (unitflam / rDnuDlam).to('mJy').value
-        else:
-            # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
-            unitfint = unitflam * (1 * u.angstrom)
-            # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
-            width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
-            return (unitfint / width_nu).to('mJy').value
+    # def rFnuFlam_func(self, wave_w, trans_bw=None, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit='mJy'):
+    #     unitFlam = 1.0 * u.Unit(Flam_unit)
+    #     rDnuDlam = const.c / (wave_w * u.angstrom)**2
+    #     if trans_bw is None:
+    #         # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
+    #         return (unitFlam / rDnuDlam).to(Fnu_unit).value
+    #     else:
+    #         # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
+    #         unitFint = unitFlam * (1.0 * u.angstrom)
+    #         # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
+    #         width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
+    #         return (unitFint / width_nu).to(Fnu_unit).value
         
-    def spec2phot(self, wave_w, spec_mw, trans_bw):
-        # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)
-        if (spec_mw.ndim == 1) & (trans_bw.ndim == 1):
-            return np.trapezoid(trans_bw * spec_mw, x=wave_w, axis=0) # return flux, 1-model, 1-band
-        if (spec_mw.ndim == 1) & (trans_bw.ndim == 2):
-            return np.trapezoid(trans_bw * spec_mw[None,:], x=wave_w, axis=1) # return flux_b, 1-model, multi-band
-        if (spec_mw.ndim == 2) & (trans_bw.ndim == 1):
-            return np.trapezoid(trans_bw[None,:] * spec_mw, x=wave_w, axis=1) # return flux_m, multi-model, 1-band
-        if (spec_mw.ndim == 2) & (trans_bw.ndim == 2):
-            return np.trapezoid(trans_bw[None,:,:] * spec_mw[:,None,:], x=wave_w, axis=2) # return flux_mb
-        # short for np.trapezoid(trans * spec, x=wave, axis=axis) / np.trapezoid(trans, x=wave, axis=axis), trans is normalized to int=1
+    # def spec2phot(self, wave_w, spec_mw, trans_bw):
+    #     # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)
+    #     if (spec_mw.ndim == 1) & (trans_bw.ndim == 1):
+    #         return np.trapezoid(trans_bw * spec_mw, x=wave_w, axis=0) # return flux, 1-model, 1-band
+    #     if (spec_mw.ndim == 1) & (trans_bw.ndim == 2):
+    #         return np.trapezoid(trans_bw * spec_mw[None,:], x=wave_w, axis=1) # return flux_b, 1-model, multi-band
+    #     if (spec_mw.ndim == 2) & (trans_bw.ndim == 1):
+    #         return np.trapezoid(trans_bw[None,:] * spec_mw, x=wave_w, axis=1) # return flux_m, multi-model, 1-band
+    #     if (spec_mw.ndim == 2) & (trans_bw.ndim == 2):
+    #         return np.trapezoid(trans_bw[None,:,:] * spec_mw[:,None,:], x=wave_w, axis=2) # return flux_mb
+    #     # short for np.trapezoid(trans * spec, x=wave, axis=axis) / np.trapezoid(trans, x=wave, axis=axis), trans is normalized to int=1
 

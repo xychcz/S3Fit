@@ -9,6 +9,8 @@ np.set_printoptions(linewidth=10000)
 import scipy.sparse as sparse
 from scipy.signal import fftconvolve
 from scipy.interpolate import interp1d
+import astropy.units as u
+import astropy.constants as const
 import matplotlib.colors as mcolors
 import colorsys
 
@@ -63,9 +65,6 @@ greek_letters = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 't
                  'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega']
 
 #####################################################################
-#####################################################################
-
-#####################################################################
 ########################## plot functions ###########################
 def get_colors_by_hue(hue_center, hue_width=30, min_s=0.35, max_s=0.95, min_v=0.35, max_v=0.95):
     color_list = []
@@ -84,8 +83,6 @@ color_list_dict = {'red':    get_colors_by_hue(0,   hue_width=20, min_s=0.3,  ma
                    'blue':   get_colors_by_hue(190, hue_width=35, min_s=0.41, max_s=0.99, min_v=0.3,  max_v=0.99),
                    'purple': get_colors_by_hue(300, hue_width=50, min_s=0.1,  max_s=0.8,  min_v=0.55, max_v=1),
                   }
-#####################################################################
-#####################################################################
 
 #####################################################################
 #################### wavelength conversion ##########################
@@ -125,7 +122,32 @@ def wave_air_to_vac(wave_air, extrapolate=True):
         
     return wave_vac
 #####################################################################
-#####################################################################
+###################### Photometric conversion #######################
+
+def Fnu_over_Flam(wave_w, trans_bw=None, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit='mJy'):
+    unitFlam = 1.0 * u.Unit(Flam_unit)
+    rDnuDlam = const.c / (wave_w * u.angstrom)**2
+    if trans_bw is None:
+        # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
+        return (unitFlam / rDnuDlam).to(Fnu_unit).value
+    else:
+        # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
+        unitFint = unitFlam * (1.0 * u.angstrom)
+        # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
+        width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
+        return (unitFint / width_nu).to(Fnu_unit).value
+    
+def spec_to_phot(wave_w, spec_mw, trans_bw):
+    # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)
+    if (spec_mw.ndim == 1) & (trans_bw.ndim == 1):
+        return np.trapezoid(trans_bw * spec_mw, x=wave_w, axis=0) # return flux, 1-model, 1-band
+    if (spec_mw.ndim == 1) & (trans_bw.ndim == 2):
+        return np.trapezoid(trans_bw * spec_mw[None,:], x=wave_w, axis=1) # return flux_b, 1-model, multi-band
+    if (spec_mw.ndim == 2) & (trans_bw.ndim == 1):
+        return np.trapezoid(trans_bw[None,:] * spec_mw, x=wave_w, axis=1) # return flux_m, multi-model, 1-band
+    if (spec_mw.ndim == 2) & (trans_bw.ndim == 2):
+        return np.trapezoid(trans_bw[None,:,:] * spec_mw[:,None,:], x=wave_w, axis=2) # return flux_mb
+    # short for np.trapezoid(trans * spec, x=wave, axis=axis) / np.trapezoid(trans, x=wave, axis=axis), trans is normalized to int=1
 
 #####################################################################
 ##################### convolution functions #########################
