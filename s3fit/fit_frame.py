@@ -186,8 +186,10 @@ class FitFrame(object):
             for mod_name in self.mod_reg_M:
                 mod_info_I = {}
                 for item in self.mod_reg_M[mod_name]:
-                    if item == 'config':
+                    if item in ['comp_reg_C', 'comps', 'config']:
                         comp_reg_C       = self.mod_reg_M[mod_name][item]
+                    elif item in ['mod_info_I', 'mod_info', 'info']:
+                        mod_info_I       = self.mod_reg_M[mod_name][item]
                     else:
                         mod_info_I[item] = self.mod_reg_M[mod_name][item]
                 self.mod_reg_M[mod_name]['comp_reg_C'] = comp_reg_C
@@ -1754,13 +1756,13 @@ class FitFrame(object):
         if self.if_plot_results:
             self.plot_results(step='spec', if_plot_phot=False, if_plot_comp=True, 
                               plot_range='spec', wave_type='rest', wave_unit='angstrom', 
-                              flux_type='Flam', res_type='residual', ferr_num=3, xyscale=('linear','linear'), 
+                              flux_form='Flam', res_type='residual', ferr_num=3, xyscale=('linear','linear'), 
                               title='Best-fit models of pure-spectral fitting with all components ' + r'($\chi^2_{\nu}$ = ' + f"{self.output_S['joint_fit_2']['chi_sq_l'][0]:.3f})")
 
         if self.if_plot_results & self.have_phot:
             self.plot_results(step='spec+SED', if_plot_phot=True, if_plot_comp=True, 
                               plot_range='SED', wave_type='rest', wave_unit='micron', 
-                              flux_type='Fnu', res_type='residual/data', ferr_num=3, xyscale=('log','log'), 
+                              flux_form='Fnu', res_type='residual/data', ferr_num=3, xyscale=('log','log'), 
                               title='Best-fit models of spectrum+SED fitting with all components ' + r'($\chi^2_{\nu}$ = ' + f"{self.output_S['joint_fit_3']['chi_sq_l'][0]:.3f})")
 
         print_log(center_string(f"S3Fit all processes finish", 80), self.log_message)
@@ -1768,12 +1770,13 @@ class FitFrame(object):
     ##########################################################################
     ################# Extract best-fit spectra and values ####################
 
-    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=None, if_show_average=False, num_sed_wave=5000, flux_type='Flam', **kwargs):
+    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=None, if_show_average=False, num_sed_wave=5000, flux_form='Flam', **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
         if 'print_results'  in kwargs: if_print_results  = kwargs['print_results']
         if 'return_results' in kwargs: if_return_results = kwargs['return_results']
+        if 'flux_type'      in kwargs: flux_form         = kwargs['flux_type']
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
@@ -1929,15 +1932,15 @@ class FitFrame(object):
         if self.have_phot:
             output_MC['tot']['fres']['phot_lb'] = output_MC['tot']['flux']['phot_lb'] - output_MC['tot']['fmod']['phot_lb']
 
-        # save model spectra in flambda to calculate observed flux in later model.extract_results()
+        # save model spectra in Flam to calculate observed flux in later model.extract_results()
         self.output_MC = output_MC
 
         # convert to flux in mJy if required
-        if flux_type in ['Fnu', 'fnu']:
+        if flux_form in ['Fnu', 'fnu']:
             for mod_name in output_MC:
                 for comp_name in output_MC[mod_name]:
                     if 'spec_lw' in output_MC[mod_name][comp_name]: 
-                        output_MC[mod_name][comp_name]['spec_lw'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w) # None is for 'self' in PhotFrame definition
+                        output_MC[mod_name][comp_name]['spec_lw'] *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,spec_wave_w) # None is to replace 'self' in PhotFrame definition
                     if 'sed_lw' in output_MC[mod_name][comp_name]: 
                         output_MC[mod_name][comp_name]['sed_lw']  *= self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,sed_wave_w)
                     if 'phot_lb' in output_MC[mod_name][comp_name]: 
@@ -2069,24 +2072,31 @@ class FitFrame(object):
 
     def plot_results(self, step=None, if_plot_phot=False, if_plot_comp=True, 
                      plot_range=None, wave_type='rest', wave_unit='angstrom', 
-                     flux_type='Flam', res_type='residual', ferr_num=3, 
+                     flux_form='Flam', res_type='residual', ferr_num=3, 
                      xyscale=('log','log'), figsize=(10, 6), dpi=300, 
                      title=None, legend_loc=None, if_plot_icon=False, 
                      output_plotname=None, **kwargs):
         # step: 'spec', 'pure-spec', 'spec+SED'
         # plot_range = ('spec', 'pure-spec'), 'SED'; check if 'SED'
-        # flux_type: ('Flam'), 'Fnu'; check if 'Fnu'
+        # flux_form: ('Flam'), 'Fnu'; check if 'Fnu'
         # wave_type: 'rest', ('obs', 'observed'); check if 'rest'
         # wave_unit: ('angstrom'), 'um', 'micron'; check if 'um' or 'micron'
         # res_type: 'residual', 'residual/data', 'residual/model'
         # ferr_num: n-sigma error
         # xyscale: 'linear', 'log'
 
+        ############################################################
+        # check and replace the args to be compatible with old version <= 2.2.4
+        if 'print_results'  in kwargs: if_print_results  = kwargs['print_results']
+        if 'return_results' in kwargs: if_return_results = kwargs['return_results']
+        if 'flux_type'      in kwargs: flux_form         = kwargs['flux_type']
+        ############################################################
+
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
         if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
 
-        output_MC = self.extract_results(step=step, if_return_results=True, flux_type=flux_type, **kwargs) # if_print_results=False, if_rev_v0_redshift=None
+        output_MC = self.extract_results(step=step, if_return_results=True, flux_form=flux_form, **kwargs) # if_print_results=False, if_rev_v0_redshift=None
 
         if step == 'joint_fit_2': 
             if_plot_phot = False # forcibly
@@ -2255,7 +2265,7 @@ class FitFrame(object):
             ax0.legend(ncol=4, loc=legend_loc[0]); ax1.legend(ncol=4, loc=legend_loc[1])
         ax0.tick_params(axis='x', which='both', labelbottom=False)
         # ax0.set_title('The best-fit spectra in the wavelength range of the data spectrum.')
-        if flux_type in ['Fnu', 'fnu']:
+        if flux_form in ['Fnu', 'fnu']:
             ax0.set_ylabel(f"Flux (mJy)")
         else:
             ax0.set_ylabel(f"Flux ({self.spec_flux_scale:.0e}"+r' erg s$^{-1}$cm$^{-2}\AA^{-1}$)')

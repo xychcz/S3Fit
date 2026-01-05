@@ -301,7 +301,7 @@ class TorusFrame(object):
         par_name_cp = self.cframe.par_name_cp
 
         # list the properties to be output; the print will follow this order
-        value_names_additive = ['log_Lum_total']
+        value_names_additive = ['log_intLum_bol']
         value_names_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
             value_names_C[comp_name] = value_names_additive + [] # just copy
@@ -311,7 +311,7 @@ class TorusFrame(object):
             for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']:
                 if wave_range is None: continue
                 for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
-                    lum_names.append(f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}")
+                    lum_names.append(f"log_intLum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}")
             value_names_C[comp_name] += lum_names
             if i_comp == 0: 
                 lum_names_additive = lum_names
@@ -349,8 +349,8 @@ class TorusFrame(object):
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
 
                 lum_0 = coeff_e[0]*self.lum_norm # default unit is Lsun
-                output_C[comp_name]['value_Vl']['log_Lum_total'][i_loop] = np.log10(lum_0)
-                output_C['sum']['value_Vl']['log_Lum_total'][i_loop] += lum_0
+                output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(lum_0)
+                output_C['sum']['value_Vl']['log_intLum_bol'][i_loop] += lum_0
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
@@ -370,34 +370,34 @@ class TorusFrame(object):
                         if lum_type in ['intrinsic','absorbed']:
                             tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=False, if_redshift=False) # flux in rest frame
-                            int_lum_intrinsic = np.trapezoid(tmp_coeff_e@tmp_flux_ew, x=int_wave_w/(1+rev_redshift)) * unitconv # from erg/s/cm2/A to Lsun
+                            intLum_intrinsic = np.trapezoid(tmp_coeff_e@tmp_flux_ew, x=int_wave_w/(1+rev_redshift)) * unitconv # from erg/s/cm2/A to Lsun
                         if lum_type in ['observed','absorbed']:
                             tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=True, if_redshift=False) # flux in rest frame
-                            int_lum_observed = np.trapezoid(tmp_coeff_e@tmp_flux_ew, x=int_wave_w/(1+rev_redshift)) * unitconv # from erg/s/cm2/A to Lsun
-                        if lum_type == 'intrinsic': int_lum = copy(int_lum_intrinsic)
-                        if lum_type == 'observed' : int_lum = copy(int_lum_observed)
-                        if lum_type == 'absorbed' : int_lum = int_lum_intrinsic - int_lum_observed
+                            intLum_observed = np.trapezoid(tmp_coeff_e@tmp_flux_ew, x=int_wave_w/(1+rev_redshift)) * unitconv # from erg/s/cm2/A to Lsun
+                        if lum_type == 'intrinsic': intLum = copy(intLum_intrinsic)
+                        if lum_type == 'observed' : intLum = copy(intLum_observed)
+                        if lum_type == 'absorbed' : intLum = intLum_intrinsic - intLum_observed
 
-                        value_name = f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}"
-                        output_C[comp_name]['value_Vl'][value_name][i_loop] = np.log10(int_lum)
-                        if value_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][value_name][i_loop] += int_lum
+                        value_name = f"log_intLum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}"
+                        output_C[comp_name]['value_Vl'][value_name][i_loop] = np.log10(intLum)
+                        if value_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][value_name][i_loop] += intLum
 
         for value_name in output_C['sum']['value_Vl']:
-            if value_name[:8] in ['log_Lum_', 'log_lamb']: 
+            if value_name[:8] in ['log_intLum_', 'log_lamLlam']: 
                 output_C['sum']['value_Vl'][value_name] = np.log10(output_C['sum']['value_Vl'][value_name])
 
         # updated to requested lum_unit for each comp
         for (i_comp, comp_name) in enumerate(comp_name_c):
             if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['erg/s', 'erg s-1']: 
                 for value_name in output_C[comp_name]['value_Vl']:
-                    if value_name[:8] in ['log_Lum_', 'log_lamb']: 
+                    if value_name[:8] in ['log_intLum_', 'log_lamLlam']: 
                         output_C[comp_name]['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
         # if all comp have the same lum unit, also update the sum
         if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
             if casefold(self.cframe.comp_info_cI[0]['int_lum_unit']) in ['erg/s', 'erg s-1']:
                 for value_name in output_C['sum']['value_Vl']:
-                    if value_name[:8] in ['log_Lum_', 'log_lamb']: 
+                    if value_name[:8] in ['log_intLum_', 'log_lamLlam']: 
                         output_C['sum']['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
 
         ############################################################
@@ -429,13 +429,13 @@ class TorusFrame(object):
             print_name_CV[comp_name]['radii_ratio'] = 'Outer/inner radii ratio'
             print_name_CV[comp_name]['half_open_angle'] = 'Half opening angle (degree)'
             print_name_CV[comp_name]['inclination'] = 'Inclination (degree)'
-            print_name_CV[comp_name]['log_Lum_total'] = f"Torus Lum. (total) "
+            print_name_CV[comp_name]['log_intLum_bol'] = f"Torus dust bolometric Lum. "
 
             for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']: 
                 wave_unit_str_0 = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
                 wave_unit_str_1 = 'µm' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'Å'
                 for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
-                    value_name = f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str_0}_{lum_type}"
+                    value_name = f"log_intLum_{wave_range[0]}_{wave_range[1]}{wave_unit_str_0}_{lum_type}"
                     if lum_type == 'absorbed': lum_type = 'dust-absorbed'
                     print_name_CV[comp_name][value_name] = f"Integrated {lum_type} Lum. "+f"({wave_range[0]}-{wave_range[1]} {wave_unit_str_1}) "
         print_name_CV['sum'] = {}
@@ -446,7 +446,7 @@ class TorusFrame(object):
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             lum_unit_str = '(log Lsun) ' if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
             for value_name in self.output_C[comp_name]['value_Vl']:
-                if value_name[:8] in ['log_Lum_', 'log_lamb']: 
+                if value_name[:8] in ['log_intLum_', 'log_lamLlam']: 
                     print_name_CV[comp_name][value_name] += lum_unit_str
         # if all comp have the same lum unit, also update the sum
         if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
@@ -454,7 +454,7 @@ class TorusFrame(object):
         else:
             lum_unit_str = '(log Lsun) ' # default
         for value_name in self.output_C['sum']['value_Vl']:
-            if value_name[:8] in ['log_Lum_', 'log_lamb']: 
+            if value_name[:8] in ['log_intLum_', 'log_lamLlam']: 
                 print_name_CV['sum'][value_name] += lum_unit_str
 
         print_length = max([len(print_name_CV[comp_name][value_name]) for comp_name in print_name_CV for value_name in print_name_CV[comp_name]] + [40]) # set min length

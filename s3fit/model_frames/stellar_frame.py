@@ -13,7 +13,7 @@ from astropy.cosmology import Planck18 as cosmo
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
-from ..auxiliaries.auxiliary_frames import ConfigFrame
+from ..auxiliaries.auxiliary_frames import ConfigFrame, PhotFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict, convolve_fix_width_fft, convolve_var_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
@@ -125,30 +125,66 @@ class StellarFrame(object):
         self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
         # component-level info
         for i_comp in range(self.num_comps):
-            self.cframe.retrieve_inherited_info('int_wave_range', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=[(912,30000)])
-            self.cframe.retrieve_inherited_info('int_wave_unit' , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='angstrom')
-            self.cframe.retrieve_inherited_info('int_wave_frame', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='rest')
-            self.cframe.retrieve_inherited_info('int_lum_unit'  , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default='Lsun')
-            self.cframe.retrieve_inherited_info('int_lum_type'  , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=['intrinsic', 'observed', 'absorbed'])
-
-        # group line info to a list
+            # format of returned flux / Lum density or integrated values
+            # either 2-unit-nested tuples (for wave and value, respectively) or dictionary as follows are supported
+            self.cframe.retrieve_inherited_info('ret_value_formats', i_comp=i_comp, root_info_I=self.fframe.root_info_I, 
+                                                default=[((5500, 25, 'A', 'rest'), ('Flam', 'observed', 'erg/s/cm2/A')), 
+                                                         {'wave_center': 5500, 'wave_width': 25, 'wave_unit': 'A', 'wave_frame': 'rest', 
+                                                          'value_form': 'lamLlam', 'value_state': 'intrinsic', 'value_unit': 'erg/s'},
+                                                         (( 912, 30000, 'A', 'rest'), ('intLum', 'intrinsic', 'erg/s')),
+                                                         {'wave_min': 912, 'wave_max': 30000, 'wave_unit': 'A', 'wave_frame': 'rest', 
+                                                          'value_form': 'intLum', 'value_state': 'absorbed', 'value_unit': 'erg/s'},
+                                                        ])
+            # 'wave_unit': 'angstrom' (or 'A'), 'micron' (or 'um')
+            # 'value_form': 'Flam', 'Fnu'; 'lamFlam', 'intFlux'; 'lamLlam', 'intLum'
+            # 'value_state': 'intrinsic', 'observed', 'absorbed' (i.e., dust absorbed)
+            # 'value_unit' could also be 'Lsun' for luminosity
+            
+        # re-categorize ret_value_formats
         for i_comp in range(self.num_comps):
-            if isinstance(self.cframe.comp_info_cI[i_comp]['int_wave_range'], tuple): self.cframe.comp_info_cI[i_comp]['int_wave_range'] = [self.cframe.comp_info_cI[i_comp]['int_wave_range']]
-            if isinstance(self.cframe.comp_info_cI[i_comp]['int_wave_range'], list):
-                if all( isinstance(i, (int,float)) for i in self.cframe.comp_info_cI[i_comp]['int_wave_range'] ):
-                    if len(self.cframe.comp_info_cI[i_comp]['int_wave_range']) == 2: self.cframe.comp_info_cI[i_comp]['int_wave_range'] = [self.cframe.comp_info_cI[i_comp]['int_wave_range']]
-            if isinstance(self.cframe.comp_info_cI[i_comp]['int_lum_type'], str): self.cframe.comp_info_cI[i_comp]['int_lum_type'] = [self.cframe.comp_info_cI[i_comp]['int_lum_type']]
+            if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue
+            # group line info to a list
+            if isinstance(self.cframe.comp_info_cI[i_comp]['ret_value_formats'], (tuple, dict)): 
+                self.cframe.comp_info_cI[i_comp]['ret_value_formats'] = [self.cframe.comp_info_cI[i_comp]['ret_value_formats']]
+            # convert tuple format to dict
+            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
+                tmp_tuple = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                if isinstance(tmp_tuple, tuple):
+                    tmp_dict = {}
+                    wave_0, wave_1 = tmp_tuple[0][:2]
+                    if wave_0 > wave_1:
+                        tmp_dict['wave_center'], tmp_dict['wave_width'] = wave_0, wave_1
+                    else:
+                        tmp_dict['wave_min'], tmp_dict['wave_max'] = wave_0, wave_1 if wave_1 > wave_0 else wave_0+1
+                    tmp_dict['wave_unit']  = tmp_tuple[0][2]
+                    tmp_dict['wave_frame'] = tmp_tuple[0][3] if len(tmp_tuple[0]) > 3 else 'rest'
+                    tmp_dict['value_form'], tmp_dict['value_state'] = tmp_tuple[1][:2]
+                    if len(tmp_tuple[1]) > 2: tmp_dict['value_unit'] = tmp_tuple[1][2]
+                else:
+                    tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                # check alternatives
+                tmp_dict['wave_unit']  = 'um' if casefold(tmp_dict['wave_unit']) in ['micron', 'um'] else 'A'
+                tmp_dict['wave_frame'] = 'obs' if casefold(tmp_dict['wave_frame']) in ['observed', 'obs'] else 'rest'
+                if tmp_dict['value_form'] in ['flam', 'Flam']: 
+                    tmp_dict['value_form'] = 'Flam'
+                    tmp_dict['value_unit'] = 'erg/s/cm2/A'
+                elif tmp_dict['value_form'] == ['fnu', 'Fnu']: 
+                    tmp_dict['value_form'] = 'Fnu'
+                    tmp_dict['value_unit'] = 'mJy'
+                elif tmp_dict['value_form'] in ['lamFlam', 'intFlux']:
+                    tmp_dict['value_unit'] = 'erg/s/cm2'
+                elif tmp_dict['value_form'] in ['lamLlam', 'intLum']:
+                    tmp_dict['value_unit'] = 'erg/s' if casefold(tmp_dict['value_unit'])[:3] == 'erg' else 'Lsun'
+                if casefold(tmp_dict['value_state']) in ['intrinsic', 'original']:
+                    tmp_dict['value_state'] = 'intrinsic'
+                elif casefold(tmp_dict['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
+                    tmp_dict['value_state'] = 'observed'
+                elif casefold(tmp_dict['value_state']) in ['absorbed', 'dust']:
+                    tmp_dict['value_state'] = 'absorbed'
+                self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret] = tmp_dict
 
         # check alternative info
         for i_comp in range(self.num_comps):
-            # int_lum_type
-            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['intrinsic' if casefold(lum_type) in ['intrinsic', 'original'] else lum_type 
-                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
-            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['observed'  if casefold(lum_type) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct'] else lum_type 
-                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
-            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = ['absorbed'  if casefold(lum_type) in ['absorbed', 'dust'] else lum_type 
-                                                                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']]
-            self.cframe.comp_info_cI[i_comp]['int_lum_type'] = list(dict.fromkeys(self.cframe.comp_info_cI[i_comp]['int_lum_type'])) # remove duplicates
             # SFH name
             if casefold(self.cframe.comp_info_cI[i_comp]['sfh_name']) in ['exponential']: 
                 self.cframe.comp_info_cI[i_comp]['sfh_name'] = 'exponential'
@@ -567,25 +603,30 @@ class StellarFrame(object):
 
         # list the properties to be output; the print will follow this order
         value_names_additive = ['flux_5500', 'flux_wavenorm', 
-                                'log_lambLum_5500', 'log_lambLum_wavenorm', 
+                                'log_lamLlam_5500', 'log_lamLlam_wavenorm', 
                                 'log_Mass_formed', 'log_Mass_remaining', 'log_MtoL',
                                 'log_Age_Lweight', 'log_Age_Mweight', 'log_Z_Lweight', 'log_Z_Mweight']
         value_names_C = {}
+        ret_names_additive = None
         for (i_comp, comp_name) in enumerate(comp_name_c):
             value_names_C[comp_name] = ['redshift', 'sigma'] + value_names_additive
 
-            lum_names = []
-            wave_unit_str = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-            for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']:
-                if wave_range is None: continue
-                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
-                    lum_names.append(f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}")
-            value_names_C[comp_name] += lum_names
-            if i_comp == 0: 
-                lum_names_additive = lum_names
+            if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue
+            ret_names = []
+            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
+                tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                if 'wave_center' in tmp_dict:
+                    ret_name = f"log_{tmp_dict['value_form']}_{tmp_dict['wave_center']}{tmp_dict['wave_unit']}_{tmp_dict['value_state']}"
+                else:
+                    ret_name = f"log_{tmp_dict['value_form']}_{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}_{tmp_dict['value_state']}"
+                if tmp_dict['value_unit'] == 'Lsun': ret_name += '_inLsun'
+                ret_names.append(ret_name)
+            value_names_C[comp_name] += ret_names
+            if ret_names_additive is None: 
+                ret_names_additive = ret_names
             else:
-                lum_names_additive = [lum_name for lum_name in lum_names_additive if lum_name in value_names_C[comp_name]]
-        value_names_additive += lum_names_additive
+                ret_names_additive = [ret_name for ret_name in ret_names_additive if ret_name in value_names_C[comp_name]]
+        value_names_additive += ret_names_additive
 
         # format of results
         # output_C['comp']['par_lp'][i_l,i_p]: parameters
@@ -642,81 +683,81 @@ class StellarFrame(object):
                     # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element
                     coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e 
                 Lum_5500_e = coeff_e * unitconv # intrinsic L5500, in Lsun/A
-                lambLum_5500_e = Lum_5500_e * 5500
-                lambLum_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.cframe.mod_info_I['w_norm']
+                lamLlam_5500_e = Lum_5500_e * 5500
+                lamLlam_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.cframe.mod_info_I['w_norm']
                 Mass_formed_e = Lum_5500_e * self.mtol_e # mtol_e is in unit of Msun/(Lsun/A)
                 Mass_remaining_e = Mass_formed_e * self.remainmassfrac_e
 
-                output_C[comp_name]['value_Vl']['log_lambLum_5500'][i_loop]   = np.log10(lambLum_5500_e.sum())
-                output_C[comp_name]['value_Vl']['log_lambLum_wavenorm'][i_loop]   = np.log10(lambLum_wavenorm_e.sum())
+                output_C[comp_name]['value_Vl']['log_lamLlam_5500'][i_loop]   = np.log10(lamLlam_5500_e.sum())
+                output_C[comp_name]['value_Vl']['log_lamLlam_wavenorm'][i_loop]   = np.log10(lamLlam_wavenorm_e.sum())
                 output_C[comp_name]['value_Vl']['log_Mass_formed'][i_loop]    = np.log10(Mass_formed_e.sum())
                 output_C[comp_name]['value_Vl']['log_Mass_remaining'][i_loop] = np.log10(Mass_remaining_e.sum())
-                output_C[comp_name]['value_Vl']['log_MtoL'][i_loop]   = np.log10(Mass_remaining_e.sum() / lambLum_5500_e.sum())
-                output_C[comp_name]['value_Vl']['log_Age_Lweight'][i_loop] = (lambLum_5500_e * np.log10(self.age_e)).sum() / lambLum_5500_e.sum()
+                output_C[comp_name]['value_Vl']['log_MtoL'][i_loop]   = np.log10(Mass_remaining_e.sum() / lamLlam_5500_e.sum())
+                output_C[comp_name]['value_Vl']['log_Age_Lweight'][i_loop] = (lamLlam_5500_e * np.log10(self.age_e)).sum() / lamLlam_5500_e.sum()
                 output_C[comp_name]['value_Vl']['log_Age_Mweight'][i_loop] = (Mass_remaining_e * np.log10(self.age_e)).sum() / Mass_remaining_e.sum()
-                output_C[comp_name]['value_Vl']['log_Z_Lweight'][i_loop] = (lambLum_5500_e * np.log10(self.met_e)).sum() / lambLum_5500_e.sum()
+                output_C[comp_name]['value_Vl']['log_Z_Lweight'][i_loop] = (lamLlam_5500_e * np.log10(self.met_e)).sum() / lamLlam_5500_e.sum()
                 output_C[comp_name]['value_Vl']['log_Z_Mweight'][i_loop] = (Mass_remaining_e * np.log10(self.met_e)).sum() / Mass_remaining_e.sum()
 
-                output_C['sum']['value_Vl']['log_lambLum_5500'][i_loop]   += lambLum_5500_e.sum() # keep in linear for sum
-                output_C['sum']['value_Vl']['log_lambLum_wavenorm'][i_loop]   += lambLum_wavenorm_e.sum() # keep in linear for sum
+                output_C['sum']['value_Vl']['log_lamLlam_5500'][i_loop]   += lamLlam_5500_e.sum() # keep in linear for sum
+                output_C['sum']['value_Vl']['log_lamLlam_wavenorm'][i_loop]   += lamLlam_wavenorm_e.sum() # keep in linear for sum
                 output_C['sum']['value_Vl']['log_Mass_formed'][i_loop]    += Mass_formed_e.sum() # keep in linear for sum
                 output_C['sum']['value_Vl']['log_Mass_remaining'][i_loop] += Mass_remaining_e.sum() # keep in linear for sum
-                output_C['sum']['value_Vl']['log_Age_Lweight'][i_loop] += (lambLum_5500_e * np.log10(self.age_e)).sum()
+                output_C['sum']['value_Vl']['log_Age_Lweight'][i_loop] += (lamLlam_5500_e * np.log10(self.age_e)).sum()
                 output_C['sum']['value_Vl']['log_Age_Mweight'][i_loop] += (Mass_remaining_e * np.log10(self.age_e)).sum()
-                output_C['sum']['value_Vl']['log_Z_Lweight'][i_loop] += (lambLum_5500_e * np.log10(self.met_e)).sum()
+                output_C['sum']['value_Vl']['log_Z_Lweight'][i_loop] += (lamLlam_5500_e * np.log10(self.met_e)).sum()
                 output_C['sum']['value_Vl']['log_Z_Mweight'][i_loop] += (Mass_remaining_e * np.log10(self.met_e)).sum()
 
-                # calculate integrated lum in given wavelength ranges
-                for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']: 
-                    if wave_range is None: continue
-                    wave_unit_str   = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-                    wave_unit_ratio = 1e4  if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 1
-                    if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_frame']) in ['rest']: wave_unit_ratio *= (1+rev_redshift) # rest to obs range
-                    int_wave_w = np.logspace(np.log10(wave_range[0]*wave_unit_ratio), np.log10(wave_range[1]*wave_unit_ratio), num=1000) # obs frame grid
+                # calculate requested flux/Lum in given wavelength ranges
+                if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue
+                tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
+                for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
+                    tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
 
-                    tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
-                    for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
-                        if lum_type in ['intrinsic','absorbed']:
-                            tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=False, if_redshift=False, if_full_range=True, dpix_resample=300) # flux in rest frame
-                            int_lum_intrinsic = np.trapezoid(tmp_coeff_e@tmp_flux_ew, x=int_wave_w/(1+rev_redshift)) * unitconv # from erg/s/cm2/A to Lsun
-                        if lum_type in ['observed','absorbed']:
-                            tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=True, if_redshift=False, if_full_range=True, dpix_resample=300) # flux in rest frame
-                            int_lum_observed = np.trapezoid(tmp_coeff_e@tmp_flux_ew, x=int_wave_w/(1+rev_redshift)) * unitconv # from erg/s/cm2/A to Lsun
-                        if lum_type == 'intrinsic': int_lum = copy(int_lum_intrinsic)
-                        if lum_type == 'observed' : int_lum = copy(int_lum_observed)
-                        if lum_type == 'absorbed' : int_lum = int_lum_intrinsic - int_lum_observed
+                    if 'wave_center' in tmp_dict:
+                        wave_0, wave_1 = tmp_dict['wave_center'] - tmp_dict['wave_width'], tmp_dict['wave_center'] + tmp_dict['wave_width']
+                        ret_name = f"log_{tmp_dict['value_form']}_{tmp_dict['wave_center']}{tmp_dict['wave_unit']}_{tmp_dict['value_state']}"
+                    else:
+                        wave_0, wave_1 = tmp_dict['wave_min'], tmp_dict['wave_max']
+                        ret_name = f"log_{tmp_dict['value_form']}_{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}_{tmp_dict['value_state']}"
+                    wave_ratio = 1e4  if tmp_dict['wave_unit'] == 'um' else 1
+                    if tmp_dict['wave_frame'] == 'rest': wave_ratio *= (1+rev_redshift) # rest wave to obs wave
+                    int_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
 
-                        value_name = f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str}_{lum_type}"
-                        output_C[comp_name]['value_Vl'][value_name][i_loop] = np.log10(int_lum)
-                        if value_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][value_name][i_loop] += int_lum
+                    if tmp_dict['value_state'] in ['intrinsic','absorbed']:
+                        tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                         if_dust_ext=False, if_redshift=True, if_full_range=True, dpix_resample=300) # flux in obs frame
+                        intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                    if tmp_dict['value_state'] in ['observed','absorbed']:
+                        tmp_flux_ew = self.create_models(int_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                         if_dust_ext=True,  if_redshift=True, if_full_range=True, dpix_resample=300) # flux in obs frame
+                        observed_flux_w = tmp_coeff_e @ tmp_flux_ew
+                    if tmp_dict['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
+                    if tmp_dict['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
+                    if tmp_dict['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
 
-        output_C['sum']['value_Vl']['log_MtoL'] = np.log10(output_C['sum']['value_Vl']['log_Mass_remaining'] / output_C['sum']['value_Vl']['log_lambLum_5500'])
-        output_C['sum']['value_Vl']['log_Age_Lweight'] = output_C['sum']['value_Vl']['log_Age_Lweight'] / output_C['sum']['value_Vl']['log_lambLum_5500']
+                    if tmp_dict['value_form'] == 'Flam'   : ret_value = tmp_flux_w.mean() * self.spec_flux_scale # keep erg/s/cm2/A
+                    if tmp_dict['value_form'] == 'Fnu'    : ret_value = tmp_flux_w.mean() * self.spec_flux_scale * PhotFrame.rFnuFlam_func(None,int_wave_w.mean()) # # from erg/s/cm2/A to mJy
+                    if tmp_dict['value_form'] == 'lamFlam': ret_value = tmp_flux_w.mean() * int_wave_w.mean()  * self.spec_flux_scale # from erg/s/cm2/A to erg/s/cm2
+                    if tmp_dict['value_form'] == 'intFlux': ret_value = np.trapezoid(tmp_flux_w, x=int_wave_w) * self.spec_flux_scale # from erg/s/cm2/A to erg/s/cm2
+                    if tmp_dict['value_form'] == 'lamLlam': ret_value = tmp_flux_w.mean() * int_wave_w.mean()  * self.spec_flux_scale * 4*np.pi*dist_lum**2 # from erg/s/cm2/A to erg/s
+                    if tmp_dict['value_form'] == 'intLum' : ret_value = np.trapezoid(tmp_flux_w, x=int_wave_w) * self.spec_flux_scale * 4*np.pi*dist_lum**2 # from erg/s/cm2/A to Lsun
+                    
+                    if tmp_dict['value_unit'] == 'Lsun': 
+                        ret_value /= const.L_sun.to('erg/s').value
+                        ret_name  += '_inLsun'
+                    output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
+                    if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
+
+        output_C['sum']['value_Vl']['log_MtoL'] = np.log10(output_C['sum']['value_Vl']['log_Mass_remaining'] / output_C['sum']['value_Vl']['log_lamLlam_5500'])
+        output_C['sum']['value_Vl']['log_Age_Lweight'] = output_C['sum']['value_Vl']['log_Age_Lweight'] / output_C['sum']['value_Vl']['log_lamLlam_5500']
         output_C['sum']['value_Vl']['log_Age_Mweight'] = output_C['sum']['value_Vl']['log_Age_Mweight'] / output_C['sum']['value_Vl']['log_Mass_remaining']
-        output_C['sum']['value_Vl']['log_Z_Lweight'] = output_C['sum']['value_Vl']['log_Z_Lweight'] / output_C['sum']['value_Vl']['log_lambLum_5500']
+        output_C['sum']['value_Vl']['log_Z_Lweight'] = output_C['sum']['value_Vl']['log_Z_Lweight'] / output_C['sum']['value_Vl']['log_lamLlam_5500']
         output_C['sum']['value_Vl']['log_Z_Mweight'] = output_C['sum']['value_Vl']['log_Z_Mweight'] / output_C['sum']['value_Vl']['log_Mass_remaining']
-        # output_C['sum']['value_Vl']['log_lambLum_5500']       = np.log10(output_C['sum']['value_Vl']['log_lambLum_5500'])
-        # output_C['sum']['value_Vl']['log_lambLum_wavenorm']   = np.log10(output_C['sum']['value_Vl']['log_lambLum_wavenorm'])
         output_C['sum']['value_Vl']['log_Mass_formed']    = np.log10(output_C['sum']['value_Vl']['log_Mass_formed'])
         output_C['sum']['value_Vl']['log_Mass_remaining'] = np.log10(output_C['sum']['value_Vl']['log_Mass_remaining'])
         for value_name in output_C['sum']['value_Vl']:
-            if value_name[:8] in ['log_Lum_', 'log_lamb']: 
+            if (value_name[:8] in ['log_Flam', 'log_Fnu_']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum_']): 
                 output_C['sum']['value_Vl'][value_name] = np.log10(output_C['sum']['value_Vl'][value_name])
-
-        # updated to requested lum_unit for each comp
-        for (i_comp, comp_name) in enumerate(comp_name_c):
-            if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['erg/s', 'erg s-1']: 
-                for value_name in output_C[comp_name]['value_Vl']:
-                    if value_name[:8] in ['log_Lum_', 'log_lamb']: 
-                        output_C[comp_name]['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
-        # if all comp have the same lum unit, also update the sum
-        if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
-            if casefold(self.cframe.comp_info_cI[0]['int_lum_unit']) in ['erg/s', 'erg s-1']:
-                for value_name in output_C['sum']['value_Vl']:
-                    if value_name[:8] in ['log_Lum_', 'log_lamb']: 
-                        output_C['sum']['value_Vl'][value_name] += np.log10(const.L_sun.to('erg/s').value) # from log Lsun to log erg/s
 
         i_comp = 0 # only enable one comp if nonparametric SFH is used
         if self.sfh_name_c[i_comp] == 'nonparametric':
@@ -754,42 +795,46 @@ class StellarFrame(object):
             print_name_CV[comp_name]['log_csp_tau'] = 'Declining timescale of SFH (log Gyr)'
             print_name_CV[comp_name]['redshift'] = 'Redshift (from continuum absorptions)'
             print_name_CV[comp_name]['flux_5500'] = f"F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            print_name_CV[comp_name]['log_lambLum_5500'] = f"λL5500 (rest,intrinsic) "
+            print_name_CV[comp_name]['log_lamLlam_5500'] = f"λL5500 (rest,intrinsic) "
             print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.cframe.mod_info_I['w_norm']:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            print_name_CV[comp_name]['log_lambLum_wavenorm'] = f"λL{self.cframe.mod_info_I['w_norm']:.0f} (rest,intrinsic) "
-            print_name_CV[comp_name]['log_Mass_formed'] = 'Mass (all formed) (log Msun)'
-            print_name_CV[comp_name]['log_Mass_remaining'] = 'Mass (remaining) (log Msun)'
-            print_name_CV[comp_name]['log_MtoL'] = 'Mass/λL5500 (log Msun/Lsun)'
+            print_name_CV[comp_name]['log_lamLlam_wavenorm'] = f"λL{self.cframe.mod_info_I['w_norm']:.0f} (rest,intrinsic) "
+            print_name_CV[comp_name]['log_Mass_formed'] = 'Mass (all formed) (log M☉)'
+            print_name_CV[comp_name]['log_Mass_remaining'] = 'Mass (remaining) (log M☉)'
+            print_name_CV[comp_name]['log_MtoL'] = 'Mass/λL5500 (log M☉/L☉)'
             print_name_CV[comp_name]['log_Age_Lweight'] = 'λL5500-weight age (log Gyr)'
             print_name_CV[comp_name]['log_Age_Mweight'] = 'Mass-weight age (log Gyr)'
             print_name_CV[comp_name]['log_Z_Lweight'] = 'λL5500-weight metallicity (log Z)'
             print_name_CV[comp_name]['log_Z_Mweight'] = 'Mass-weight metallicity (log Z)'
 
-            for wave_range in self.cframe.comp_info_cI[i_comp]['int_wave_range']: 
-                wave_unit_str_0 = 'um' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'A'
-                wave_unit_str_1 = 'µm' if casefold(self.cframe.comp_info_cI[i_comp]['int_wave_unit']) in ['micron', 'um'] else 'Å'
-                for lum_type in self.cframe.comp_info_cI[i_comp]['int_lum_type']:
-                    value_name = f"log_Lum_{wave_range[0]}_{wave_range[1]}{wave_unit_str_0}_{lum_type}"
-                    if lum_type == 'absorbed': lum_type = 'dust-absorbed'
-                    print_name_CV[comp_name][value_name] = f"Integrated {lum_type} Lum. "+f"({wave_range[0]}-{wave_range[1]} {wave_unit_str_1}) "
+            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
+                tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                if 'wave_center' in tmp_dict:
+                    ret_name = f"log_{tmp_dict['value_form']}_{tmp_dict['wave_center']}{tmp_dict['wave_unit']}_{tmp_dict['value_state']}"
+                else:
+                    ret_name = f"log_{tmp_dict['value_form']}_{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}_{tmp_dict['value_state']}"
+                if tmp_dict['value_unit'] == 'Lsun': 
+                    ret_name += '_inLsun'
+                    tmp_dict['value_unit'] == 'L☉'
+
+                if tmp_dict['value_form'] == 'Flam'   : print_name_CV[comp_name][ret_name] = f"log Flux density (Fλ, {tmp_dict['value_unit']}, "
+                if tmp_dict['value_form'] == 'Fnu'    : print_name_CV[comp_name][ret_name] = f"log Flux density (Fν, {tmp_dict['value_unit']}, "
+                if tmp_dict['value_form'] == 'lamFlam': print_name_CV[comp_name][ret_name] = f"log Flux (λFλ, {tmp_dict['value_unit']}, "
+                if tmp_dict['value_form'] == 'intFlux': print_name_CV[comp_name][ret_name] = f"log Integrated Flux ({tmp_dict['value_unit']}, "
+                if tmp_dict['value_form'] == 'lamLlam': print_name_CV[comp_name][ret_name] = f"log Lum. (λLλ, {tmp_dict['value_unit']}, "
+                if tmp_dict['value_form'] == 'intLum' : print_name_CV[comp_name][ret_name] = f"log Integrated Lum. ({tmp_dict['value_unit']}, "
+                
+                if tmp_dict['value_state'] == 'absorbed' : tmp_dict['value_state'] = 'dust-'+tmp_dict['value_state']
+                print_name_CV[comp_name][ret_name] += f"{tmp_dict['value_state']}) "
+
+                if tmp_dict['wave_unit'] == 'A' : tmp_dict['wave_unit'] = 'Å'
+                if tmp_dict['wave_unit'] == 'um': tmp_dict['wave_unit'] = 'µm'
+                if 'wave_center' in tmp_dict:
+                    print_name_CV[comp_name][ret_name] += f"at {tmp_dict['wave_center']} {tmp_dict['wave_unit']} ({tmp_dict['wave_frame']})"
+                else:
+                    print_name_CV[comp_name][ret_name] += f"at {tmp_dict['wave_min']}-{tmp_dict['wave_max']} {tmp_dict['wave_unit']} ({tmp_dict['wave_frame']})"
         print_name_CV['sum'] = {}
         for value_name in self.output_C['sum']['value_Vl']:
             print_name_CV['sum'][value_name] = copy(print_name_CV[self.comp_name_c[0]][value_name])
-
-        # updated to requested lum_unit for each comp
-        for (i_comp, comp_name) in enumerate(self.comp_name_c):
-            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.comp_info_cI[i_comp]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
-            for value_name in self.output_C[comp_name]['value_Vl']:
-                if value_name[:8] in ['log_Lum_', 'log_lamb']: 
-                    print_name_CV[comp_name][value_name] += lum_unit_str
-        # if all comp have the same lum unit, also update the sum
-        if len(set(self.cframe.comp_info_cI[i_comp]['int_lum_unit'] for i_comp in range(self.num_comps))) == 1: 
-            lum_unit_str = '(log Lsun) ' if casefold(self.cframe.comp_info_cI[0]['int_lum_unit']) in ['lsun', 'l_sun'] else '(log erg/s)'
-        else:
-            lum_unit_str = '(log Lsun) ' # default
-        for value_name in self.output_C['sum']['value_Vl']:
-            if value_name[:8] in ['log_Lum_', 'log_lamb']: 
-                print_name_CV['sum'][value_name] += lum_unit_str
 
         print_length = max([len(print_name_CV[comp_name][value_name]) for comp_name in print_name_CV for value_name in print_name_CV[comp_name]] + [40]) # set min length
         for comp_name in print_name_CV:
@@ -811,7 +856,7 @@ class StellarFrame(object):
                 continue
             if self.cframe.mod_info_I['w_norm'] == 5500:
                 value_names.remove('flux_wavenorm')
-                value_names.remove('log_lambLum_wavenorm')
+                value_names.remove('log_lamLlam_wavenorm')
             for value_name in value_names:
                 msg += '| ' + print_name_CV[comp_name][value_name] + f" = {value_Vl[value_name][mask_l].mean():10.4f}" + f" +/- {value_Vl[value_name].std():<10.4f}|\n"
             msg = msg[:-1] # remove the last \n

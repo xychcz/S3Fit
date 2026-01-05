@@ -9,7 +9,7 @@ from copy import deepcopy as copy
 from scipy.interpolate import RegularGridInterpolator
 
 from ..auxiliaries.auxiliary_frames import ConfigFrame
-from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters, roman_to_int, color_list_dict, lamb_air_to_vac, convolve_fix_width_fft
+from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters, roman_to_int, color_list_dict, wave_air_to_vac, convolve_fix_width_fft
 # from ..auxiliaries.basic_model_functions import single_line
 from ..auxiliaries.extinct_laws import ExtLaw
 
@@ -524,7 +524,7 @@ class LineFrame(object):
                     self.pyneblib['Atom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
                 atomlib = self.pyneblib['Atom'][element+str(notation)]
             wave = float(wave[:-2])*1e4 if wave[-2:] == 'um' else float(wave)
-            if wave_medium == 'air': wave = lamb_air_to_vac(wave)
+            if wave_medium == 'air': wave = wave_air_to_vac(wave)
             wave_vac = atomlib['wave_vac_ij'].flatten()[np.argmin(np.abs(atomlib['wave_vac_ij'] - wave))]
             line_id = f'{ion}:{round(wave_vac)}'
             if np.abs(wave_vac - wave)/wave > 5e-4: 
@@ -553,7 +553,7 @@ class LineFrame(object):
                     # warning message already print in the above search_pyneb
                     continue # skip the following steps
             else:
-                linerest = linerests[i_line] if wave_medium == 'vacuum' else lamb_air_to_vac(linerests[i_line])
+                linerest = linerests[i_line] if wave_medium == 'vacuum' else wave_air_to_vac(linerests[i_line])
                 lineratio = lineratios[i_line] if lineratios[i_line] is not None else 1.0
             if linename in self.linelist_full: 
                 if verbose: print_log(f"There is already the same line {linename} in the line list, set force=True to add this line forcibly.", self.log_message)
@@ -942,19 +942,19 @@ class LineFrame(object):
 
     ##########################################################################
 
-    def single_line(self, obs_wave_w, lamb_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
+    def single_line(self, obs_wave_w, wave_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
         if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
         if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
 
-        lamb_c_obs = lamb_c_rest * (1 + v0_redshift)
-        mu =   (1 + voff/299792.458) * lamb_c_obs
-        fwhm_line = fwhm/299792.458  * lamb_c_obs
+        wave_c_obs = wave_c_rest * (1 + v0_redshift)
+        mu =   (1 + voff/299792.458) * wave_c_obs
+        fwhm_line = fwhm/299792.458  * wave_c_obs
 
         if np.isscalar(R_inst_rw):
             local_R_inst = copy(R_inst_rw)
         else:
-            local_R_inst = np.interp(lamb_c_obs, R_inst_rw[0], R_inst_rw[1])
-        fwhm_inst = 1 / local_R_inst * lamb_c_obs
+            local_R_inst = np.interp(wave_c_obs, R_inst_rw[0], R_inst_rw[1])
+        fwhm_inst = 1 / local_R_inst * wave_c_obs
 
         if casefold(profile) in ['gaussian', 'gauss']:
             fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)

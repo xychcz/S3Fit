@@ -92,38 +92,38 @@ color_list_dict = {'red':    get_colors_by_hue(0,   hue_width=20, min_s=0.3,  ma
 # https://www.astro.uu.se/valdwiki/Air-to-vacuum%20conversion
 # input wavelength in angstrom
 # extrapolate to < 2000 A to avoid singularity
-def lamb_vac_to_air(lamb_vac, extrapolate=True):
-    if np.isscalar(lamb_vac): lamb_vac = np.array([lamb_vac])
-    if isinstance(lamb_vac, list): lamb_vac = np.array(lamb_vac)
+def wave_vac_to_air(wave_vac, extrapolate=True):
+    if np.isscalar(wave_vac): wave_vac = np.array([wave_vac])
+    if isinstance(wave_vac, list): wave_vac = np.array(wave_vac)
 
-    s = np.divide(1e4, lamb_vac, where=lamb_vac>0, out=np.zeros_like(lamb_vac, dtype='float'))
+    s = np.divide(1e4, wave_vac, where=wave_vac>0, out=np.zeros_like(wave_vac, dtype='float'))
     n = 1 + 0.0000834254 + 0.02406147 / (130 - s**2) + 0.00015998 / (38.9 - s**2)
-    lamb_air = lamb_vac / n
+    wave_air = wave_vac / n
     
-    mask = lamb_vac < 3000
+    mask = wave_vac < 3000
     if any(mask) & extrapolate:
-        r = 0.999634933 + 3.52626553e-08*lamb_vac[mask] - 3.64256777e-12*lamb_vac[mask]**2
-        # obtained via fitting lamb_air/lamb_vac in 2500-5000 A
-        lamb_air[mask] = lamb_vac[mask] * r
+        r = 0.999634933 + 3.52626553e-08*wave_vac[mask] - 3.64256777e-12*wave_vac[mask]**2
+        # obtained via fitting wave_air/wave_vac in 2500-5000 A
+        wave_air[mask] = wave_vac[mask] * r
     
-    return lamb_air
+    return wave_air
 
-def lamb_air_to_vac(lamb_air, extrapolate=True):
-    if np.isscalar(lamb_air): lamb_air = np.array([lamb_air])
-    if isinstance(lamb_air, list): lamb_air = np.array(lamb_air)
+def wave_air_to_vac(wave_air, extrapolate=True):
+    if np.isscalar(wave_air): wave_air = np.array([wave_air])
+    if isinstance(wave_air, list): wave_air = np.array(wave_air)
 
-    s = np.divide(1e4, lamb_air, where=lamb_air>0, out=np.zeros_like(lamb_air, dtype='float'))
+    s = np.divide(1e4, wave_air, where=wave_air>0, out=np.zeros_like(wave_air, dtype='float'))
     n = 1 + 0.00008336624212083 + 0.02408926869968 / (130.1065924522 - s**2) \
                                 + 0.0001599740894897 / (38.92568793293 - s**2)
-    lamb_vac = lamb_air * n
+    wave_vac = wave_air * n
     
-    mask = lamb_air < 3000
+    mask = wave_air < 3000
     if any(mask) & extrapolate:
-        r = 1.000365120 - 3.52546427e-08*lamb_air[mask] + 3.64165604e-12*lamb_air[mask]**2
-        # obtained via fitting lamb_vac/lamb_air in 2500-5000 A
-        lamb_vac[mask] = lamb_air[mask] * r
+        r = 1.000365120 - 3.52546427e-08*wave_air[mask] + 3.64165604e-12*wave_air[mask]**2
+        # obtained via fitting wave_vac/wave_air in 2500-5000 A
+        wave_vac[mask] = wave_air[mask] * r
         
-    return lamb_vac
+    return wave_vac
 #####################################################################
 #####################################################################
 
