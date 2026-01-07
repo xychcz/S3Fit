@@ -80,7 +80,7 @@ class StellarFrame(object):
                     +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message) 
 
         if self.verbose:
-            print_log(f"SSP models normalization wavelength: {self.cframe.mod_info_I['w_norm']} +- {self.cframe.mod_info_I['dw_norm']}", self.log_message)
+            # print_log(f"SSP models normalization wavelength: {self.cframe.mod_info_I['w_norm']} +- {self.cframe.mod_info_I['dw_norm']}", self.log_message)
             print_log(f"SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}", self.log_message)
             print_log(f"SSP models age range (Gyr): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}", self.log_message)
             print_log(f"SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}", self.log_message) 
@@ -242,9 +242,9 @@ class StellarFrame(object):
         # calculate the mean flux at both 5500 angstrom and the user given wavelength
         mask_5500_w = np.abs(orig_wave_w - 5500) < 25
         flux_5500_e = np.mean(orig_flux_ew[:, mask_5500_w], axis=1)
-        mask_norm_w = np.abs(orig_wave_w - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm']
-        flux_norm_e = np.mean(orig_flux_ew[:, mask_norm_w], axis=1)
-        self.flux_norm_ratio_e = flux_norm_e / flux_5500_e
+        # mask_norm_w = np.abs(orig_wave_w - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm']
+        # flux_norm_e = np.mean(orig_flux_ew[:, mask_norm_w], axis=1)
+        # self.flux_norm_ratio_e = flux_norm_e / flux_5500_e
 
         # normalize models at 5500+/-25 angstrom
         orig_flux_ew /= flux_5500_e[:, None]
@@ -674,7 +674,7 @@ class StellarFrame(object):
                     coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e 
                 Lum_5500_e = coeff_e * unitconv # intrinsic L5500, in Lsun/A
                 lamLlam_5500_e = Lum_5500_e * 5500
-                lamLlam_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.cframe.mod_info_I['w_norm']
+                # lamLlam_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.cframe.mod_info_I['w_norm']
                 Mass_formed_e = Lum_5500_e * self.mtol_e # mtol_e is in unit of Msun/(Lsun/A)
                 Mass_remaining_e = Mass_formed_e * self.remainmassfrac_e
 

@@ -45,11 +45,11 @@ class FitFrame(object):
                  if_keep_invalid=False, 
                  v0_redshift=None, if_rev_v0_redshift=False, rev_v0_reference=None, 
                  # model setup
-                 model_config=None, # norm_wave=5500, norm_width=25, model_R_ratio=2, 
+                 model_config=None, 
                  # mock setup
                  num_mocks=0, if_use_multi_thread=False, num_multi_thread=-1, 
                  # basic fitting control
-                 fit_grid='linear', if_examine_result=True, # accept_fmod_SN=2, accept_absorption_SN=None, 
+                 fit_grid='linear', if_examine_result=True, 
                  # detailed fitting quality control
                  accept_chi_sq=3, nlfit_ntry_max=3, nllsq_ftol_ratio=0.01, conv_nbin_max=5, 
                  if_run_init_annealing=True, da_niter_max=10, perturb_scale=0.02, 
@@ -208,7 +208,7 @@ class FitFrame(object):
             self.root_info_I = {}
 
         # allow global info input as args of FitFrame
-        for kv in [['norm_wave', 5500], ['norm_width', 25], 
+        for kv in [#['norm_wave', 5500], ['norm_width', 25], 
                     # set wavelength and width (in angstrom) used to normalize model spectra
                    ['model_R_ratio', 2], 
                    # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument                   
@@ -368,13 +368,13 @@ class FitFrame(object):
         print_log(f"[Note] The wavelength range is extended for tolerances of redshift of {self.v0_redshift}+-{voff_tol/299792.458:.4f} (+-{voff_tol} km s-1) "+
                   f"and convolution/dispersion FWHM of max {fwhm_tol} km s-1.", self.log_message, verbose)
 
-        # check if norm_wave is coverd in input wavelength range
-        if (self.root_info_I['norm_wave'] < self.spec_wmin) | (self.root_info_I['norm_wave'] > self.spec_wmax):
-            med_wave = np.median(self.spec['wave_w'][self.spec['mask_valid_w']]) / (1+self.v0_redshift)
-            med_wave = round(med_wave/100)*100
-            print_log(f"[WARNING] The input normalization wavelength (rest frame, Å) {self.root_info_I['norm_wave']} is out of the valid range, "+
-                      f"which is forced to the median valid wavelength {med_wave}.", self.log_message, verbose)
-            self.root_info_I['norm_wave'] = med_wave
+        # # check if norm_wave is coverd in input wavelength range
+        # if (self.root_info_I['norm_wave'] < self.spec_wmin) | (self.root_info_I['norm_wave'] > self.spec_wmax):
+        #     med_wave = np.median(self.spec['wave_w'][self.spec['mask_valid_w']]) / (1+self.v0_redshift)
+        #     med_wave = round(med_wave/100)*100
+        #     print_log(f"[WARNING] The input normalization wavelength (rest frame, Å) {self.root_info_I['norm_wave']} is out of the valid range, "+
+        #               f"which is forced to the median valid wavelength {med_wave}.", self.log_message, verbose)
+        #     self.root_info_I['norm_wave'] = med_wave
 
         # create a dictionary for photometric-SED data
         # self.have_phot = True if self.phot_name_b is not None else False
@@ -501,7 +501,6 @@ class FitFrame(object):
                 self.mod_dict_M[mod_name]['spec_mod'] = TorusFrame(mod_name=mod_name, fframe=self, 
                                                                    config=self.mod_reg_M[mod_name], 
                                                                    v0_redshift=self.v0_redshift, 
-                                                                   flux_scale=self.spec_flux_scale, 
                                                                    log_message=self.log_message) 
                 self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 1e4) & (self.spec_wmin < 1e7)
                 if self.have_phot:

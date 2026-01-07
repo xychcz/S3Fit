@@ -72,8 +72,7 @@ class AGNFrame(object):
                     print_log(f"Lower-level principal quantum number of Hydrogen recombination continuum: {self.cframe.comp_info_cI[i_comp]['H_series']}", self.log_message)
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                     if self.cframe.comp_info_cI[i_comp]['segments']: 
-                        wave_ranges = [wave_range for wave_range in self.iron_dict['wave_segments'] if (wave_range[1] > self.w_min) & (wave_range[0] < self.w_max)]
-                        print_log(f"Wavelength segments for fitting of Fe II template: {wave_ranges}", self.log_message)
+                        print_log(f"Wavelength segments for fitting of Fe II template: {self.iron_dict['wave_segments'][self.iron_dict['orig_flux_norm_e']>0].tolist()}", self.log_message)
 
         # set plot styles
         self.plot_style_C = {}
@@ -248,7 +247,7 @@ class AGNFrame(object):
 
         return pl
 
-    def powerlaw_func(self, wavelength, wave_norm=None, alpha_lambda1=None, alpha_lambda2=None, curvature=None, bending=False, truncation=None):
+    def powerlaw_func(self, wavelength, wave_norm=3000, alpha_lambda1=None, alpha_lambda2=None, curvature=None, bending=False, truncation=None):
         # normalized to given flux density (e.g.,the same unit of obs) at rest wave_norm before extinct
 
         if isinstance(wavelength, (int,float)): wavelength = np.array([wavelength])
@@ -294,7 +293,7 @@ class AGNFrame(object):
 
         return pl_w
 
-    def blackbody_func(self, wavelength, log_tem=None, if_norm=True, wave_norm=None):
+    def blackbody_func(self, wavelength, log_tem=None, if_norm=True, wave_norm=3000):
         # parameters: temperature (K)
 
         def get_bb(wavelength):
@@ -411,27 +410,33 @@ class AGNFrame(object):
         self.iron_dict['dw_fwhm_dsp_w'] = self.dw_fwhm_dsp_w
 
         # set segments
-        self.iron_dict['wave_segments'] = [[1000,2150], [2150,2650], [2650,3020], [3020,4000], [4000,4800], [4800,5600], [5600,6800], [6800,7600]]
+        self.iron_dict['wave_segments'] = np.array([[1000,2150], [2150,2650], [2650,3020], [3020,4000], [4000,4800], [4800,5600], [5600,6800], [6800,7600]])
         self.iron_dict['init_flux_ew'] = []
+        self.iron_dict['init_flux_norm_e']  = []
         self.iron_dict['orig_flux_ew'] = []
-        self.iron_dict['flux_norm_e']  = []
+        self.iron_dict['orig_flux_norm_e']  = []
         for wave_range in self.iron_dict['wave_segments']:
-            tmp_wave_w = self.iron_dict['init_wave_w']
-            tmp_flux_w = np.zeros_like(tmp_wave_w)
-            mask_w = (tmp_wave_w >= wave_range[0]) & (tmp_wave_w < wave_range[1])
-            tmp_flux_w[mask_w] = copy(self.iron_dict['init_flux_w'][mask_w])
-            self.iron_dict['init_flux_ew'].append(tmp_flux_w)
-            self.iron_dict['flux_norm_e'].append(np.trapezoid(tmp_flux_w, x=tmp_wave_w))
+            tmp_init_flux_w = np.zeros_like(self.iron_dict['init_wave_w'])
+            mask_w = (self.iron_dict['init_wave_w'] >= wave_range[0]) & (self.iron_dict['init_wave_w'] < wave_range[1])
+            tmp_init_flux_w[mask_w] = copy(self.iron_dict['init_flux_w'][mask_w])
+            tmp_init_flux_norm = np.trapezoid(tmp_init_flux_w, x=self.iron_dict['init_wave_w'])
+            self.iron_dict['init_flux_ew'].append(tmp_init_flux_w)
+            self.iron_dict['init_flux_norm_e'].append(tmp_init_flux_norm)
 
-            tmp_wave_w = self.iron_dict['orig_wave_w']
-            tmp_flux_w = np.zeros_like(tmp_wave_w)
-            mask_w = (tmp_wave_w >= wave_range[0]) & (tmp_wave_w < wave_range[1])
-            tmp_flux_w[mask_w] = copy(self.iron_dict['orig_flux_w'][mask_w])
-            self.iron_dict['orig_flux_ew'].append(tmp_flux_w)
+            tmp_orig_flux_w = np.zeros_like(self.iron_dict['orig_wave_w'])
+            mask_w = (self.iron_dict['orig_wave_w'] >= wave_range[0]) & (self.iron_dict['orig_wave_w'] < wave_range[1])
+            tmp_orig_flux_w[mask_w] = copy(self.iron_dict['orig_flux_w'][mask_w])
+            tmp_orig_flux_norm = np.trapezoid(tmp_orig_flux_w, x=self.iron_dict['orig_wave_w'])
+            if tmp_orig_flux_norm / tmp_init_flux_norm < 0.05: 
+                tmp_orig_flux_w *= 0 # avoid using poorly covered range
+                tmp_orig_flux_norm *= 0 
+            self.iron_dict['orig_flux_ew'].append(tmp_orig_flux_w)
+            self.iron_dict['orig_flux_norm_e'].append(tmp_orig_flux_norm)
 
         self.iron_dict['init_flux_ew'] = np.array(self.iron_dict['init_flux_ew'])
+        self.iron_dict['init_flux_norm_e'] = np.array(self.iron_dict['init_flux_norm_e'])
         self.iron_dict['orig_flux_ew'] = np.array(self.iron_dict['orig_flux_ew'])
-        self.iron_dict['flux_norm_e'] = np.array(self.iron_dict['flux_norm_e'])
+        self.iron_dict['orig_flux_norm_e'] = np.array(self.iron_dict['orig_flux_norm_e'])
 
     ##########################################################################
 
@@ -451,7 +456,7 @@ class AGNFrame(object):
             # read and append intrinsic templates in rest frame
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 alpha_lambda = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda']]
-                pl = self.powerlaw_func(orig_wave_w, wave_norm=self.cframe.mod_info_I['w_norm'], alpha_lambda1=alpha_lambda, alpha_lambda2=None, curvature=None, bending=False)
+                pl = self.powerlaw_func(orig_wave_w, alpha_lambda1=alpha_lambda, bending=False)
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                 alpha_lambda1 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda1']]
@@ -462,7 +467,7 @@ class AGNFrame(object):
                 orig_flux_int_ew = pl[None,:] # convert to (1,w) format
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 log_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tem']]
-                bb = self.blackbody_func(orig_wave_w, log_tem=log_tem, wave_norm=self.cframe.mod_info_I['w_norm'])
+                bb = self.blackbody_func(orig_wave_w, log_tem=log_tem)
                 orig_flux_int_ew = bb[None,:] # convert to (1,w) format
             if self.cframe.comp_info_cI[i_comp]['mod_used'] =='recombination':
                 log_e_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
@@ -643,8 +648,7 @@ class AGNFrame(object):
                 # if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 #     alpha_lambda = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda']]
                 #     for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm']], ['3000', '5100', 'wavenorm']):
-                #         flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=self.cframe.mod_info_I['w_norm'], alpha_lambda1=alpha_lambda, alpha_lambda2=None, 
-                #                                                     curvature=None, bending=False)
+                #         flux_wave = coeff_e[0] * self.powerlaw_func(wave, alpha_lambda1=alpha_lambda, bending=False)
                 #         lamLlam_wave = flux_wave * unitconv * wave
                 #         output_C[comp_name]['value_Vl']['log_lamLlam_'+wave_str][i_loop] = np.log10(lamLlam_wave)
 
@@ -654,8 +658,7 @@ class AGNFrame(object):
                     # wave_turn     = par_p[self.cframe.par_index_cP[i_comp]['wave_turn']]
                     # curvature     = par_p[self.cframe.par_index_cP[i_comp]['curvature']]
                     # for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm'], wave_turn], ['3000', '5100', 'wavenorm', 'waveturn']):
-                    #     flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, 
-                    #                                                 curvature=curvature, bending=True)
+                    #     flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, bending=True)
                     #     lamLlam_wave = flux_wave * unitconv * wave
                     #     output_C[comp_name]['value_Vl']['log_lamLlam_'+wave_str][i_loop] = np.log10(lamLlam_wave)
                     # mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - wave_turn) < self.cframe.mod_info_I['dw_norm'] 
@@ -666,11 +669,11 @@ class AGNFrame(object):
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     log_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_tem']]
                     # for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm']], ['3000', '5100', 'wavenorm']):
-                    #     flux_wave = coeff_e[0] * self.blackbody_func(wave, log_tem=log_tem, wave_norm=self.cframe.mod_info_I['w_norm'])
+                    #     flux_wave = coeff_e[0] * self.blackbody_func(wave, log_tem=log_tem, )
                     #     lamLlam_wave = flux_wave * unitconv * wave
                     #     output_C[comp_name]['value_Vl']['log_lamLlam_'+wave_str][i_loop] = np.log10(lamLlam_wave)
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
-                    tmp_bb_w = self.blackbody_func(tmp_wave_w, log_tem=log_tem, wave_norm=self.cframe.mod_info_I['w_norm'])
+                    tmp_bb_w = self.blackbody_func(tmp_wave_w, log_tem=log_tem)
                     output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_bb_w, x=tmp_wave_w))
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
@@ -682,8 +685,8 @@ class AGNFrame(object):
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                     if self.cframe.comp_info_cI[i_comp]['segments']:
-                        coeff_uv  = (coeff_e[1:4] * self.iron_dict['flux_norm_e'][1:4])[coeff_e[1:4] > 0].sum()
-                        coeff_opt = (coeff_e[4:6] * self.iron_dict['flux_norm_e'][4:6])[coeff_e[4:6] > 0].sum()
+                        coeff_uv  = (coeff_e[1:4] * self.iron_dict['init_flux_norm_e'][1:4])[coeff_e[1:4] > 0].sum()
+                        coeff_opt = (coeff_e[4:6] * self.iron_dict['init_flux_norm_e'][4:6])[coeff_e[4:6] > 0].sum()
                     else:
                         coeff_uv  = coeff_e[0]
                         coeff_opt = coeff_e[0] * self.iron_dict['flux_opt_uv_ratio']

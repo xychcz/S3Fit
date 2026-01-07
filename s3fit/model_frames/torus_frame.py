@@ -19,7 +19,6 @@ class TorusFrame(object):
     def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, 
                  w_min=None, w_max=None, 
-                 lum_norm=None, flux_scale=None, 
                  verbose=True, log_message=[]): 
 
         self.mod_name = mod_name
@@ -28,8 +27,6 @@ class TorusFrame(object):
         self.v0_redshift = v0_redshift        
         self.w_min = w_min # currently not used
         self.w_max = w_max # currently not used
-        self.flux_scale = flux_scale
-        self.lum_norm = lum_norm if lum_norm is not None else 1e10 # normlize model by 1e10 Lsun
         self.verbose = verbose
         self.log_message = log_message
 
@@ -150,6 +147,7 @@ class TorusFrame(object):
         # Dust mass in Msun
         # eb is energy balance ratio of torus, i.e., inclination integrated Lum_torus/Lum_AGN(intrinsic)
 
+        self.lum_norm = 1e10 # normlize model by 1e10 Lsun
         for i_tau in range(n_tau):
             for i_oa in range(n_oa):
                 for i_rrat in range(n_rrat):
@@ -168,12 +166,12 @@ class TorusFrame(object):
                         torus[i_tau, i_oa, i_rrat, i_incl, :] *= self.lum_norm / eb[i_tau, i_oa, i_rrat]
                         mass[i_tau, i_oa, i_rrat] *= self.lum_norm / eb[i_tau, i_oa, i_rrat]
         
-        # convert unit: 1 erg/s/um -> flux_scale * erg/s/angstrom/cm2
+        # convert unit: 1 erg/s/um -> spec_flux_scale * erg/s/angstrom/cm2
         wave *= 1e4
         lum_dist = cosmo.luminosity_distance(self.v0_redshift).to('cm').value
         lum_area = 4*np.pi * lum_dist**2 # in cm2
-        disc *= 1e-4 / lum_area / self.flux_scale
-        torus *= 1e-4 / lum_area / self.flux_scale
+        disc  *= 1e-4 / lum_area / self.fframe.spec_flux_scale
+        torus *= 1e-4 / lum_area / self.fframe.spec_flux_scale
         disc[disc <= 0]   = disc[disc>0].min()
         torus[torus <= 0] = torus[torus>0].min()
         
