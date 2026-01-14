@@ -14,7 +14,7 @@ import astropy.constants as const
 import matplotlib.pyplot as plt
 
 from ..auxiliaries.auxiliary_frames import ConfigFrame, PhotFrame
-from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict, convolve_fix_width_fft, convolve_var_width_fft
+from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict, wave_air_to_vac, convolve_fix_width_fft, convolve_var_width_fft
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
@@ -65,24 +65,24 @@ class StellarFrame(object):
         # check boundaries of stellar ages
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             i_par_log_csp_age = self.cframe.par_index_cP[i_comp]['log_csp_age']
-            if self.cframe.par_max_cp[i_comp][i_par_log_csp_age] > np.log10(cosmo.age(self.v0_redshift).value):
-                self.cframe.par_max_cp[i_comp][i_par_log_csp_age] = np.log10(cosmo.age(self.v0_redshift).value)
+            age_universe = cosmo.age(self.v0_redshift).to(self.age_unit).value
+            if self.cframe.par_max_cp[i_comp][i_par_log_csp_age] > np.log10(age_universe):
+                self.cframe.par_max_cp[i_comp][i_par_log_csp_age] = np.log10(age_universe)
                 print_log(f"[WARNING]: Upper bound of log_csp_age of the component '{comp_name}' "
-                    +f" is reset to the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}.", self.log_message)
-            if self.cframe.par_min_cp[i_comp][i_par_log_csp_age] > np.log10(cosmo.age(self.v0_redshift).value):
+                    +f" is reset to the universe age {age_universe:.3f} {self.age_unit} at z = {self.v0_redshift}.", self.log_message)
+            if self.cframe.par_min_cp[i_comp][i_par_log_csp_age] > np.log10(age_universe):
                 self.cframe.par_min_cp[i_comp][i_par_log_csp_age] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
                 print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{comp_name}' "
-                    +f" exceeds the universe age {cosmo.age(self.v0_redshift).value:.3f} Gyr at z = {self.v0_redshift}, "
-                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message)
+                    +f" exceeds the universe age {age_universe:.3f} {self.age_unit} at z = {self.v0_redshift}, "
+                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} {self.age_unit}.", self.log_message)
             if self.cframe.par_min_cp[i_comp][i_par_log_csp_age] < np.log10(self.age_e[self.mask_lite_allowed()].min()):
                 self.cframe.par_min_cp[i_comp][i_par_log_csp_age] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001)
                 print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{comp_name}' "
-                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} Gyr.", self.log_message) 
+                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} {self.age_unit}.", self.log_message) 
 
         if self.verbose:
-            # print_log(f"SSP models normalization wavelength: {self.cframe.mod_info_I['w_norm']} +- {self.cframe.mod_info_I['dw_norm']}", self.log_message)
             print_log(f"SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}", self.log_message)
-            print_log(f"SSP models age range (Gyr): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}", self.log_message)
+            print_log(f"SSP models age range ({self.age_unit}): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}", self.log_message)
             print_log(f"SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}", self.log_message) 
             print_log(f"SFH functions: {self.sfh_name_c} for {self.cframe.comp_name_c} components, respectively.", self.log_message)
 
@@ -94,10 +94,10 @@ class StellarFrame(object):
             self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.5, 'linestyle': '-', 'linewidth': 1}
             i_par_log_csp_age = self.cframe.par_index_cP[i_comp]['log_csp_age']
             log_csp_age_mid = 0.5 * (self.cframe.par_min_cp[i_comp][i_par_log_csp_age] + self.cframe.par_max_cp[i_comp][i_par_log_csp_age])
-            if log_csp_age_mid > 0: # > 1 Gyr
+            if 10.0**log_csp_age_mid * u.Unit(self.age_unit) > (1 * u.Gyr): # > 1 Gyr
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['red'], i_red, mode="wrap"))
                 i_red += 1
-            elif log_csp_age_mid > -1: # 100 Myr - 1 Gyr
+            elif 10.0**log_csp_age_mid * u.Unit(self.age_unit) > (100 * u.Myr): # 100 Myr to 1 Gyr
                 self.plot_style_C[comp_name]['color'] = str(np.take(color_list_dict['green'], i_green, mode="wrap"))
                 i_green += 1
             else: # < 100 Myr
@@ -121,18 +121,18 @@ class StellarFrame(object):
 
         # set inherited or default info if not specified in config
         # model-level info
-        self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
-        self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
+        # self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
+        # self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
 
         # component-level info
         # format of returned flux / Lum density or integrated values
         for i_comp in range(self.num_comps):
             # either 2-unit-nested tuples (for wave and value, respectively) or dictionary as follows are supported
-            self.cframe.retrieve_inherited_info('ret_value_formats', i_comp=i_comp, root_info_I=self.fframe.root_info_I, 
+            self.cframe.retrieve_inherited_info('ret_emission_set', i_comp=i_comp, root_info_I=self.fframe.root_info_I, 
                                                 default=[((5500, 25, 'angstrom', 'rest'), ('Flam', 'erg s-1 cm-2 angstrom-1', 'observed')), 
                                                          {'wave_center': 5500, 'wave_width': 25, 'wave_unit': 'angstrom', 'wave_frame': 'rest', 
                                                           'value_form': 'lamLlam', 'value_unit': 'erg s-1', 'value_state': 'intrinsic'},
-                                                         (( 912, 30000, 'angstrom', 'rest'), ('intLum', 'L_sun', 'intrinsic')),
+                                                         ((912, 30000, 'angstrom', 'rest'), ('intLum', 'L_sun', 'intrinsic')),
                                                          {'wave_min': 912, 'wave_max': 30000, 'wave_unit': 'angstrom', 'wave_frame': 'rest', 
                                                           'value_form': 'intLum', 'value_unit': 'L_sun', 'value_state': 'absorbed'},
                                                         ])
@@ -141,37 +141,90 @@ class StellarFrame(object):
             # 'value_state': 'intrinsic', 'observed', 'absorbed' (i.e., dust absorbed)
             # 'value_unit': any flux/luminosity or its density unit supported by astropy.unit
 
-            # re-categorize ret_value_formats
-            if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue # user can set None to skip all of these calculations
+            if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is None: continue # user can set None to skip all of these calculations
             # group line info to a list
-            if isinstance(self.cframe.comp_info_cI[i_comp]['ret_value_formats'], (tuple, dict)): 
-                self.cframe.comp_info_cI[i_comp]['ret_value_formats'] = [self.cframe.comp_info_cI[i_comp]['ret_value_formats']]
-            # convert tuple format to dict
-            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                tmp_tuple = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
-                if isinstance(tmp_tuple, tuple):
-                    tmp_dict = {}
-                    wave_0, wave_1 = tmp_tuple[0][:2]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['ret_emission_set'], (tuple, dict)): 
+                self.cframe.comp_info_cI[i_comp]['ret_emission_set'] = [self.cframe.comp_info_cI[i_comp]['ret_emission_set']]
+            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_emission_set'])):
+                tmp_format = self.cframe.comp_info_cI[i_comp]['ret_emission_set'][i_ret]
+                # convert tuple format to dict
+                if isinstance(tmp_format, tuple):
+                    ret_emi_F = {}
+                    wave_0, wave_1 = tmp_format[0][:2]
                     if wave_0 > wave_1:
-                        tmp_dict['wave_center'], tmp_dict['wave_width'] = wave_0, wave_1
+                        ret_emi_F['wave_center'], ret_emi_F['wave_width'] = wave_0, wave_1
                     else:
-                        tmp_dict['wave_min'], tmp_dict['wave_max'] = wave_0, wave_1 if wave_1 > wave_0 else wave_0+1
-                    tmp_dict['wave_unit']  = tmp_tuple[0][2]
-                    tmp_dict['wave_frame'] = tmp_tuple[0][3] if len(tmp_tuple[0]) > 3 else 'rest'
-                    tmp_dict['value_form'], tmp_dict['value_unit'], tmp_dict['value_state'] = tmp_tuple[1]
-                else:
-                    tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                        ret_emi_F['wave_min'], ret_emi_F['wave_max'] = wave_0, wave_1 if wave_1 > wave_0 else wave_0+1
+                    if len(tmp_format[0]) > 2: ret_emi_F['wave_unit']  = tmp_format[0][2]
+                    if len(tmp_format[0]) > 3: ret_emi_F['wave_frame'] = tmp_format[0][3]
+                    ret_emi_F['value_form'], ret_emi_F['value_unit'], ret_emi_F['value_state'] = tmp_format[1]
+                elif isinstance(tmp_format, dict):
+                    ret_emi_F = tmp_format
+                # set default 
+                if 'wave_unit'  not in ret_emi_F: ret_emi_F['wave_unit']  = 'angstrom'
+                if 'wave_frame' not in ret_emi_F: ret_emi_F['wave_frame'] = 'rest'
                 # check alternatives
-                tmp_dict['wave_frame'] = 'obs' if casefold(tmp_dict['wave_frame']) in ['observed', 'obs'] else 'rest'
-                if tmp_dict['value_form'] == 'flam': tmp_dict['value_form'] = 'Flam'
-                if tmp_dict['value_form'] == 'fnu' : tmp_dict['value_form'] = 'Fnu'
-                if casefold(tmp_dict['value_state']) in ['intrinsic', 'original']:
-                    tmp_dict['value_state'] = 'intrinsic'
-                elif casefold(tmp_dict['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
-                    tmp_dict['value_state'] = 'observed'
-                elif casefold(tmp_dict['value_state']) in ['absorbed', 'dust']:
-                    tmp_dict['value_state'] = 'absorbed'
-                self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret] = tmp_dict
+                if ret_emi_F['wave_unit'] == 'A': ret_emi_F['wave_unit'] = 'angstrom'
+                ret_emi_F['wave_frame'] = 'obs' if casefold(ret_emi_F['wave_frame']) in ['observed', 'obs'] else 'rest'
+                if ret_emi_F['value_form'] == 'flam': ret_emi_F['value_form'] = 'Flam'
+                if ret_emi_F['value_form'] == 'fnu' : ret_emi_F['value_form'] = 'Fnu'
+                if casefold(ret_emi_F['value_state']) in ['intrinsic', 'original']:
+                    ret_emi_F['value_state'] = 'intrinsic'
+                elif casefold(ret_emi_F['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
+                    ret_emi_F['value_state'] = 'observed'
+                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust']:
+                    ret_emi_F['value_state'] = 'absorbed'
+                self.cframe.comp_info_cI[i_comp]['ret_emission_set'][i_ret] = ret_emi_F
+
+        # format of returned SFR 
+        for i_comp in range(self.num_comps):
+            # either 2-unit-nested tuples (for age and value, respectively) or dictionary as follows are supported
+            self.cframe.retrieve_inherited_info('ret_SFR_set', i_comp=i_comp, root_info_I=self.fframe.root_info_I, 
+                                                default=[((0, 10, 'Myr'), ('SFR', 'M_sun yr-1', 'intrinsic')), 
+                                                         {'age_min': 0, 'age_max': 10, 'age_unit': 'Myr', 
+                                                          'value_form': 'SFR', 'value_unit': 'M_sun yr-1', 'value_state': 'absorbed'},
+                                                         ((0, 100, 'Myr'), ('SFR', 'M_sun yr-1', 'intrinsic')), 
+                                                         ((0, 100, 'Myr'), ('SFR', 'M_sun yr-1', 'absorbed')), 
+                                                        ])
+            # 'age_unit': any time unit supported by astropy.unit
+            # 'value_form': 'SFR', 'sSFR'
+            # 'value_state': 'intrinsic', 'observed', 'absorbed' (i.e., dust absorbed)
+            # 'value_unit': any SFR/sSFR unit supported by astropy.unit
+
+            if self.cframe.comp_info_cI[i_comp]['ret_SFR_set'] is None: continue # user can set None to skip all of these calculations
+            # group line info to a list
+            if isinstance(self.cframe.comp_info_cI[i_comp]['ret_SFR_set'], (tuple, dict)): 
+                self.cframe.comp_info_cI[i_comp]['ret_SFR_set'] = [self.cframe.comp_info_cI[i_comp]['ret_SFR_set']]
+            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_SFR_set'])):
+                tmp_format = self.cframe.comp_info_cI[i_comp]['ret_SFR_set'][i_ret]
+                # convert tuple format to dict
+                if isinstance(tmp_format, tuple):
+                    ret_sfr_F = {}
+                    age_0, age_1 = tmp_format[0][:2]
+                    if age_0 > age_1:
+                        ret_sfr_F['age_center'], ret_sfr_F['age_width'] = age_0, age_1
+                    else:
+                        ret_sfr_F['age_min'], ret_sfr_F['age_max'] = age_0, age_1 if age_1 > age_0 else age_0+1
+                    ret_sfr_F['age_unit']  = tmp_format[0][2]
+                    ret_sfr_F['value_form'], ret_sfr_F['value_unit'], ret_sfr_F['value_state'] = tmp_format[1]
+                elif isinstance(tmp_format, dict):
+                    ret_sfr_F = tmp_format
+                # set default 
+                if ('wave_center' not in ret_sfr_F) & ('wave_min' not in ret_sfr_F): 
+                    ret_sfr_F['wave_center'], ret_sfr_F['wave_width']  = 3000, 25
+                if 'wave_frame' not in ret_sfr_F: ret_sfr_F['wave_frame'] = 'rest'
+                if 'wave_unit'  not in ret_sfr_F: ret_sfr_F['wave_unit']  = 'angstrom'
+                if 'flux_form'  not in ret_sfr_F: ret_sfr_F['flux_form']  = 'intFlux'
+                # check alternatives
+                if ret_sfr_F['value_form'] == 'sfr'  : ret_sfr_F['value_form'] = 'SFR'
+                if ret_sfr_F['value_form'] == 'ssfr' : ret_sfr_F['value_form'] = 'sSFR'
+                if casefold(ret_sfr_F['value_state']) in ['intrinsic', 'original']:
+                    ret_sfr_F['value_state'] = 'intrinsic'
+                elif casefold(ret_sfr_F['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
+                    ret_sfr_F['value_state'] = 'observed'
+                elif casefold(ret_sfr_F['value_state']) in ['absorbed', 'dust']:
+                    ret_sfr_F['value_state'] = 'absorbed'
+                self.cframe.comp_info_cI[i_comp]['ret_SFR_set'][i_ret] = ret_sfr_F
 
         # other component-level info
         # check alternative info
@@ -197,12 +250,11 @@ class StellarFrame(object):
         for item in ['file', 'file_path']:
             if item in self.cframe.mod_info_I: ssp_file = self.cframe.mod_info_I[item]
         ssp_lib = fits.open(ssp_file)
-        # template resolution step of 0.1 angstrom, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
-        self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
         self.header = ssp_lib[0].header
         # load models
-        self.init_flux_ew = ssp_lib[0].data
+        self.init_lum_ew = ssp_lib[0].data
+        self.init_lum_unit = 'L_sun angstrom-1'
         # wave_axis = 1
         # crval = self.header[f'CRVAL{wave_axis}']
         # cdelt = self.header[f'CDELT{wave_axis}']
@@ -212,64 +264,83 @@ class StellarFrame(object):
         # self.init_wave_w = crval + cdelt*(np.arange(naxis) + 1 - crpix)
         # use wavelength in data instead of one from header
         self.init_wave_w = ssp_lib[1].data
-        # load remaining mass fraction
-        self.remainmassfrac_e = ssp_lib[2].data
-        # leave remainmassfrac_e = 1 if not provided. 
+        self.init_wave_unit = 'angstrom'
+        self.init_wave_medium = 'air'
+        # template resolution step of 0.1 angstrom, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
+        self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
-        self.num_models = self.header['NAXIS2']
+        self.num_models = self.init_lum_ew.shape[0]
+        self.mass_e = np.ones(self.num_models, dtype='float')
+        self.remain_massfrac_e = ssp_lib[2].data
+        # leave remain_massfrac_e = 1 if not provided. 
+
         self.age_e = np.zeros(self.num_models, dtype='float')
         self.met_e = np.zeros(self.num_models, dtype='float')
-        for i in range(self.num_models):
-            met, age = self.header[f'NAME{i}'].split('.dat')[0].split('_')[1:3]
-            self.age_e[i] = 10.0**float(age.replace('logt',''))/1e9
-            self.met_e[i] = float(met.replace('Z',''))
-        ##############################################################
+        for i_e in range(self.num_models):
+            met, age = self.header[f'NAME{i_e}'].split('.dat')[0].split('_')[1:3]
+            self.age_e[i_e] = 10.0**float(age.replace('logt',''))
+            self.met_e[i_e] = float(met.replace('Z',''))
+
+        init_age_unit = 'yr'
+        self.age_unit = 'Gyr'
+        self.age_e *= u.Unit(init_age_unit).to(self.age_unit)
+
         ##############################################################
 
-        self.num_ages = np.unique(self.age_e).shape[0]
-        self.num_mets = np.unique(self.met_e).shape[0]
+        # convert wave unit to angstrom in vacuum
+        self.init_wave_w *= u.Unit(self.init_wave_unit).to('angstrom')
+        self.init_wave_unit = 'angstrom'
+        if self.init_wave_medium == 'air': self.init_wave_w = wave_air_to_vac(self.init_wave_w)
+
+        ##############################################################
+
+        # convert the normalization from per unit mass to per unit L5500
+        self.init_norm_e = copy(self.mass_e)
+        self.init_norm_unit = 'M_sun'
+        # calculate the mean L5500 
+        self.w_norm, self.dw_norm = 5500, 10
+        mask_5500_w = np.abs(self.init_wave_w - self.w_norm) < self.dw_norm
+        scale_lum_e = np.mean(self.init_lum_ew[:, mask_5500_w], axis=1)
+        # scale models by scale_lum_e * init_lum_unit
+        self.init_lum_ew /= scale_lum_e[:, None]
+        self.init_norm_e /= scale_lum_e
+        self.init_norm_unit = str(u.Unit(self.init_norm_unit) / u.Unit(self.init_lum_unit)) # update before init_lum_unit
+        self.init_lum_unit  = str(u.dimensionless_unscaled) # the scaled model is in dimensionless unit
+
+        ##############################################################
+
+        # calculate mass-to-lum ratio, which is required for calculation of SFH
+        # here take lum = L5500 to match the above scale_lum_e, then mtol equals to the updated init_norm_e
+        self.mtol_e = self.init_norm_e
+        self.mtol_unit = self.init_norm_unit
+
+        self.age_a, index_ua_a = np.unique(self.age_e, return_inverse=True)
+        self.met_m, index_um_m = np.unique(self.met_e, return_inverse=True)
+        self.num_ages = len(self.age_a)
+        self.num_mets = len(self.met_m)
         # obtain the duration (i.e., bin width) of each ssp if considering a continous SFH
-        duration_a = np.gradient(np.unique(self.age_e))
-        self.duration_e = np.tile(duration_a, (self.num_mets,1)).flatten()
+        duration_a = np.gradient(self.age_a)
+        self.duration_e = duration_a[index_ua_a] # np.tile(duration_a, (self.num_mets,1)).flatten()
+
+        # assume constant SFH across adjacent age bins, then mtol can be converted to sfr-to-lum (L5500) ratio:
+        self.sfrtol_e = self.mtol_e / (self.duration_e * u.Unit(self.age_unit).to('yr'))
+        self.sfrtol_unit = str(u.Unit(self.mtol_unit) / u.Unit('yr')) # update before init_lum_unit
+
+        ##############################################################
 
         # select model spectra in given wavelength range
-        orig_wave_w = self.init_wave_w # to save memory
-        orig_flux_ew = self.init_flux_ew # to save memory
-        mask_select_w = (orig_wave_w >= self.w_min) & (orig_wave_w <= self.w_max)
-        orig_wave_w = orig_wave_w[mask_select_w]
-        orig_flux_ew = orig_flux_ew[:, mask_select_w]
-
-        # calculate the mean flux at both 5500 angstrom and the user given wavelength
-        mask_5500_w = np.abs(orig_wave_w - 5500) < 25
-        flux_5500_e = np.mean(orig_flux_ew[:, mask_5500_w], axis=1)
-        # mask_norm_w = np.abs(orig_wave_w - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm']
-        # flux_norm_e = np.mean(orig_flux_ew[:, mask_norm_w], axis=1)
-        # self.flux_norm_ratio_e = flux_norm_e / flux_5500_e
-
-        # normalize models at 5500+/-25 angstrom
-        orig_flux_ew /= flux_5500_e[:, None]
-        # The original spectra of SSP models are normalized by 1 Msun in unit Lsun/A.
-        # The spectra used here is re-normalized to 1 Lsun/A at rest 5500 angstrom,
-        # i.e., the norm-factor is norm=L5500 before re-normalization.  
-        # The re-normalized spectra corresponds to mass of (1/norm) Msun, 
-        # i.e., mass-to-lum(5500) ratio is (1/norm) Msun / (1 Lsun/A) = (1/norm) Msun/(Lsun/A),
-        # i.e., mtol = 1/norm = 1/L5500
-        self.mtol_e = 1 / flux_5500_e # i.e., (1 Msun) / (flux_5500_e Lsun/A)
-        # The corresponding SFR of normalized spectra is 
-        # mtol_e Msun / (duration_e Gyr) = mtol_e/duration_e Msun/Gyr, duration_e in unit of Gyr (as age)
-        # Name sfrtol_e = mtol_e/duration_e * 1e-9, and 
-        # self.orig_flux_ew / sfrtol_e return models renormalized to unit SFR, i.e., 1 Mun/yr.
-        self.sfrtol_e = self.mtol_e / (self.duration_e * 1e9)
+        mask_select_w = (self.init_wave_w >= self.w_min) & (self.init_wave_w <= self.w_max)
+        orig_wave_w = self.init_wave_w[   mask_select_w]
+        orig_lum_ew = self.init_lum_ew[:, mask_select_w]
 
         # determine the required model resolution and bin size (in angstrom) to downsample the model
         if self.Rratio_mod is not None:
-            ds_R_mod_w = np.interp(orig_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw in observed frame
+            ds_R_mod_w = np.interp(orig_wave_w, self.R_inst_rw[0]/(1+self.v0_redshift), self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw[0] is in observed frame
             self.dw_fwhm_dsp_w = orig_wave_w / ds_R_mod_w # required resolving width in rest frame
+        elif self.dw_fwhm_dsp is not None:
+            self.dw_fwhm_dsp_w = np.full(len(orig_wave_w), self.dw_fwhm_dsp)
         else:
-            if self.dw_fwhm_dsp is not None:
-                self.dw_fwhm_dsp_w = np.full(len(orig_wave_w), self.dw_fwhm_dsp)
-            else:
-                self.dw_fwhm_dsp_w = None
+            self.dw_fwhm_dsp_w = None
         if self.dw_fwhm_dsp_w is not None:
             if (self.dw_fwhm_dsp_w > self.init_dw_fwhm).all(): 
                 preconvolving = True
@@ -284,76 +355,60 @@ class StellarFrame(object):
             if self.dpix_dsp > 1:
                 if preconvolving:
                     if self.verbose: 
-                        print_log(f'Downsample preconvolved SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', 
-                                  self.log_message)
+                        print_log(f'Downsample preconvolved SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # here assume the internal dispersion in the original model (e.g., in stellar atmosphere) is indepent from the measured dispersion (i.e., stellar motion) in the fitting
-                    orig_flux_ew = convolve_fix_width_fft(orig_wave_w, orig_flux_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
+                    orig_lum_ew = convolve_fix_width_fft(orig_wave_w, orig_lum_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
                 else:
                     if self.verbose: 
-                        print_log(f'Downsample original SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', 
-                                  self.log_message)  
-                orig_wave_w = orig_wave_w[::self.dpix_dsp]
-                orig_flux_ew = orig_flux_ew[:,::self.dpix_dsp]
+                        print_log(f'Downsample original SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', self.log_message)  
+                orig_wave_w = orig_wave_w[  ::self.dpix_dsp]
+                orig_lum_ew = orig_lum_ew[:,::self.dpix_dsp]
                 self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[::self.dpix_dsp]
-
         # save the smoothed models
         self.orig_wave_w = orig_wave_w
-        self.orig_flux_ew = orig_flux_ew
+        self.orig_lum_ew = orig_lum_ew
+
+        ##############################################################
 
         # extend to longer wavelength in NIR-MIR (e.g., > 3 micron)
-        # please comment these lines if moving to another SSP library that initially covers the NIR-MIR range. 
-        mask_ref_w = (self.init_wave_w > 2.1e4) & (self.init_wave_w <= 2.28e4) # avoid edge for which fft convolution does not work well
+        # note that ext_index_e and ext_ratio_e are always required, i.e., to calculate integrated flux
+        self.init_wave_min = self.init_wave_w.min()
+        self.init_wave_max = self.init_wave_w.max()
+        mask_ref_w = (self.init_wave_w > max(1.6e4, self.init_wave_max-5000)) & (self.init_wave_w <= min(2.3e4, self.init_wave_max-1000)) 
         # the longer wavelength end is not a single-temperature blackbody with index_e = -4 (weaker absorption allows radiation from deeper, hotter layer)
         # run linear fit in log-log grid
-        logw_w  = np.log10(self.init_wave_w[mask_ref_w])
-        logf_ew = np.log10(self.init_flux_ew[:,mask_ref_w])
+        logw_w  = np.log10(self.init_wave_w[  mask_ref_w])
+        logf_ew = np.log10(self.init_lum_ew[:,mask_ref_w])
         mn_logw   = logw_w.mean()
         mn_logf_e = logf_ew.mean(axis=1)
         d_logw_w  = logw_w  - mn_logw
         d_logf_ew = logf_ew - mn_logf_e[:,None]
         self.ext_index_e = np.dot(d_logw_w, d_logf_ew.T) / np.dot(d_logw_w, d_logw_w)
-        self.ext_ratio_e = 10.0**(mn_logf_e - self.ext_index_e * mn_logw) * self.mtol_e
-        if  (orig_wave_w.max() < self.w_max) & (self.w_max > 2.28e4):
-            mask_ref_w = (orig_wave_w > 2.1e4) & (orig_wave_w <= 2.28e4) # avoid edge for which fft convolution does not work well
-            # logw_w  = np.log10(orig_wave_w[mask_ref_w])
-            # logf_ew = np.log10(orig_flux_ew[:,mask_ref_w])
-            # mn_logw   = logw_w.mean()
-            # mn_logf_e = logf_ew.mean(axis=1)
-            # d_logw_w  = logw_w  - mn_logw
-            # d_logf_ew = logf_ew - mn_logf_e[:,None]
-            # self.ext_index_e = np.dot(d_logw_w, d_logf_ew.T) / np.dot(d_logw_w, d_logw_w)
-            # self.ext_ratio_e = 10.0**(mn_logf_e - self.ext_index_e * mn_logw)
+        self.ext_ratio_e = 10.0**(mn_logf_e - self.ext_index_e * mn_logw)
+
+        if self.w_max > self.init_wave_max:
             ext_wave_logbin = 0.02
-            ext_wave_num = int(np.round(np.log10(self.w_max/orig_wave_w[mask_ref_w][-1]) / ext_wave_logbin))
-            ext_wave_w = np.logspace(np.log10(orig_wave_w[mask_ref_w][-1]+1), np.log10(self.w_max), ext_wave_num)
-            ext_flux_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
-            mask_keep_w = orig_wave_w < ext_wave_w[0]
-            self.orig_flux_ew = np.hstack((orig_flux_ew[:,mask_keep_w], ext_flux_ew))
-            self.orig_wave_w = np.hstack((orig_wave_w[mask_keep_w], ext_wave_w))
+            ext_wave_num = int(np.round(np.log10(self.w_max/self.init_wave_max) / ext_wave_logbin))
+            ext_wave_w = np.logspace(np.log10(self.init_wave_max+1), np.log10(self.w_max), ext_wave_num)
+            ext_lum_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
+            self.orig_wave_w = np.hstack((self.orig_wave_w, ext_wave_w))
+            self.orig_lum_ew = np.hstack((self.orig_lum_ew, ext_lum_ew))
 
     ##########################################################################
 
-    def sfh_factor(self, i_comp, par_p):
-        # For a given SFH, i.e., SFR(t) = SFR(csp_age-ssp_age_e), in unit of Msun/yr, 
-        # the model of a given ssp (_e) is ssp_spec_ew = SFR(csp_age-ssp_age_e) * (self.orig_flux_ew/sfrtol_e), 
-        # Name sfh_factor_e = SFR(csp_age-ssp_age_e) / sfrtol_e = SFR(csp_age-ssp_age_e) * ltosfr_e, 
-        # here ltosfr_e can be considered as the lum(rest5500) per unit SFR;
-        # full expression of ltosfr_e = (self.duration_e * 1e9) / self.mtol_e.
-        # Following this way, sfh_factor_e is the lum(rest5500)_e to achieve a given SFR(csp_age-ssp_age_e), i.e., sfh_func_e. 
-        # The returned models are ssp_spec_ew = self.orig_flux_ew * sfh_factor_e.
-        # The corresponding lum(rest5500) is 1 * sfh_factor_e, in unit of Lsun/A,
-        # the corresponding mass is mtol_e * sfh_factor_e = SFR(csp_age-ssp_age_e) * (duration_e*1e9), in unit of Msun.
+    def lum_weight_from_sfh(self, i_comp, par_p):
+
         csp_age = 10.0**par_p[self.cframe.par_index_cP[i_comp]['log_csp_age']]
         ssp_age_e = self.age_e
         evo_time_e = csp_age - ssp_age_e
 
         if self.sfh_name_c[i_comp] == 'exponential': 
             csp_tau = 10.0**par_p[self.cframe.par_index_cP[i_comp]['log_csp_tau']]
-            sfh_func_e = np.exp(-(evo_time_e) / csp_tau)
+            sfh_func_e = np.exp(- evo_time_e / csp_tau)
         if self.sfh_name_c[i_comp] == 'delayed': 
             csp_tau = 10.0**par_p[self.cframe.par_index_cP[i_comp]['log_csp_tau']]
-            sfh_func_e = np.exp(-(evo_time_e) / csp_tau) * evo_time_e
+            sfh_func_e = np.exp(- evo_time_e / csp_tau) * evo_time_e
         if self.sfh_name_c[i_comp] == 'constant': 
             sfh_func_e = np.ones_like(evo_time_e)
         if self.sfh_name_c[i_comp] == 'user': 
@@ -375,28 +430,18 @@ class StellarFrame(object):
         ##########################################################################
 
         sfh_func_e[~self.mask_lite_allowed(i_comp)] = 0 # do not use ssp out of allowed range
-        sfh_func_e[evo_time_e < 0] = 0 # do not allow ssp older than csp_age 
-        if sfh_func_e.max() > 0: sfh_func_e /= sfh_func_e.max()
-        sfh_factor_e = sfh_func_e / self.sfrtol_e
-        return sfh_factor_e
-        # The total csp model is csp_spec_w = ssp_spec_ew.sum(axis=0) = (self.orig_flux_ew * sfh_factor_e).sum(axis=0)
-        # The corresponding lum(at 5500) is (1 * sfh_factor_e).sum(axis=0), in unit of Lsun/A.
-        # The corresponding mass is (mtol_e * sfh_factor_e * remain_e).sum(axis=0), in unit of Msun, 
-        # remain_e is the remaining mass fraction. 
+        sfh_func_e[evo_time_e < 0] = 0 # do not use ssp older than csp_age 
 
-        # If the best-fit csp has csp_coeff, 
-        # the corresponding lum(at 5500) of csp is csp_coeff * (1 * sfh_factor_e).sum(axis=0) Lsun/A;
-        # the corresponding lum(at 5500) of ssp_e is csp_coeff * sfh_factor_e Lsun/A, 
-        # which equals to ssp_coeff_e = (csp_coeff * sfh_factor_e) for direct usage of self.orig_flux_ew (i.e., nonparametic SFH).
-        # Here the meanning of csp_coeff is the value of SFR in SFH peak epoch (due to the above normalization) in Mun/yr; 
-        # the meanning of converted ssp_coeff_e is still lum(at 5500) of each unit-normalized ssp model template.  
-        # The total mass can be calculated as (csp_coeff * sfh_factor_e * mtol_e * remain_e).sum(axis=0).
-        # Note that in all above (_e).sum(axis=0) is indeed (_e[mask_e]).sum(axis=0), 
-        # mask_e is used to mask the allowed ssp model elements (age and met ranges). 
+        lum_weight_e = sfh_func_e / self.sfrtol_e # convert SFH (in unit of Msun/yr) to L5500
+        if any(lum_weight_e > 0): lum_weight_e /= lum_weight_e.sum() # convert to dimensionless lum-weight
+        # therefore the csp spectrum, (init_lum_ew * lum_weight_e).sum(axis=0), is still normalized at unit L5500
+        # ssp_coeff_e = (csp_coeff * lum_weight_e) for direct usage of init_lum_ew (i.e., nonparametic SFH).
+
+        return lum_weight_e
 
     def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
                       if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, 
-                      if_redshift=True, if_convolve=True, conv_nbin=None, if_full_range=False, dpix_resample=None):
+                      if_redshift=True, if_convolve=True, conv_nbin=None, if_full_range=False, dpix_resample=300):
         # The input model is spectra per unit Lsun/A at rest 5500 angstrom before dust reddening and redshift, 
         # corresponds to mass of 1/L5500 Msun (L5500 is the lum-value in unit of Lsun/A from original models normalized per unit Msun).
         # In the fitting for the observed spectra in unit of in erg/s/angstrom/cm2, 
@@ -409,21 +454,25 @@ class StellarFrame(object):
         if mask_lite_e is not None: mask_lite_ce = self.cframe.reshape_by_comp(mask_lite_e, self.num_coeffs_c) 
         if isinstance(components, str): components = [components]
 
-        # use sparse init spectra if to calculate integrated lum
+        # use sparse init spectra if to calculate integrated flux or lum
+        # here use the term _flux_ to keep the same format with other models, therefore the treatment only changes the scaling of best-fit coeffs
+        # the returned model is dimensionless unscaled, the conversion of flux and lum values is handled in extract_results()
         if if_full_range:
-            orig_wave_lib_w  = self.init_wave_w [  ::dpix_resample]
-            orig_flux_lib_ew = self.init_flux_ew[:,::dpix_resample] * self.mtol_e[:,None]
+            orig_flux_lib_ew = self.init_lum_ew[:,::dpix_resample]
+            orig_wave_lib_w  = self.init_wave_w[  ::dpix_resample]
+            orig_flux_lib_ew = np.hstack((orig_flux_lib_ew[:,orig_wave_lib_w <= self.init_wave_max], self.init_lum_ew[:,self.init_wave_w > self.init_wave_max]))
+            orig_wave_lib_w  = np.hstack((orig_wave_lib_w [  orig_wave_lib_w <= self.init_wave_max], self.init_wave_w[  self.init_wave_w > self.init_wave_max]))
             # extrapolate at longer wavelength end
             if max(obs_wave_w)/(1+self.v0_redshift) > max(orig_wave_lib_w):
                 ext_wave_w  = np.logspace(np.log10(max(orig_wave_lib_w)+10), np.log10(max(obs_wave_w)/(1+self.v0_redshift)+1000), 50)
                 ext_flux_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
-                orig_wave_lib_w  = np.hstack((orig_wave_lib_w,  ext_wave_w))
+                orig_wave_lib_w  = np.hstack((orig_wave_lib_w,  ext_wave_w ))
                 orig_flux_lib_ew = np.hstack((orig_flux_lib_ew, ext_flux_ew))
             # do not convolve in this case
             if_convolve = False 
         else:
             orig_wave_lib_w  = self.orig_wave_w
-            orig_flux_lib_ew = self.orig_flux_ew
+            orig_flux_lib_ew = self.orig_lum_ew
 
         obs_flux_mcomp_ew = None
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
@@ -437,10 +486,10 @@ class StellarFrame(object):
                 else:
                     orig_flux_int_ew = orig_flux_lib_ew
             else:
-                sfh_factor_e = self.sfh_factor(i_comp, par_cp[i_comp])
-                tmp_mask_e = sfh_factor_e > 0
+                lum_weight_e = self.lum_weight_from_sfh(i_comp, par_cp[i_comp])
+                tmp_mask_e = lum_weight_e > 0
                 tmp_ew = np.zeros_like(orig_flux_lib_ew)
-                tmp_ew[tmp_mask_e,:] = orig_flux_lib_ew[tmp_mask_e,:] * sfh_factor_e[tmp_mask_e,None] # scaled with sfh_factor_e
+                tmp_ew[tmp_mask_e,:] = orig_flux_lib_ew[tmp_mask_e,:] * lum_weight_e[tmp_mask_e,None] # weight with lum_weight_e
                 orig_flux_int_ew = tmp_ew.reshape(self.num_mets, self.num_ages, len(orig_wave_lib_w)).sum(axis=1)
                 # sum in ages to create csp 
                 if mask_lite_e is not None:
@@ -587,31 +636,42 @@ class StellarFrame(object):
             best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
         self.num_loops = self.fframe.num_loops # for reconstruct_sfh and print_results
-        self.spec_flux_scale = self.fframe.spec_flux_scale # for reconstruct_sfh and print_results
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
         par_name_cp = self.cframe.par_name_cp
 
         # list the properties to be output; the print will follow this order
-        value_names_additive = [#'flux_5500', 'flux_wavenorm', 
-                                'log_lamLlam_5500', #'log_lamLlam_wavenorm', 
-                                'log_Mass_formed', 'log_Mass_remaining', 'log_MtoL',
+        value_names_additive = ['log_lamLlam_5500', 
+                                'log_Mass_formed', 'log_Mass_remaining', 'log_MtoL', 
                                 'log_Age_Lweight', 'log_Age_Mweight', 'log_Z_Lweight', 'log_Z_Mweight']
         ret_names_additive = None
         value_names_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
             value_names_C[comp_name] = ['redshift', 'sigma'] + value_names_additive
 
-            if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue
             ret_names = []
-            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
-                if 'wave_center' in tmp_dict:
-                    wave_name = f"{tmp_dict['wave_center']}{tmp_dict['wave_unit']}"
-                else:
-                    wave_name = f"{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}"
-                ret_name = f"log_{tmp_dict['value_form']}_{wave_name}_{tmp_dict['value_state']}_u_{tmp_dict['value_unit']}"
-                ret_names.append(ret_name)
+            if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None:
+                for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
+                    if 'wave_center' in ret_emi_F:
+                        wave_name = f"{ret_emi_F['wave_center']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    else:
+                        wave_name = f"{ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
+                    ret_names.append(ret_name)
+
+            if self.cframe.comp_info_cI[i_comp]['ret_SFR_set'] is not None:
+                for ret_sfr_F in self.cframe.comp_info_cI[i_comp]['ret_SFR_set']:
+                    if 'wave_center' in ret_sfr_F:
+                        wave_name = f"{ret_sfr_F['wave_center']} ({ret_sfr_F['wave_frame']}, {ret_sfr_F['wave_unit']})"
+                    else:
+                        wave_name = f"{ret_sfr_F['wave_min']}-{ret_sfr_F['wave_max']} ({ret_sfr_F['wave_frame']}, {ret_sfr_F['wave_unit']})"
+                    if 'age_center' in ret_sfr_F:
+                        age_name = f"{ret_sfr_F['age_center']} ({ret_sfr_F['age_unit']})"
+                    else:
+                        age_name = f"{ret_sfr_F['age_min']}-{ret_sfr_F['age_max']} ({ret_sfr_F['age_unit']})"
+                    ret_name = f"log_{ret_sfr_F['value_form']} ({ret_sfr_F['value_state']}, {ret_sfr_F['value_unit']}) in {age_name} at {wave_name}"
+                    ret_names.append(ret_name)
+
             value_names_C[comp_name] += ret_names
             if ret_names_additive is None: 
                 ret_names_additive = ret_names
@@ -647,6 +707,8 @@ class StellarFrame(object):
             for i_loop in range(self.num_loops):
                 par_p   = output_C[comp_name]['par_lp'][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
+                if self.sfh_name_c[i_comp] != 'nonparametric':
+                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * self.lum_weight_from_sfh(i_comp, par_p) 
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1+self.v0_redshift) * (1+voff/299792.458) - 1
@@ -654,32 +716,13 @@ class StellarFrame(object):
                 fwhm = par_p[self.cframe.par_index_cP[i_comp]['fwhm']]
                 output_C[comp_name]['value_Vl']['sigma'][i_loop] = fwhm/np.sqrt(np.log(256))
 
-                # tmp_spec_w = self.fframe.output_MC[self.mod_name][comp_name]['spec_lw'][i_loop, :]
-                # mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 5500) < 25 # for observed flux at rest 5500 angstrom
-                # if mask_norm_w.sum() > 0:
-                #     output_C[comp_name]['value_Vl']['flux_5500'][i_loop] = tmp_spec_w[mask_norm_w].mean()
-                #     output_C['sum']['value_Vl']['flux_5500'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-
-                # mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm'] # for observed flux at user given wavenorm
-                # output_C[comp_name]['value_Vl']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
-                # output_C['sum']['value_Vl']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-
-                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm').value**2 # in cm2
-                unitconv = lum_area * self.spec_flux_scale * u.Unit('erg/s').to('L_sun') # convert intrinsic flux in erg/s/cm2/A to Lum in Lsun/A
-                if self.sfh_name_c[i_comp] != 'nonparametric':
-                    sfh_factor_e = self.sfh_factor(i_comp, par_p) 
-                    # sfh_factor_e means lum(5500) of each ssp model element per unit SFR (of the peak SFH epoch in this case)
-                    # if use csp with a sfh, coeff_e*unitconv means the value of SFH of this csp element in Mun/yr at the peak SFH epoch
-                    # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element
-                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e 
-                Lum_5500_e = coeff_e * unitconv # intrinsic L5500, in Lsun/A
-                lamLlam_5500_e = Lum_5500_e * 5500
-                # lamLlam_wavenorm_e = Lum_5500_e * self.flux_norm_ratio_e * self.cframe.mod_info_I['w_norm']
-                Mass_formed_e = Lum_5500_e * self.mtol_e # mtol_e is in unit of Msun/(Lsun/A)
-                Mass_remaining_e = Mass_formed_e * self.remainmassfrac_e
+                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
+                Lum_5500_e = coeff_e * u.Unit(self.fframe.spec_flux_unit) * lum_area # intrinsic L5500, with unit of (spec_flux_unit * cm2)
+                lamLlam_5500_e = (Lum_5500_e * self.w_norm * u.angstrom).to('L_sun').value
+                Mass_formed_e = (Lum_5500_e * self.mtol_e * u.Unit(self.mtol_unit)).to('M_sun').value
+                Mass_remaining_e = Mass_formed_e * self.remain_massfrac_e
 
                 output_C[comp_name]['value_Vl']['log_lamLlam_5500'][i_loop]   = np.log10(lamLlam_5500_e.sum())
-                # output_C[comp_name]['value_Vl']['log_lamLlam_wavenorm'][i_loop]   = np.log10(lamLlam_wavenorm_e.sum())
                 output_C[comp_name]['value_Vl']['log_Mass_formed'][i_loop]    = np.log10(Mass_formed_e.sum())
                 output_C[comp_name]['value_Vl']['log_Mass_remaining'][i_loop] = np.log10(Mass_remaining_e.sum())
                 output_C[comp_name]['value_Vl']['log_MtoL'][i_loop]   = np.log10(Mass_remaining_e.sum() / lamLlam_5500_e.sum())
@@ -689,7 +732,6 @@ class StellarFrame(object):
                 output_C[comp_name]['value_Vl']['log_Z_Mweight'][i_loop] = (Mass_remaining_e * np.log10(self.met_e)).sum() / Mass_remaining_e.sum()
 
                 output_C['sum']['value_Vl']['log_lamLlam_5500'][i_loop]   += lamLlam_5500_e.sum() # keep in linear for sum
-                # output_C['sum']['value_Vl']['log_lamLlam_wavenorm'][i_loop]   += lamLlam_wavenorm_e.sum() # keep in linear for sum
                 output_C['sum']['value_Vl']['log_Mass_formed'][i_loop]    += Mass_formed_e.sum() # keep in linear for sum
                 output_C['sum']['value_Vl']['log_Mass_remaining'][i_loop] += Mass_remaining_e.sum() # keep in linear for sum
                 output_C['sum']['value_Vl']['log_Age_Lweight'][i_loop] += (lamLlam_5500_e * np.log10(self.age_e)).sum()
@@ -697,53 +739,106 @@ class StellarFrame(object):
                 output_C['sum']['value_Vl']['log_Z_Lweight'][i_loop] += (lamLlam_5500_e * np.log10(self.met_e)).sum()
                 output_C['sum']['value_Vl']['log_Z_Mweight'][i_loop] += (Mass_remaining_e * np.log10(self.met_e)).sum()
 
-                # calculate requested flux/Lum in given wavelength ranges
-                if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue
                 tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
-                for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                    tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                # calculate requested flux/Lum in given wavelength ranges
+                if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
+                    for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
+                        if 'wave_center' in ret_emi_F:
+                            wave_0, wave_1 = ret_emi_F['wave_center'] - ret_emi_F['wave_width'], ret_emi_F['wave_center'] + ret_emi_F['wave_width']
+                            wave_name = f"{ret_emi_F['wave_center']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                        else:
+                            wave_0, wave_1 = ret_emi_F['wave_min'], ret_emi_F['wave_max']
+                            wave_name = f"{ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                        wave_ratio = u.Unit(ret_emi_F['wave_unit']).to('angstrom')
+                        if ret_emi_F['wave_frame'] == 'rest': wave_ratio *= (1+rev_redshift) # rest wave to obs wave, which is required by create_models
+                        tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
 
-                    if 'wave_center' in tmp_dict:
-                        wave_0, wave_1 = tmp_dict['wave_center'] - tmp_dict['wave_width'], tmp_dict['wave_center'] + tmp_dict['wave_width']
-                        wave_name = f"{tmp_dict['wave_center']}{tmp_dict['wave_unit']}"
-                    else:
-                        wave_0, wave_1 = tmp_dict['wave_min'], tmp_dict['wave_max']
-                        wave_name = f"{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}"
-                    wave_ratio = u.Unit(tmp_dict['wave_unit']).to('angstrom')
-                    if tmp_dict['wave_frame'] == 'rest': wave_ratio *= (1+rev_redshift) # rest wave to obs wave
-                    tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
+                        if ret_emi_F['value_state'] in ['intrinsic','absorbed']:
+                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                             if_dust_ext=False, if_redshift=True, if_full_range=True) # flux in obs frame
+                            intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                        if ret_emi_F['value_state'] in ['observed','absorbed']:
+                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                             if_dust_ext=True,  if_redshift=True, if_full_range=True) # flux in obs frame
+                            observed_flux_w = tmp_coeff_e @ tmp_flux_ew
+                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
+                        if ret_emi_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
+                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
 
-                    if tmp_dict['value_state'] in ['intrinsic','absorbed']:
-                        tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                         if_dust_ext=False, if_redshift=True, if_full_range=True, dpix_resample=300) # flux in obs frame
-                        intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
-                    if tmp_dict['value_state'] in ['observed','absorbed']:
-                        tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                         if_dust_ext=True,  if_redshift=True, if_full_range=True, dpix_resample=300) # flux in obs frame
-                        observed_flux_w = tmp_coeff_e @ tmp_flux_ew
-                    if tmp_dict['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
-                    if tmp_dict['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
-                    if tmp_dict['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
+                        tmp_wave_w *= u.angstrom
+                        tmp_flux_w *= u.Unit(self.fframe.spec_flux_unit)
+                        tmp_Flam    = tmp_flux_w.mean()
+                        tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
+                        tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
 
-                    tmp_Flam = tmp_flux_w.mean()
-                    tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
-                    tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
+                        if ret_emi_F['value_form'] ==     'Flam'          : ret_value = tmp_Flam
+                        if ret_emi_F['value_form'] in ['lamFlam', 'nuFnu']: ret_value = tmp_lamFlam
+                        if ret_emi_F['value_form'] ==  'intFlux'          : ret_value = tmp_intFlux
 
-                    if tmp_dict['value_form'] ==     'Flam'          : ret_value = tmp_Flam    * u.Unit('erg s-1 cm-2 angstrom-1').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] in ['lamFlam', 'nuFnu']: ret_value = tmp_lamFlam * u.Unit('erg s-1 cm-2').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] ==  'intFlux'          : ret_value = tmp_intFlux * u.Unit('erg s-1 cm-2').to(tmp_dict['value_unit'])
+                        if ret_emi_F['value_form'] ==     'Llam'          : ret_value = tmp_Flam    * lum_area
+                        if ret_emi_F['value_form'] in ['lamLlam', 'nuLnu']: ret_value = tmp_lamFlam * lum_area
+                        if ret_emi_F['value_form'] ==  'intLum'           : ret_value = tmp_intFlux * lum_area
 
-                    if tmp_dict['value_form'] ==     'Llam'          : ret_value = tmp_Flam    * lum_area * u.Unit('erg s-1 angstrom-1').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] in ['lamLlam', 'nuLnu']: ret_value = tmp_lamFlam * lum_area * u.Unit('erg s-1').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] ==  'intLum'           : ret_value = tmp_intFlux * lum_area * u.Unit('erg s-1').to(tmp_dict['value_unit'])
+                        if ret_emi_F['value_form'] ==     'Fnu'           : ret_value = tmp_Flam               * tmp_wave_w.mean()**2 / const.c
+                        if ret_emi_F['value_form'] ==     'Lnu'           : ret_value = tmp_Flam    * lum_area * tmp_wave_w.mean()**2 / const.c
 
-                    if tmp_dict['value_form'] == 'Fnu' : ret_value = (tmp_Flam       * u.Unit('erg s-1 cm-2 angstrom-1') * (tmp_wave_w.mean()*u.angstrom)**2 / const.c).to(tmp_dict['value_unit']).value
-                    if tmp_dict['value_form'] == 'Lnu' : ret_value = (tmp_Flam * lum_area * u.Unit('erg s-1 angstrom-1') * (tmp_wave_w.mean()*u.angstrom)**2 / const.c).to(tmp_dict['value_unit']).value
+                        ret_value = ret_value.to(ret_emi_F['value_unit']).value
+                        ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
+                        output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
+                        if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
 
-                    ret_value *= self.spec_flux_scale
-                    ret_name = f"log_{tmp_dict['value_form']}_{wave_name}_{tmp_dict['value_state']}_u_{tmp_dict['value_unit']}"
-                    output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
-                    if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
+                # calculate requested flux/Lum in given wavelength ranges
+                if self.cframe.comp_info_cI[i_comp]['ret_SFR_set'] is not None: 
+                    for ret_sfr_F in self.cframe.comp_info_cI[i_comp]['ret_SFR_set']:
+                        if 'age_center' in ret_sfr_F:
+                            age_0, age_1 = ret_sfr_F['age_center'] - ret_sfr_F['age_width'], ret_sfr_F['age_center'] + ret_sfr_F['age_width']
+                            age_name = f"{ret_sfr_F['age_center']} ({ret_sfr_F['age_unit']})"
+                        else:
+                            age_0, age_1 = ret_sfr_F['age_min'], ret_sfr_F['age_max']
+                            age_name = f"{ret_sfr_F['age_min']}-{ret_sfr_F['age_max']} ({ret_sfr_F['age_unit']})"
+                        age_ratio = u.Unit(ret_sfr_F['age_unit']).to('Gyr')
+                        mask_age_e = (self.age_e >= (age_0*age_ratio)) & (self.age_e <= (age_1*age_ratio))
+                        tmp_duration = (age_1-age_0) * u.Unit(ret_sfr_F['age_unit'])
+                        ret_value = Mass_remaining_e[mask_age_e].sum() * u.M_sun / tmp_duration
+
+                        if 'wave_center' in ret_sfr_F:
+                            wave_0, wave_1 = ret_sfr_F['wave_center'] - ret_sfr_F['wave_width'], ret_sfr_F['wave_center'] + ret_sfr_F['wave_width']
+                            wave_name = f"{ret_sfr_F['wave_center']} ({ret_sfr_F['wave_frame']}, {ret_sfr_F['wave_unit']})"
+                        else:
+                            wave_0, wave_1 = ret_sfr_F['wave_min'], ret_sfr_F['wave_max']
+                            wave_name = f"{ret_sfr_F['wave_min']}-{ret_sfr_F['wave_max']} ({ret_sfr_F['wave_frame']}, {ret_sfr_F['wave_unit']})"
+                        wave_ratio = u.Unit(ret_sfr_F['wave_unit']).to('angstrom')
+                        if ret_sfr_F['wave_frame'] == 'rest': wave_ratio *= (1+rev_redshift) # rest wave to obs wave, which is required by create_models
+                        tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=100) # obs frame grid
+
+                        if ret_sfr_F['value_state'] in ['intrinsic','observed','absorbed']:
+                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                             if_dust_ext=False, if_redshift=True, if_full_range=True) # flux in obs frame
+                            intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                        if ret_sfr_F['value_state'] in ['observed','absorbed']:
+                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                             if_dust_ext=True,  if_redshift=True, if_full_range=True) # flux in obs frame
+                            observed_flux_w = tmp_coeff_e @ tmp_flux_ew
+                        if ret_sfr_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
+                        if ret_sfr_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
+                        if ret_sfr_F['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
+
+                        tmp_Flam    = tmp_flux_w.mean()
+                        tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
+                        tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
+                        int_Flam    = intrinsic_flux_w.mean()
+                        int_lamFlam = intrinsic_flux_w.mean() * tmp_wave_w.mean()
+                        int_intFlux = np.trapezoid(intrinsic_flux_w, x=tmp_wave_w)
+
+                        if ret_sfr_F['flux_form'] ==    'Flam': ret_value *= tmp_Flam    / int_Flam
+                        if ret_sfr_F['flux_form'] == 'lamFlam': ret_value *= tmp_lamFlam / int_lamFlam
+                        if ret_sfr_F['flux_form'] == 'intFlux': ret_value *= tmp_intFlux / int_intFlux
+
+                        if ret_sfr_F['value_form'] == 'sSFR': ret_value /= Mass_remaining_e.sum()
+                        ret_value = ret_value.to(ret_sfr_F['value_unit']).value
+                        ret_name = f"log_{ret_sfr_F['value_form']} ({ret_sfr_F['value_state']}, {ret_sfr_F['value_unit']}) in {age_name} at {wave_name}"
+                        output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
+                        if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
 
         output_C['sum']['value_Vl']['log_MtoL'] = np.log10(output_C['sum']['value_Vl']['log_Mass_remaining'] / output_C['sum']['value_Vl']['log_lamLlam_5500'])
         output_C['sum']['value_Vl']['log_Age_Lweight'] = output_C['sum']['value_Vl']['log_Age_Lweight'] / output_C['sum']['value_Vl']['log_lamLlam_5500']
@@ -753,7 +848,7 @@ class StellarFrame(object):
         output_C['sum']['value_Vl']['log_Mass_formed']    = np.log10(output_C['sum']['value_Vl']['log_Mass_formed'])
         output_C['sum']['value_Vl']['log_Mass_remaining'] = np.log10(output_C['sum']['value_Vl']['log_Mass_remaining'])
         for value_name in output_C['sum']['value_Vl']:
-            if (value_name[:8] in ['log_Flam', 'log_Fnu_']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum_']): 
+            if (value_name[:8] in ['log_Flam', 'log_Fnu ', 'log_SFR ', 'log_sSFR']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum ']): 
                 output_C['sum']['value_Vl'][value_name] = np.log10(output_C['sum']['value_Vl'][value_name])
 
         i_comp = 0 # only enable one comp if nonparametric SFH is used
@@ -788,51 +883,83 @@ class StellarFrame(object):
             print_name_CV[comp_name]['fwhm'] = 'Velocity FWHM (km s-1)'
             print_name_CV[comp_name]['sigma'] = 'Velocity dispersion (σ) (km s-1)'
             print_name_CV[comp_name]['Av'] = 'Extinction (Av)'
-            print_name_CV[comp_name]['log_csp_age'] = 'Maximum age of composite stellar population (log Gyr)'
-            print_name_CV[comp_name]['log_csp_tau'] = 'Declining timescale of SFH (log Gyr)'
+            print_name_CV[comp_name]['log_csp_age'] = f"Maximum age of composite stellar population (log {self.age_unit})"
+            print_name_CV[comp_name]['log_csp_tau'] = f"Declining timescale of SFH (log {self.age_unit})"
             print_name_CV[comp_name]['redshift'] = 'Redshift (from continuum absorptions)'
-            # print_name_CV[comp_name]['flux_5500'] = f"F5500 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            # print_name_CV[comp_name]['log_lamLlam_5500'] = f"λL5500 (rest,intrinsic) "
-            # print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.cframe.mod_info_I['w_norm']:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            # print_name_CV[comp_name]['log_lamLlam_wavenorm'] = f"λL{self.cframe.mod_info_I['w_norm']:.0f} (rest,intrinsic) "
             print_name_CV[comp_name]['log_Mass_formed'] = 'Stellar mass (total mass formed during lifetime) (log M☉)'
             print_name_CV[comp_name]['log_Mass_remaining'] = 'Stellar mass (currently remaining mass) (log M☉)'
-            print_name_CV[comp_name]['log_MtoL'] = 'Mass-to-light (λL5500) ratio (log M☉/L☉)'
-            print_name_CV[comp_name]['log_Age_Lweight'] = 'Luminosity-weight age (log Gyr)'
-            print_name_CV[comp_name]['log_Age_Mweight'] = 'Mass-weight age (log Gyr)'
+            print_name_CV[comp_name]['log_MtoL'] = f"Mass-to-light (λL{self.w_norm}) ratio (log M☉/L☉)"
+            print_name_CV[comp_name]['log_Age_Lweight'] = f"Luminosity-weight age (log {self.age_unit})"
+            print_name_CV[comp_name]['log_Age_Mweight'] = f"Mass-weight age (log {self.age_unit})"
             print_name_CV[comp_name]['log_Z_Lweight'] = 'Luminosity-weight metallicity (log Z)'
             print_name_CV[comp_name]['log_Z_Mweight'] = 'Mass-weight metallicity (log Z)'
 
-            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+            if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
+                for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
+                    if 'wave_center' in ret_emi_F:
+                        wave_name = f"{ret_emi_F['wave_center']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    else:
+                        wave_name = f"{ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
 
-                if 'wave_center' in tmp_dict:
-                    wave_name = f"{tmp_dict['wave_center']}{tmp_dict['wave_unit']}"
-                else:
-                    wave_name = f"{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}"
-                ret_name = f"log_{tmp_dict['value_form']}_{wave_name}_{tmp_dict['value_state']}_u_{tmp_dict['value_unit']}"
+                    tmp_value_state = copy(ret_emi_F['value_state']) # avoid changing the original set, which is used elsewhere
+                    if tmp_value_state == 'absorbed': tmp_value_state = 'dust-'+tmp_value_state
+                    print_name_CV[comp_name][ret_name] = f"{tmp_value_state.capitalize()} "
 
-                if tmp_dict['value_state'] == 'absorbed' : tmp_dict['value_state'] = 'dust-'+tmp_dict['value_state']
-                print_name_CV[comp_name][ret_name] = f"{tmp_dict['value_state'].capitalize()} "
+                    ret_emi_F['value_unit'] = ret_emi_F['value_unit'].replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm').replace('L_sun', 'L☉')
+                    if ret_emi_F['value_form'] ==    'Flam': print_name_CV[comp_name][ret_name] += f"flux density (Fλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==    'Llam': print_name_CV[comp_name][ret_name] += f"lum. density (Lλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==    'Fnu' : print_name_CV[comp_name][ret_name] += f"flux density (Fν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==    'Lnu' : print_name_CV[comp_name][ret_name] += f"lum. density (Lν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'lamFlam': print_name_CV[comp_name][ret_name] += f"flux (λFλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'lamLlam': print_name_CV[comp_name][ret_name] += f"lum. (λLλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==  'nuFnu' : print_name_CV[comp_name][ret_name] += f"flux (νFν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==  'nuLnu' : print_name_CV[comp_name][ret_name] += f"lum. (νLν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'intFlux': print_name_CV[comp_name][ret_name] += f"flux (integrated, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'intLum' : print_name_CV[comp_name][ret_name] += f"lum. (integrated, log {ret_emi_F['value_unit']})"
 
-                tmp_dict['value_unit'] = tmp_dict['value_unit'].replace('L_sun', 'L☉').replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
-                if tmp_dict['value_form'] ==    'Flam': print_name_CV[comp_name][ret_name] += f"flux density (Fλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==    'Llam': print_name_CV[comp_name][ret_name] += f"lum. density (Lλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==    'Fnu' : print_name_CV[comp_name][ret_name] += f"flux density (Fν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==    'Lnu' : print_name_CV[comp_name][ret_name] += f"lum. density (Lν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'lamFlam': print_name_CV[comp_name][ret_name] += f"flux (λFλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'lamLlam': print_name_CV[comp_name][ret_name] += f"lum. (λLλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==  'nuFnu' : print_name_CV[comp_name][ret_name] += f"flux (νFν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==  'nuLnu' : print_name_CV[comp_name][ret_name] += f"lum. (νLν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'intFlux': print_name_CV[comp_name][ret_name] += f"flux (integrated, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'intLum' : print_name_CV[comp_name][ret_name] += f"lum. (integrated, log {tmp_dict['value_unit']})"
+                    tmp_wave_unit = ret_emi_F['wave_unit'].replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
+                    tmp_wave_frame = copy(ret_emi_F['wave_frame'])
+                    if tmp_wave_frame == 'obs': tmp_wave_frame += '.'
+                    if 'wave_center' in ret_emi_F:
+                        print_name_CV[comp_name][ret_name] += f" at {tmp_wave_frame} {ret_emi_F['wave_center']} {tmp_wave_unit}"
+                    else:
+                        print_name_CV[comp_name][ret_name] += f" at {tmp_wave_frame} {ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} {tmp_wave_unit}"
 
-                tmp_dict['wave_unit'] = tmp_dict['wave_unit'].replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
-                if tmp_dict['wave_frame'] == 'obs' : tmp_dict['wave_frame'] += '.'
-                if 'wave_center' in tmp_dict:
-                    print_name_CV[comp_name][ret_name] += f" at {tmp_dict['wave_frame']} {tmp_dict['wave_center']} {tmp_dict['wave_unit']}"
-                else:
-                    print_name_CV[comp_name][ret_name] += f" at {tmp_dict['wave_frame']} {tmp_dict['wave_min']}-{tmp_dict['wave_max']} {tmp_dict['wave_unit']}"
+            if self.cframe.comp_info_cI[i_comp]['ret_SFR_set'] is not None: 
+                for ret_sfr_F in self.cframe.comp_info_cI[i_comp]['ret_SFR_set']:
+                    if 'age_center' in ret_sfr_F:
+                        age_name = f"{ret_sfr_F['age_center']} ({ret_sfr_F['age_unit']})"
+                    else:
+                        age_name = f"{ret_sfr_F['age_min']}-{ret_sfr_F['age_max']} ({ret_sfr_F['age_unit']})"
+
+                    if 'wave_center' in ret_sfr_F:
+                        wave_center = ret_sfr_F['wave_center']
+                        wave_name = f"{ret_sfr_F['wave_center']} ({ret_sfr_F['wave_frame']}, {ret_sfr_F['wave_unit']})"
+                    else:
+                        wave_center = (ret_sfr_F['wave_min'] + ret_sfr_F['wave_max']) / 2
+                        wave_name = f"{ret_sfr_F['wave_min']}-{ret_sfr_F['wave_max']} ({ret_sfr_F['wave_frame']}, {ret_sfr_F['wave_unit']})"
+
+                    ret_name = f"log_{ret_sfr_F['value_form']} ({ret_sfr_F['value_state']}, {ret_sfr_F['value_unit']}) in {age_name} at {wave_name}"
+
+                    tmp_value_state = copy(ret_sfr_F['value_state']) # avoid changing the original set, which is used elsewhere
+                    if tmp_value_state == 'absorbed' : tmp_value_state = 'dust-'+tmp_value_state
+                    print_name_CV[comp_name][ret_name] = f"{tmp_value_state.capitalize()} "
+
+                    tmp_value_unit = ret_sfr_F['value_unit'].replace('M_sun', 'M☉')
+                    if ret_sfr_F['value_form'] ==  'SFR': print_name_CV[comp_name][ret_name] += f"SFR (log {tmp_value_unit})"
+                    if ret_sfr_F['value_form'] == 'sSFR': print_name_CV[comp_name][ret_name] += f"sSFR (log {tmp_value_unit})"
+
+                    if 'age_center' in ret_sfr_F:
+                        print_name_CV[comp_name][ret_name] += f" in {ret_sfr_F['age_center']}+/-{ret_sfr_F['age_width']} {ret_sfr_F['age_unit']}"
+                    else:
+                        print_name_CV[comp_name][ret_name] += f" in {ret_sfr_F['age_min']}-{ret_sfr_F['age_max']} {ret_sfr_F['age_unit']}"
+
+                    tmp_wave_unit = ret_sfr_F['wave_unit'].replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
+                    tmp_wave_frame = copy(ret_sfr_F['wave_frame'])
+                    if tmp_wave_frame == 'obs': tmp_wave_frame += '.'
+                    print_name_CV[comp_name][ret_name] += f"at {tmp_wave_frame} {wave_center} {tmp_wave_unit}"
+
         print_name_CV['sum'] = {}
         for value_name in self.output_C['sum']['value_Vl']:
             print_name_CV['sum'][value_name] = copy(print_name_CV[self.comp_name_c[0]][value_name])
@@ -855,9 +982,6 @@ class StellarFrame(object):
                 print_log(f"# Best-fit properties of the sum of all stellar components.", log)
             else: 
                 continue
-            # if self.cframe.mod_info_I['w_norm'] == 5500:
-            #     value_names.remove('flux_wavenorm')
-            #     value_names.remove('log_lamLlam_wavenorm')
             value_names.remove('log_lamLlam_5500')
             for value_name in value_names:
                 msg += '| ' + print_name_CV[comp_name][value_name] + f" = {value_Vl[value_name][mask_l].mean():10.4f}" + f" +/- {value_Vl[value_name].std():<10.4f}|\n"
@@ -871,7 +995,7 @@ class StellarFrame(object):
         i_comp = 0 # only enable one comp if nonparametric SFH is used
         if self.sfh_name_c[i_comp] == 'nonparametric':
             print_log('# Best-fit single stellar populations (SSP) with nonparametric SFH', log)
-            cols = 'ID,Age (Gyr),Metallicity,Coeff.mean,Coeff.rms,log(M/L5500)'
+            cols = f"ID,Age ({self.age_unit}),Metallicity,Coeff.mean,Coeff.rms,log(M☉/λL{self.w_norm})"
             fmt_cols = '| {0:^4} | {1:^10} | {2:^6} | {3:^6} | {4:^9} | {5:^8} |'
             fmt_numbers = '| {:=04d} |   {:=6.4f}   |    {:=6.4f}   |   {:=6.4f}   |   {:=6.4f}  |    {:=6.4f}    |'
             cols_split = cols.split(',')
@@ -893,7 +1017,7 @@ class StellarFrame(object):
                 tbl_row.append(np.log10(self.mtol_e[i_e]))
                 print_log(fmt_numbers.format(*tbl_row), log)
             print_log(tbl_border, log)
-            print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest 5500 Å.", log)
+            print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest {self.w_norm} Å.", log)
             print_log(f"[Note] only SSPs with Coeff over 1% are listed.", log)
             print_log('', log)
 
@@ -913,7 +1037,7 @@ class StellarFrame(object):
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
 
-        age_a = self.age_e[:self.num_ages]
+        age_a = self.age_a
         output_sfh_lcza = np.zeros((self.num_loops, num_comps, self.num_mets, self.num_ages))
 
         for (i_comp, comp_name) in enumerate(comp_name_c):
@@ -921,17 +1045,14 @@ class StellarFrame(object):
                 par_p   = output_C[comp_name]['par_lp'][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
                 if self.sfh_name_c[i_comp] != 'nonparametric':
-                    sfh_factor_e = self.sfh_factor(i_comp, par_p) 
-                    # sfh_factor_e means lum(5500) of each ssp model element per unit SFR (of the peak SFH epoch in this case)
-                    # if use csp with a sfh, coeff_e*unitconv means the value of SFH of this csp element in Mun/yr at the peak SFH epoch
-                    # coeff_e*unitconv*sfh_factor_e gives the correspoinding the best-fit lum(5500) of each ssp model element
-                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * sfh_factor_e
+                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * self.lum_weight_from_sfh(i_comp, par_p) 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1+self.v0_redshift) * (1+voff/299792.458) - 1
 
-                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm').value**2 # in cm2
-                unitconv = lum_area * self.spec_flux_scale * u.Unit('erg/s').to('L_sun') # convert intrinsic flux in erg/s/cm2/A to Lum in Lsun/A
-                output_sfh_lcza[i_loop,i_comp,:,:] = (coeff_e * unitconv * self.sfrtol_e).reshape(self.num_mets, self.num_ages)
+                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
+                Lum_5500_e = coeff_e * u.Unit(self.fframe.spec_flux_unit) * lum_area # intrinsic L5500, with unit of (spec_flux_unit * cm2)
+                sfr_e = (Lum_5500_e * self.sfrtol_e * u.Unit(self.sfrtol_unit)).to('M_sun yr-1').value
+                output_sfh_lcza[i_loop,i_comp,:,:] = sfr_e.reshape(self.num_mets, self.num_ages)
 
         if num_bins is not None:
             output_sfh_lczb = np.zeros((self.num_loops, num_comps, self.num_mets, num_bins))
@@ -950,22 +1071,22 @@ class StellarFrame(object):
             ax = plt.subplot(1, 2, 1)
             for i_comp in range(output_sfh_lcza.shape[1]):  
                 for i_loop in range(output_sfh_lcza.shape[0]):
-                    plt.plot(np.log10(age_a), output_sfh_lcza[i_loop,i_comp,2,:], '--')
-                plt.plot(np.log10(age_a), output_sfh_lcza[:,i_comp,2,:][mask_l].mean(axis=0), linewidth=4, alpha=0.5, label=f'Mean {self.cframe.comp_name_c[i_comp]}')
+                    plt.plot(np.log10(age_a), output_sfh_lcza[i_loop,i_comp,:,:].sum(axis=0), '--')
+                plt.plot(np.log10(age_a), output_sfh_lcza[:,i_comp,:,:].sum(axis=1)[mask_l].mean(axis=0), linewidth=4, alpha=0.5, label=f'Mean {self.cframe.comp_name_c[i_comp]}')
             plt.xlim(1.5,-3); plt.ylim(1,1e4); plt.yscale('log')
-            plt.xlabel('Log looking back time (Gyr)'); plt.ylabel('SFR (Msun/yr)'); plt.legend()
+            plt.xlabel(f"Looking back time (log {self.age_unit})"); plt.ylabel('SFR (M☉/yr)'); plt.legend()
             plt.title('Before binning in log time')
 
             if num_bins is not None:
                 ax = plt.subplot(1, 2, 2)
                 for i_comp in range(output_sfh_lczb.shape[1]):  
                     for i_loop in range(output_sfh_lczb.shape[0]):
-                        plt.bar(np.log10(age_b), output_sfh_lczb[i_loop,i_comp,2,:], bottom=0, width=(np.log10(age_b)[1]-np.log10(age_b)[0])*0.8, 
+                        plt.bar(np.log10(age_b), output_sfh_lczb[i_loop,i_comp,:,:].sum(axis=0), bottom=0, width=(np.log10(age_b)[1]-np.log10(age_b)[0])*0.8, 
                         alpha=0.5/output_sfh_lczb.shape[0])
-                    plt.bar(np.log10(age_b), output_sfh_lczb[:,i_comp,2,:][mask_l].mean(axis=0), bottom=0, width=(np.log10(age_b)[1]-np.log10(age_b)[0])*0.8,
+                    plt.bar(np.log10(age_b), output_sfh_lczb[:,i_comp,:,:].sum(axis=1)[mask_l].mean(axis=0), bottom=0, width=(np.log10(age_b)[1]-np.log10(age_b)[0])*0.8,
                            alpha=0.3, hatch='///', ec='C7', linewidth=4, label=f'Mean {self.cframe.comp_name_c[i_comp]}')
                 plt.xlim(1.5,-3); plt.ylim(1,1e4); plt.yscale('log')
-                plt.xlabel('Log looking back time (Gyr)'); plt.ylabel('SFR (Msun/yr)'); plt.legend()
+                plt.xlabel(f"Looking back time ({self.age_unit})"); plt.ylabel('SFR (M☉/yr)'); plt.legend()
                 plt.title('After binning in log time')
                 
         if if_return_sfh:

@@ -3,8 +3,32 @@
 # Repository: https://github.com/xychcz/S3Fit
 # Contact: s3fit@xychen.me
 
+##################################
+# import in system operation level
 import os, sys, time, traceback, inspect, pickle, gzip
 from copy import deepcopy as copy
+from pathlib import Path
+from importlib.util import spec_from_file_location, module_from_spec
+from importlib.metadata import version as pkg_version, PackageNotFoundError
+
+def import_module_from_path(path):
+    spec = spec_from_file_location(path_lib.split('/')[-1].split('.py')[0], path_lib)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def import_class_from_path(path, i_class=0):
+    module = import_module_from_path(path)
+    classes = [ obj for name, obj in inspect.getmembers(module, inspect.isclass)
+                if obj.__module__ == module.__name__ ]
+    if len(classes) == 0:
+        raise ImportError(f"ModelFrame should be defined as a class in {path}.")
+    elif len(classes) == 1:
+        return classes[0]
+    elif len(classes) > 1:
+        raise ImportError(f"[WARNING] Multiple classes defined in {path}. Please specify with 'i_class='.") 
+##################################
+# import in calculation/plot level
 import numpy as np
 np.set_printoptions(linewidth=10000)
 from scipy.optimize import lsq_linear, least_squares, dual_annealing
@@ -14,9 +38,12 @@ import astropy.constants as const
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-
-from pathlib import Path
-from importlib.metadata import version as pkg_version, PackageNotFoundError
+##################################
+# import internal modules
+from .auxiliaries.auxiliary_frames import PhotFrame
+from .auxiliaries.auxiliary_functions import print_log, center_string, casefold, fnu_over_flam, spec_to_phot, convolve_var_width_fft
+##################################
+# version identification
 # check if the fit_frame.py file is in the pip installed directory
 if any(m in Path(__file__).resolve().parts for m in ['site-packages', 'dist-packages']):
     try:
@@ -24,19 +51,18 @@ if any(m in Path(__file__).resolve().parts for m in ['site-packages', 'dist-pack
     except PackageNotFoundError:
         __version__ = '0.0.0+unknown' # installed in a weird way or metadata missing
 else:
-    ##################################
+    
     # manually specified local version
     __version__ = '2.3.0+local'
-    ##################################
-
-from .auxiliaries.auxiliary_frames import PhotFrame
-from .auxiliaries.auxiliary_functions import print_log, center_string, casefold, Fnu_over_Flam, spec_to_phot, convolve_var_width_fft
+print(f'You are now using S3Fit v{__version__}.')
+##################################
 
 class FitFrame(object):
     def __init__(self, 
                  # spectral data
                  spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
-                 spec_R_inst_w=None, spec_valid_range=None, spec_flux_scale=None, 
+                 spec_R_inst_w=None, spec_valid_range=None, spec_invalid_range=None, 
+                 spec_wave_unit='angstrom', spec_flux_unit='erg s-1 cm-2 angstrom-1', 
                  # photometirc data
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
                  sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, phot_trans_rsmp=10, 
@@ -51,7 +77,7 @@ class FitFrame(object):
                  # basic fitting control
                  fit_grid='linear', if_examine_result=True, 
                  # detailed fitting quality control
-                 accept_chi_sq=3, nlfit_ntry_max=3, nllsq_ftol_ratio=0.01, conv_nbin_max=5, 
+                 accept_chi_sq=3, nlfit_ntry_max=3, nllsq_ftol_ratio=0.01, nllsq_max_nfev=10000, conv_nbin_max=5, 
                  if_run_init_annealing=True, da_niter_max=10, perturb_scale=0.02, 
                  # auxiliary
                  if_print_steps=True, if_plot_steps=False, canvas=None, 
@@ -61,6 +87,9 @@ class FitFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
+        if ('spec_flux_scale' in kwargs) & (spec_flux_unit == u.Unit('erg s-1 cm-2 angstrom-1')): 
+            spec_flux_unit = str(u.Unit(f"{kwargs['spec_flux_scale']:.1e}")*u.Unit('erg s-1 cm-2 angstrom-1'))
+            print("[WARNING] 'spec_flux_scale' is deprecated, please use 'spec_flux_unit' instead, e.g., spec_flux_unit = '1e-16 erg s-1 cm-2 angstrom-1'.")
         if 'inst_calib_ratio_rev' in kwargs: if_rev_inst_calib_ratio = kwargs['inst_calib_ratio_rev']
         if 'keep_invalid'         in kwargs: if_keep_invalid         = kwargs['keep_invalid']
         #if 'model_config'         in kwargs: model_config            = kwargs['model_config']
@@ -141,8 +170,10 @@ class FitFrame(object):
         self.spec_flux_w = np.array(spec_flux_w)
         self.spec_ferr_w = np.array(spec_ferr_w)
         self.spec_R_inst_w = np.array(spec_R_inst_w)
-        self.spec_valid_range = spec_valid_range
-        self.spec_flux_scale = spec_flux_scale # flux_scale is used to avoid too small values
+        self.spec_valid_range = copy(spec_valid_range)
+        self.spec_invalid_range = copy(spec_invalid_range)
+        self.spec_wave_unit = spec_wave_unit
+        self.spec_flux_unit = spec_flux_unit
 
         if self.have_phot:
             # save photometric-SED data and related properties
@@ -208,23 +239,17 @@ class FitFrame(object):
             self.root_info_I = {}
 
         # allow global info input as args of FitFrame
-        for kv in [#['norm_wave', 5500], ['norm_width', 25], 
-                    # set wavelength and width (in angstrom) used to normalize model spectra
-                   ['model_R_ratio', 2], 
+        for kv in [['model_R_ratio', 2], 
                    # control on fitting quality: the value equals the ratio of resolution of model (downsampled) / instrument                   
                    ['accept_fmod_SN', 2], ['accept_absorption_SN', 2], 
                    # accepted min peak-SN of each best-fit model, and of the total absorption components
+                   # add ext_law and Rv
                   ]:
             if kv[0] not in self.root_info_I: 
                 if kv[0] in kwargs: 
                     self.root_info_I[kv[0]] = kwargs[kv[0]]
                 else:
                     self.root_info_I[kv[0]] = kv[1]
-        # self.norm_wave = norm_wave
-        # self.norm_width = norm_width
-        # self.model_R_ratio = model_R_ratio
-        # self.accept_fmod_SN = accept_fmod_SN
-        # self.accept_absorption_SN = accept_absorption_SN if accept_absorption_SN is not None else accept_fmod_SN
         #########################################
 
         # number of mock data
@@ -257,6 +282,7 @@ class FitFrame(object):
         self.nlfit_ntry_max = nlfit_ntry_max 
         # control on fitting quality: nonlinear process, nonlinear least-square
         self.nllsq_ftol_ratio = nllsq_ftol_ratio
+        self.nllsq_max_nfev = nllsq_max_nfev
         # control on fitting quality: linear process, maximum of bins to perform fft convolution with variable width/resolution
         self.conv_nbin_max = conv_nbin_max
         # 2) searching global minima
@@ -311,13 +337,44 @@ class FitFrame(object):
             if len(self.spec_R_inst_w) == len(self.spec_wave_w): self.spec_R_inst_w = self.spec_R_inst_w[mask_valid_w]
             mask_valid_w = mask_valid_w[mask_valid_w]
 
-        # set valid wavelength range
-        if self.spec_valid_range is not None:
-            mask_specified_w = np.zeros_like(self.spec_wave_w, dtype='bool')
-            for i_waveslot in range(len(self.spec_valid_range)):
-                waveslot = self.spec_valid_range[i_waveslot]
-                mask_specified_w |= (self.spec_wave_w >= waveslot[0]) & (self.spec_wave_w <= waveslot[1])
-            print_log(f"Mask out {(~mask_specified_w).sum()} data points with the input spec_valid_range.", self.log_message, verbose)
+        # set valid wavelength range using input specified range
+        if (self.spec_valid_range is not None) | (self.spec_invalid_range is not None):
+            mask_specified_valid_w   = np.zeros_like(self.spec_wave_w, dtype='bool')
+            mask_specified_invalid_w = np.zeros_like(self.spec_wave_w, dtype='bool')
+
+            for wave_slices in [self.spec_valid_range, self.spec_invalid_range]:
+                if wave_slices is None: continue
+                # group single range to a list
+                if isinstance(wave_slices, (tuple, dict)): wave_slices = [wave_slices]
+                for i_slice in range(len(wave_slices)):
+                    tmp_format = wave_slices[i_slice]
+                    # convert tuple format to dict
+                    if isinstance(tmp_format, (tuple, list)): # specially allow list here, but it should be deprecated
+                        if isinstance(tmp_format[0], tuple): tmp_format = tmp_format[0] # allow nested tuples as ret_emission_set
+                        wave_slice = {}
+                        wave_slice['wave_min'], wave_slice['wave_max']   = tmp_format[:2]
+                        if len(tmp_format) > 2: wave_slice['wave_unit']  = tmp_format[2]
+                        if len(tmp_format) > 3: wave_slice['wave_frame'] = tmp_format[3]
+                    elif isinstance(tmp_format, dict):
+                        wave_slice = tmp_format
+                    # set default 
+                    if 'wave_unit'  not in wave_slice: wave_slice['wave_unit']  = 'angstrom'
+                    if 'wave_frame' not in wave_slice: wave_slice['wave_frame'] = 'obs'
+                    # check alternatives
+                    if wave_slice['wave_unit'] == 'A': wave_slice['wave_unit'] = 'angstrom'
+                    wave_slice['wave_frame'] = 'obs' if casefold(wave_slice['wave_frame']) in ['observed', 'obs', 'obs.'] else 'rest'
+                    # convert to angstrom in obs frame
+                    wave_ratio = u.Unit(wave_slice['wave_unit']).to('angstrom')
+                    if wave_slice['wave_frame'] == 'rest': wave_ratio *= (1+self.v0_redshift) # convert rest wave to obs frame to match spec_wave_w
+
+                    if wave_slices == self.spec_valid_range:
+                        mask_specified_valid_w   |= (self.spec_wave_w >= wave_slice['wave_min']*wave_ratio) & (self.spec_wave_w <= wave_slice['wave_max']*wave_ratio)
+                    elif wave_slices == self.spec_invalid_range:
+                        mask_specified_invalid_w |= (self.spec_wave_w >= wave_slice['wave_min']*wave_ratio) & (self.spec_wave_w <= wave_slice['wave_max']*wave_ratio)
+
+            mask_specified_w = ~mask_specified_invalid_w
+            if self.spec_valid_range is not None: mask_specified_w &= mask_specified_valid_w
+            print_log(f"Mask out {(~mask_specified_w).sum()} data points with the input spec_valid_range and/or spec_invalid_range.", self.log_message, verbose)
             mask_valid_w &= mask_specified_w
 
         num_invalid_ferr = (mask_valid_w & (self.spec_ferr_w <= 0)).sum()
@@ -332,9 +389,27 @@ class FitFrame(object):
         mask_keep_w = copy(self.mask_valid_w)
         if self.if_keep_invalid: mask_keep_w[:] = True # mock data and models will be created in invalid range
 
-        if self.spec_flux_scale is None: self.spec_flux_scale = 10.0**np.round(np.log10(np.median(self.spec_flux_w[mask_keep_w])))
-        self.spec_flux_w = self.input_args['spec_flux_w'] / self.spec_flux_scale # use input_args to avoid iterative changing of values
-        self.spec_ferr_w = self.input_args['spec_ferr_w'] / self.spec_flux_scale # use input_args to avoid iterative changing of values
+        # convert wave unit to angstrom, use input_args to avoid iterative changing of values
+        spec_wave_ratio = u.Unit(self.input_args['spec_wave_unit']).to('angstrom')
+        self.spec_wave_w = self.input_args['spec_wave_w'] * spec_wave_ratio
+        self.spec_wave_unit = 'angstrom'
+
+        # convert flux unit to erg/s/cm2/A, use input_args to avoid iterative changing of values
+        if u.Unit(self.input_args['spec_flux_unit']).is_equivalent('erg s-1 cm-2 angstrom-1'):
+            spec_flux_ratio_w = u.Unit(self.input_args['spec_flux_unit']).to('erg s-1 cm-2 angstrom-1')
+        elif u.Unit(self.input_args['spec_flux_unit']).is_equivalent('mJy'):
+            spec_flux_ratio_w = 1 / fnu_over_flam(self.spec_wave_w, flam_unit='erg s-1 cm-2 angstrom-1', fnu_unit=self.input_args['spec_flux_unit'])
+        else:
+            raise ValueError((f"The input spec_flux_unit, {self.input_args['spec_flux_unit']}, is not a valid flux unit."))
+        self.spec_flux_w = self.input_args['spec_flux_w'] * spec_flux_ratio_w # use input_args to avoid iterative changing of values
+        self.spec_ferr_w = self.input_args['spec_ferr_w'] * spec_flux_ratio_w # use input_args to avoid iterative changing of values
+        self.spec_flux_unit = 'erg s-1 cm-2 angstrom-1'
+
+        # scale the data spectrum to avoid fitting too low values
+        self.spec_flux_scale = 10.0**np.round(np.log10(np.median(self.spec_flux_w[mask_keep_w])), 0)
+        self.spec_flux_w /= self.spec_flux_scale 
+        self.spec_ferr_w /= self.spec_flux_scale 
+        self.spec_flux_unit = str(u.Unit(self.spec_flux_unit)*u.Unit(f"{self.spec_flux_scale:.0e}"))
 
         # create a dictionary for spectral data
         self.spec = {}
@@ -368,25 +443,16 @@ class FitFrame(object):
         print_log(f"[Note] The wavelength range is extended for tolerances of redshift of {self.v0_redshift}+-{voff_tol/299792.458:.4f} (+-{voff_tol} km s-1) "+
                   f"and convolution/dispersion FWHM of max {fwhm_tol} km s-1.", self.log_message, verbose)
 
-        # # check if norm_wave is coverd in input wavelength range
-        # if (self.root_info_I['norm_wave'] < self.spec_wmin) | (self.root_info_I['norm_wave'] > self.spec_wmax):
-        #     med_wave = np.median(self.spec['wave_w'][self.spec['mask_valid_w']]) / (1+self.v0_redshift)
-        #     med_wave = round(med_wave/100)*100
-        #     print_log(f"[WARNING] The input normalization wavelength (rest frame, Å) {self.root_info_I['norm_wave']} is out of the valid range, "+
-        #               f"which is forced to the median valid wavelength {med_wave}.", self.log_message, verbose)
-        #     self.root_info_I['norm_wave'] = med_wave
-
         # create a dictionary for photometric-SED data
         # self.have_phot = True if self.phot_name_b is not None else False
         if self.have_phot:
             print_log(center_string('Read photometric data', 80), self.log_message, verbose)
             print_log(f"Data available in bands: {self.phot_name_b}", self.log_message, verbose)
-            # convert input photometric data
-            self.pframe = PhotFrame(name_b=self.phot_name_b, flux_b=self.phot_flux_b, ferr_b=self.phot_ferr_b, flux_unit=self.phot_flux_unit,
+            # convert input photometric data to the spec_flux_unit
+            self.pframe = PhotFrame(name_b=self.phot_name_b, flux_b=self.phot_flux_b, ferr_b=self.phot_ferr_b, 
+                                    input_flux_unit=self.phot_flux_unit, output_flux_unit=self.spec_flux_unit, 
                                     trans_dir=self.phot_trans_dir, trans_rsmp=self.phot_trans_rsmp, 
                                     wave_w=self.sed_wave_w, wave_unit=self.sed_wave_unit, wave_num=self.sed_wave_num)
-            self.pframe.flux_b /= self.spec_flux_scale
-            self.pframe.ferr_b /= self.spec_flux_scale
 
             # set valid band range
             self.mask_valid_b = self.pframe.ferr_b > 0
@@ -1178,7 +1244,8 @@ class FitFrame(object):
     def nonlinear_process(self, input_par_p, flux_w, ferr_w, mask_w, 
                           mod_type, mask_lite_Me, fit_phot=False, fit_grid='linear', conv_nbin=None, 
                           accept_chi_sq=None, nlfit_ntry_max=None, 
-                          annealing=False, da_niter_max=None, perturb_scale=None, nllsq_ftol_ratio=None, 
+                          annealing=False, da_niter_max=None, perturb_scale=None, 
+                          nllsq_ftol_ratio=None, nllsq_max_nfev=None, 
                           fit_message=None, i_loop=None, save_best_fit=True, verbose=False): 
         # core fitting function to obtain solution of non-linear least-square problems
 
@@ -1191,6 +1258,7 @@ class FitFrame(object):
         if nlfit_ntry_max is None: nlfit_ntry_max = self.nlfit_ntry_max
         if da_niter_max is None: da_niter_max = self.da_niter_max
         if nllsq_ftol_ratio is None: nllsq_ftol_ratio = self.nllsq_ftol_ratio
+        if nllsq_max_nfev is None: nllsq_max_nfev = self.nllsq_max_nfev
 
         # for input of called functions:
         args=(flux_w, ferr_w, mask_w, mod_type, mask_lite_Me, fit_phot, fit_grid, conv_nbin)
@@ -1257,7 +1325,7 @@ class FitFrame(object):
                 ls_solution = least_squares(fun=self.linear_process, args=args,
                                             x0=init_par_p[mask_p], bounds=(self.par_min_p[mask_p], self.par_max_p[mask_p]), 
                                             x_scale='jac', jac=lambda x, *args: self.jac_matrix(self.linear_process, x, args=args), 
-                                            ftol=nllsq_ftol_ratio/np.sqrt(len(flux_w)), max_nfev=10000, verbose=verbose) 
+                                            ftol=nllsq_ftol_ratio/np.sqrt(len(flux_w)), max_nfev=nllsq_max_nfev, verbose=verbose) 
                                             # A chi-square distribution has mean of N and standard deviation of sqrt(2N).
                                             # Here linear_process returns reduced chi_sq, and the stopping condition is
                                             # (chi_sq_i1-chi_sq_i0) / chi_sq_i0 < ftol.
@@ -1756,13 +1824,13 @@ class FitFrame(object):
 
         if self.if_plot_results:
             self.plot_results(step='spec', if_plot_phot=False, if_plot_comp=True, 
-                              plot_range='spec', wave_type='rest', wave_unit='angstrom', 
+                              plot_range='spec', wave_frame='rest', wave_unit='angstrom', 
                               flux_form='Flam', res_type='residual', ferr_num=3, xyscale=('linear','linear'), 
                               title='Best-fit models of pure-spectral fitting with all components ' + r'($\chi^2_{\nu}$ = ' + f"{self.output_S['joint_fit_2']['chi_sq_l'][0]:.3f})")
 
         if self.if_plot_results & self.have_phot:
             self.plot_results(step='spec+SED', if_plot_phot=True, if_plot_comp=True, 
-                              plot_range='SED', wave_type='rest', wave_unit='micron', 
+                              plot_range='SED', wave_frame='rest', wave_unit='micron', 
                               flux_form='Fnu', res_type='residual/data', ferr_num=3, xyscale=('log','log'), 
                               title='Best-fit models of spectrum+SED fitting with all components ' + r'($\chi^2_{\nu}$ = ' + f"{self.output_S['joint_fit_3']['chi_sq_l'][0]:.3f})")
 
@@ -1771,8 +1839,8 @@ class FitFrame(object):
     ##########################################################################
     ################# Extract best-fit spectra and values ####################
 
-    def extract_results(self, step=None, if_print_results=False, if_return_results=False, if_rev_v0_redshift=None, if_show_average=False, 
-                        num_sed_wave=5000, flux_form='Flam', flux_unit='erg s-1 cm-2 angstrom-1', **kwargs):
+    def extract_results(self, step=None, flux_form='Flam', flux_unit=None, num_sed_wave=5000, 
+                        if_print_results=False, if_return_results=False, if_return_flux_unit=False, if_rev_v0_redshift=None, if_show_average=False, verbose=True, **kwargs):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
@@ -1815,7 +1883,7 @@ class FitFrame(object):
                         rev_mod_type += mod_name + '+'
         rev_mod_type = rev_mod_type[:-1] # remove the last '+'
         self.rev_mod_type = rev_mod_type # save for indexing output_MC
-        print_log(f"The best-fit properties are extracted for the models: {rev_mod_type}", self.log_message, self.if_print_steps)
+        if verbose: print_log(f"The best-fit properties are extracted for the models: {rev_mod_type}", self.log_message, self.if_print_steps)
 
         if if_rev_v0_redshift is None: if_rev_v0_redshift = self.if_rev_v0_redshift
         if if_rev_v0_redshift:
@@ -1835,13 +1903,13 @@ class FitFrame(object):
                 for mod_name in rev_mod_type.split('+'): 
                     self.mod_dict_M[mod_name]['spec_mod'].v0_redshift = self.rev_v0_redshift
                     if self.have_phot: self.mod_dict_M[mod_name]['sed_mod'].v0_redshift = self.rev_v0_redshift
-                print_log(f"The systemic redshift (v0_redshift) is updated to {self.rev_v0_redshift:.6f}+/-{self.rev_v0_redshift_std:.6f} (from the input {self.v0_redshift}) " + 
-                          f"referring to the model and component: '{self.rev_v0_reference}'.", self.log_message, self.if_print_steps)
-                print_log(f"The related best-fit results (e.g., shifted velocities) are also updated.", self.log_message, self.if_print_steps)
+                if verbose: print_log(f"The systemic redshift (v0_redshift) is updated to {self.rev_v0_redshift:.6f}+/-{self.rev_v0_redshift_std:.6f} (from the input {self.v0_redshift}) " + 
+                                      f"referring to the model and component: '{self.rev_v0_reference}'.", self.log_message, self.if_print_steps)
+                if verbose: print_log(f"The related best-fit results (e.g., shifted velocities) are also updated.", self.log_message, self.if_print_steps)
             else:
                 self.rev_v0_redshift = None
-                print_log(f"[WARNING] The specified reference component of systemic redshift, '{self.rev_v0_reference}', is not available. The redshift updating will be skipped.", 
-                          self.log_message, self.if_print_steps)
+                if verbose: print_log(f"[WARNING] The specified reference component of systemic redshift, '{self.rev_v0_reference}', is not available. The redshift updating will be skipped.", 
+                                      self.log_message, self.if_print_steps)
         else:
             self.rev_v0_redshift = None
             # recover un-updated v0_redshift, if it is changed, in each model frame
@@ -1910,10 +1978,7 @@ class FitFrame(object):
                 if self.have_phot:
                     sed_fmod_ew = self.mod_dict_M[mod_name]['sed_func'](sed_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], conv_nbin=None)
                 coeff_fmod_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
-                # i_e0 = 0; i_e1 = 0
                 for (i_comp, comp_name) in enumerate(comp_name_c):
-                    # i_e0 += 0 if i_comp == 0 else num_coeffs_c[i_comp-1]
-                    # i_e1 += num_coeffs_c[i_comp]
                     i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.search_comp_index(comp_name, mod_name)[2:4]
                     spec_fmod_w  = coeff_fmod_e[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod] @ spec_fmod_ew[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                     output_MC[mod_name][comp_name]['spec_lw'][i_loop, :] = spec_fmod_w
@@ -1934,15 +1999,26 @@ class FitFrame(object):
         if self.have_phot:
             output_MC['tot']['fres']['phot_lb'] = output_MC['tot']['flux']['phot_lb'] - output_MC['tot']['fmod']['phot_lb']
 
-        # save model spectra in Flam to calculate observed flux in later model.extract_results()
-        self.output_MC = output_MC
+        # # save model spectra in Flam to calculate observed flux in later model.extract_results()
+        # self.output_MC = output_MC
 
-        # convert to flux in mJy if required
-        if flux_form in ['Fnu', 'fnu']:
-            if not u.Unit(flux_unit).is_equivalent('mJy'): flux_unit = 'mJy'
-            spec_fnu_flam_w = self.spec_flux_scale * Fnu_over_Flam(spec_wave_w, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=flux_unit)
-            sed_fnu_flam_w  = self.spec_flux_scale * Fnu_over_Flam(sed_wave_w, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=flux_unit)
-            phot_fnu_flam_b = self.spec_flux_scale * Fnu_over_Flam(self.pframe.wave_w, trans_bw=self.phot['trans_bw'], Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=flux_unit)
+        # convert flux unit as request
+        if flux_unit is None: 
+            if flux_form in ['Flam', 'flam']: flux_unit = self.spec_flux_unit
+            if flux_form in ['Fnu' , 'fnu' ]: flux_unit = 'mJy'
+
+        if flux_unit != self.spec_flux_unit:
+            if u.Unit(flux_unit).is_equivalent('erg s-1 cm-2 angstrom-1'):
+                spec_fnu_flam_w = u.Unit(self.spec_flux_unit).to(flux_unit)
+                sed_fnu_flam_w  = u.Unit(self.spec_flux_unit).to(flux_unit)
+                phot_fnu_flam_b = u.Unit(self.spec_flux_unit).to(flux_unit)
+            elif u.Unit(flux_unit).is_equivalent('mJy'):
+                spec_fnu_flam_w = fnu_over_flam(spec_wave_w, flam_unit=self.spec_flux_unit, fnu_unit=flux_unit)
+                sed_fnu_flam_w  = fnu_over_flam(sed_wave_w, flam_unit=self.spec_flux_unit, fnu_unit=flux_unit)
+                phot_fnu_flam_b = fnu_over_flam(self.pframe.wave_w, trans_bw=self.phot['trans_bw'], flam_unit=self.spec_flux_unit, fnu_unit=flux_unit)
+            else:
+                raise ValueError((f"The plot flux_unit, {flux_unit}, is not a valid flux unit."))
+
             # use self.pframe.wave_w instead of sed_wave_w since the later is modified and does not match self.phot['trans_bw']
             for mod_name in output_MC:
                 for comp_name in output_MC[mod_name]:
@@ -1998,10 +2074,237 @@ class FitFrame(object):
         self.output_mc = output_MC
         ############################################################
 
-        if if_return_results: return output_MC
+        if if_return_results: 
+            if if_return_flux_unit:
+                return output_MC, flux_unit
+            else:
+                return output_MC
 
     ##########################################################################
     ############################ Plot functions ##############################
+
+    def plot_results(self, step=None, if_plot_phot=False, if_plot_comp=True, 
+                     plot_range=None, wave_frame='rest', wave_unit='angstrom', 
+                     flux_form='Flam', flux_unit=None, res_type='residual', ferr_num=3, 
+                     xyscale=('log','log'), figsize=(10, 6), dpi=300, 
+                     title=None, legend_loc=None, if_plot_icon=False, 
+                     plot_filename=None, **kwargs):
+        # step: 'spec', 'pure-spec', 'spec+SED'
+        # plot_range = ('spec', 'pure-spec'), 'SED'; check if 'SED'
+        # flux_form: ('Flam'), 'Fnu'; check if 'Fnu'
+        # wave_frame: 'rest', ('obs', 'observed'); check if 'rest'
+        # wave_unit: ('angstrom'), 'um', 'micron'; check if 'um' or 'micron'
+        # res_type: 'residual', 'residual/data', 'residual/model'
+        # ferr_num: n-sigma error
+        # xyscale: 'linear', 'log'
+
+        ############################################################
+        # check and replace the args to be compatible with old version <= 2.2.4
+        if 'print_results'   in kwargs: if_print_results  = kwargs['print_results']
+        if 'return_results'  in kwargs: if_return_results = kwargs['return_results']
+        if 'wave_type'       in kwargs: wave_frame        = kwargs['wave_type']
+        if 'flux_type'       in kwargs: flux_form         = kwargs['flux_type']
+        if 'output_plotname' in kwargs: plot_filename     = kwargs['output_plotname']
+        ############################################################
+
+        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
+        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
+
+        output_MC, flux_unit = self.extract_results(step=step, flux_form=flux_form, flux_unit=flux_unit, if_return_results=True, if_return_flux_unit=True, verbose=False, **kwargs)
+
+        if step == 'joint_fit_2': 
+            if_plot_phot = False # forcibly
+            plot_range = 'spec' # forcibly
+
+        if wave_frame == 'rest':
+            z_sys = self.rev_v0_redshift if self.rev_v0_redshift is not None else self.v0_redshift
+            wave_ratio = 1/(1+z_sys) # convert from obs to rest frame
+            flux_ratio = 1 # do not correct flux
+        elif wave_frame in ['obs', 'obs.', 'observed']:
+            wave_ratio = 1
+            flux_ratio = 1
+        wave_ratio *= u.Unit('angstrom').to(wave_unit)
+
+        wave_w = self.spec['wave_w']*wave_ratio
+        flux_grid = 'spec_lw'
+        if if_plot_phot: 
+            wave_b = self.phot['wave_b']*wave_ratio
+            if plot_range == 'SED':
+                wave_w = self.sed['wave_w']*wave_ratio
+                flux_grid = 'sed_lw'
+
+        if res_type == 'residual': 
+            ax1_ylabel = 'Residuals'
+            fres_lw = output_MC['tot']['fres']['spec_lw']*flux_ratio
+            ferr_w  = output_MC['tot']['ferr']['spec_lw'][0]*ferr_num*flux_ratio
+            if if_plot_phot:
+                fres_lb = output_MC['tot']['fres']['phot_lb']*flux_ratio
+                ferr_b  = output_MC['tot']['ferr']['phot_lb'][0]*ferr_num*flux_ratio
+        elif res_type == 'residual/data':
+            ax1_ylabel = 'Residuals / Data'
+            fres_lw = np.divide(output_MC['tot']['fres']['spec_lw'], output_MC['tot']['flux']['spec_lw'], where=output_MC['tot']['flux']['spec_lw']>0)
+            ferr_w  = np.divide(output_MC['tot']['ferr']['spec_lw'][0]*ferr_num, output_MC['tot']['flux']['spec_lw'][0], where=output_MC['tot']['flux']['spec_lw'][0]>0)
+            if if_plot_phot:
+                fres_lb = np.divide(output_MC['tot']['fres']['phot_lb'], output_MC['tot']['flux']['phot_lb'], where=output_MC['tot']['flux']['phot_lb']>0)
+                ferr_b  = np.divide(output_MC['tot']['ferr']['phot_lb'][0]*ferr_num, output_MC['tot']['flux']['phot_lb'][0], where=output_MC['tot']['flux']['phot_lb'][0]>0)
+        elif res_type == 'residual/model':
+            ax1_ylabel = 'Residuals / Model'
+            fres_lw = output_MC['tot']['fres']['spec_lw'] / output_MC['tot']['fmod']['spec_lw']
+            if if_plot_phot:
+                fres_lb = output_MC['tot']['fres']['phot_lb'] / output_MC['tot']['fmod']['phot_lb']
+                ferr_b  = output_MC['tot']['ferr']['phot_lb'][0]*ferr_num / output_MC['tot']['fmod']['phot_lb'][0]
+
+        alpha_ratio = 10/self.num_loops
+
+        #####################
+        fig, axs = plt.subplots(2, 1, figsize=figsize, dpi=100, gridspec_kw={'height_ratios':[3,1]})
+        plt.subplots_adjust(bottom=0.08, top=0.94, left=0.08, right=0.98, hspace=0, wspace=0)
+        ax0, ax1 = axs
+        #####################
+
+        #####################
+        # plot original data
+        ax0.errorbar(self.spec['wave_w']*wave_ratio, self.spec['flux_w']*flux_ratio, 
+                     linewidth=1.5, color='C7', alpha=1, label='Observed spec.', zorder=1)
+        if if_plot_phot:
+            ax0.errorbar(wave_b, self.phot['flux_b']*flux_ratio, output_MC['tot']['ferr']['phot_lb'][0]*ferr_num*flux_ratio, 
+                         fmt='o', markersize=8, color='k', alpha=0.5, label='Observed phot.'+r' ($\pm 3\sigma$)', zorder=3)
+        #####################
+
+        #####################
+        # plot total model spectra
+        for i_loop in range(self.num_loops): 
+            line, = ax0.plot(wave_w, output_MC['tot']['fmod'][flux_grid][i_loop]*flux_ratio, 
+                             '-', linewidth=1.5, color='C1', alpha=min(1, 1*alpha_ratio), zorder=2)
+            if i_loop == 0: line.set_label('Total models spec.')
+        if if_plot_phot:
+            for i_loop in range(self.num_loops):
+                line = ax0.scatter(wave_b, output_MC['tot']['fmod']['phot_lb'][i_loop]*flux_ratio, 
+                                   marker='o', s=200, linewidth=2, facecolor='None', edgecolor='C5', alpha=min(1, 0.5*alpha_ratio), zorder=3)
+                if i_loop == 0: line.set_label('Total models phot.')
+        # plot each model spectra
+        for mod_name in self.rev_mod_type.split('+'): 
+            comp_name_c = copy([*output_MC[mod_name]])
+            if if_plot_comp:
+                # plot each comp
+                if len(comp_name_c) > 2:
+                    comp_name_c = comp_name_c[-1:]+comp_name_c[:-1] # move 'sum' to the begining
+                else:
+                    comp_name_c = comp_name_c[:-1] # hide 'sum' if only one comp
+            else:
+                comp_name_c = comp_name_c[-1:] # only plot 'sum'
+            for comp_name in comp_name_c:
+                for i_loop in range(self.num_loops): 
+                    line, = ax0.plot(wave_w, output_MC[mod_name][comp_name][flux_grid][i_loop]*flux_ratio, 
+                                     linestyle=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linestyle'], 
+                                     linewidth=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linewidth'], 
+                                     color=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['color'], 
+                                     alpha=min(1, self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['alpha']*alpha_ratio), zorder=3)
+                    # if i_loop == 0: line.set_label(mod_name+':'+comp)
+                # make obvious labels
+                ax0.plot([0], [0], 
+                         linestyle=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linestyle'], 
+                         linewidth=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linewidth'], 
+                         color=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['color'], 
+                         alpha=1, label=(mod_name+':'+comp_name) if if_plot_comp else mod_name)
+        #####################
+
+        #####################
+        # plot residuals
+        ax1.plot([0], [0], '-', linewidth=1, color='C2', alpha=1, label='Residuals spec.') # make obvious label
+        for i_loop in range(self.num_loops): 
+            line, = ax1.plot(self.spec['wave_w']*wave_ratio, fres_lw[i_loop], '-', linewidth=1, color='C2', alpha=min(1, 0.1*alpha_ratio), zorder=1)
+            # if i_loop == 0: line.set_label('Residuals spec.')
+            if if_plot_phot:
+                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='C6', alpha=min(1, 0.25*alpha_ratio), zorder=3)
+                # if i_loop == 0: line.set_label('Residuals phot.')
+        if if_plot_phot:
+            ind_o_b = np.argsort(wave_b)
+            ax1.plot(wave_b[ind_o_b], fres_lb[0][ind_o_b], '--o', color='C6', alpha=0.75, label='Residuals phot.', zorder=3)
+        ax1.plot(wave_w, wave_w*0, '--', color='C7', alpha=0.3, zorder=0)
+        #####################
+
+        #####################
+        # plot flux errors
+        if self.have_phot:
+            if if_plot_phot:
+                error_type = '(modified)'
+            else:
+                error_type = '(original)'
+        else:
+            error_type = ''
+        ax0.fill_between(self.spec['wave_w']*wave_ratio, -output_MC['tot']['ferr']['spec_lw'][0]*ferr_num*flux_ratio, output_MC['tot']['ferr']['spec_lw'][0]*ferr_num*flux_ratio, 
+                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+error_type, zorder=0)
+        ax1.fill_between(self.spec['wave_w']*wave_ratio, -ferr_w, ferr_w, 
+                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+error_type, zorder=0)
+        if if_plot_phot:
+            # ax0.errorbar(wave_b, wave_b*0, yerr=output_MC['tot']['ferr']['phot_lb'][0]*ferr_num*flux_ratio, 
+            #              fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=0)
+            ax1.errorbar(wave_b, wave_b*0, yerr=ferr_b, 
+                         fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=2)
+        #####################
+
+        #####################
+        # x- and -y ranges
+        xmin = self.spec['wave_w'][self.spec['mask_valid_w']].min() * 0.98
+        xmax = self.spec['wave_w'][self.spec['mask_valid_w']].max() * 1.01
+        if if_plot_phot & (plot_range == 'SED'):
+            xmin = min(xmin, self.phot['wave_b'].min() * 0.9)
+            xmax = max(xmax, self.phot['wave_b'].max() * 1.1)
+        for ax in axs: ax.set_xlim(xmin*wave_ratio, xmax*wave_ratio)
+
+        ymax_flux = output_MC['tot']['fmod'][flux_grid][0].max() * 1.03
+        if xyscale[1] == 'linear':
+            ymin_flux = -0.03 * ymax_flux
+            if 'line' in self.mod_name_T:
+                ymin_flux = min(ymin_flux, output_MC[self.mod_name_T['line']]['sum'][flux_grid][0].min() * 1.02) # for absorption lines
+        elif xyscale[1] == 'log':
+            ymin_flux = np.median(output_MC['tot']['ferr']['spec_lw'][0])
+        ax0.set_ylim(ymin_flux*flux_ratio, ymax_flux*flux_ratio)
+
+        ymax_fres = np.median(ferr_w) * 3
+        if if_plot_phot:
+            ymax_fres = max(ymax_fres, np.median(ferr_b) * 3)
+        ax1.set_ylim(-ymax_fres, ymax_fres) # ferr_w/b is already *flux_ratio
+        for ax in axs:
+            ax.fill_between(self.spec['wave_w']*wave_ratio, -ymax_fres*flux_ratio*~self.spec['mask_valid_w'], ymax_flux*flux_ratio*~self.spec['mask_valid_w'], 
+                            hatch='////', facecolor='None', edgecolor='C5', alpha=0.5, zorder=0) 
+            ax.set_xscale(xyscale[0])
+        ax0.set_yscale(xyscale[1])
+        #####################
+
+        if legend_loc is None:
+            ax0.legend(ncol=4); ax1.legend(ncol=4, loc=4)
+        else:
+            ax0.legend(ncol=4, loc=legend_loc[0]); ax1.legend(ncol=4, loc=legend_loc[1])
+        ax0.tick_params(axis='x', which='both', labelbottom=False)
+
+        if title is not None: ax0.set_title(title)
+        flux_unit = flux_unit.replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm').replace('L_sun', 'L☉')
+        ax0.set_ylabel(f"Flux ({flux_unit})")
+        wave_unit = wave_unit.replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
+        ax1.set_xlabel(('Rest' if wave_frame == 'rest' else 'Observed')+' wavelength ('+wave_unit+')') # , labelpad=0
+        ax1.set_ylabel(ax1_ylabel)
+
+        # attach SEFI cat
+        if if_plot_icon:
+            icon_dir = str(Path(__file__).parent)+'/auxiliaries/'
+            icon_file = icon_dir + ('icon_s3fit.dat' if step == 'joint_fit_3' else 'icon_s1fit.dat')
+            icon = plt.imread(icon_file)
+            zoom = 0.01 * fig.get_figheight()
+            abox = AnnotationBbox(OffsetImage(icon, zoom=zoom), (0.99, 0.01), xycoords='figure fraction', box_alignment=(1, 0), frameon=False)
+            ax1.add_artist(abox)
+
+        if plot_filename is not None:
+            if plot_filename.split('.')[-1] in ['pdf', 'PDF']:
+                plt.savefig('./tmp.svg', dpi=dpi, transparent=False)
+                _ = os.system('svg42pdf ./tmp.svg ' + plot_filename)
+                _ = os.system('rm ./tmp.svg')
+            else:
+                plt.savefig(plot_filename, dpi=dpi, transparent=False) # dpi='figure'
+
+    ##################################################
 
     def plot_step(self, flux_w, fmod_w, ferr_w, mask_w, fit_phot, fit_message, chi_sq, i_loop):
         if self.canvas is None:
@@ -2055,8 +2358,10 @@ class FitFrame(object):
         tmp_ylim = np.median(ferr_w) * 3 * 3 # x3 times of median 3-sigma 
         ax1.set_ylim(-tmp_ylim, tmp_ylim)
 
-        ax0.set_xticks([]); ax1.set_xlabel(r'Rest wavelength ($\AA$)', labelpad=0)
-        ax0.set_ylabel(f"Flux ({self.spec_flux_scale:.0e}"+r' erg/s/cm2/$\AA$)')
+        wave_unit = self.spec_wave_unit.replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
+        flux_unit = self.spec_flux_unit.replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm').replace('L_sun', 'L☉')
+        ax0.set_xticks([]); ax1.set_xlabel(f"Rest wavelength ({wave_unit})", labelpad=0)
+        ax0.set_ylabel(f"Flux ({flux_unit})")
         ax1.set_ylabel('Res.')
         title = fit_message + r' ($\chi^2_{\nu}$ = ' + f"{chi_sq:.3f}, "
         title += f"loop {i_loop+1}/{self.num_loops}, " + ('original data)' if i_loop == 0 else 'mock data)')
@@ -2074,229 +2379,3 @@ class FitFrame(object):
         if self.canvas is not None:
             fig.canvas.draw(); fig.canvas.flush_events() # refresh plot in the given window
         plt.pause(0.0001)  # forces immediate update
-
-    ##################################################
-
-    def plot_results(self, step=None, if_plot_phot=False, if_plot_comp=True, 
-                     plot_range=None, wave_type='rest', wave_unit='angstrom', 
-                     flux_form='Flam', res_type='residual', ferr_num=3, 
-                     xyscale=('log','log'), figsize=(10, 6), dpi=300, 
-                     title=None, legend_loc=None, if_plot_icon=False, 
-                     output_plotname=None, **kwargs):
-        # step: 'spec', 'pure-spec', 'spec+SED'
-        # plot_range = ('spec', 'pure-spec'), 'SED'; check if 'SED'
-        # flux_form: ('Flam'), 'Fnu'; check if 'Fnu'
-        # wave_type: 'rest', ('obs', 'observed'); check if 'rest'
-        # wave_unit: ('angstrom'), 'um', 'micron'; check if 'um' or 'micron'
-        # res_type: 'residual', 'residual/data', 'residual/model'
-        # ferr_num: n-sigma error
-        # xyscale: 'linear', 'log'
-
-        ############################################################
-        # check and replace the args to be compatible with old version <= 2.2.4
-        if 'print_results'  in kwargs: if_print_results  = kwargs['print_results']
-        if 'return_results' in kwargs: if_return_results = kwargs['return_results']
-        if 'flux_type'      in kwargs: flux_form         = kwargs['flux_type']
-        ############################################################
-
-        if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
-        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
-        if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
-
-        output_MC = self.extract_results(step=step, if_return_results=True, flux_form=flux_form, **kwargs) # if_print_results=False, if_rev_v0_redshift=None
-
-        if step == 'joint_fit_2': 
-            if_plot_phot = False # forcibly
-            plot_range = 'spec' # forcibly
-
-        if wave_type == 'rest':
-            z_sys = self.rev_v0_redshift if self.rev_v0_redshift is not None else self.v0_redshift
-            z_ratio_wave = (1+z_sys)
-            z_ratio_flux = 1 # do not correct flux
-        elif wave_type in ['obs', 'observed']:
-            z_ratio_wave = 1
-            z_ratio_flux = 1
-        z_ratio_wave *= u.Unit(wave_unit).to('angstrom')
-
-        wave_w = self.spec['wave_w']/z_ratio_wave
-        flux_grid = 'spec_lw'
-        if if_plot_phot: 
-            wave_b = self.phot['wave_b']/z_ratio_wave
-            if plot_range == 'SED':
-                wave_w = self.sed['wave_w']/z_ratio_wave
-                flux_grid = 'sed_lw'
-
-        if res_type == 'residual': 
-            ax1_ylabel = 'Residuals'
-            fres_lw = output_MC['tot']['fres']['spec_lw']*z_ratio_flux
-            ferr_w  = output_MC['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux
-            if if_plot_phot:
-                fres_lb = output_MC['tot']['fres']['phot_lb']*z_ratio_flux
-                ferr_b  = output_MC['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux
-        elif res_type == 'residual/data':
-            ax1_ylabel = 'Residuals / Data'
-            fres_lw = np.divide(output_MC['tot']['fres']['spec_lw'], output_MC['tot']['flux']['spec_lw'], where=output_MC['tot']['flux']['spec_lw']>0)
-            ferr_w  = np.divide(output_MC['tot']['ferr']['spec_lw'][0]*ferr_num, output_MC['tot']['flux']['spec_lw'][0], where=output_MC['tot']['flux']['spec_lw'][0]>0)
-            if if_plot_phot:
-                fres_lb = np.divide(output_MC['tot']['fres']['phot_lb'], output_MC['tot']['flux']['phot_lb'], where=output_MC['tot']['flux']['phot_lb']>0)
-                ferr_b  = np.divide(output_MC['tot']['ferr']['phot_lb'][0]*ferr_num, output_MC['tot']['flux']['phot_lb'][0], where=output_MC['tot']['flux']['phot_lb'][0]>0)
-        elif res_type == 'residual/model':
-            ax1_ylabel = 'Residuals / Model'
-            fres_lw = output_MC['tot']['fres']['spec_lw'] / output_MC['tot']['fmod']['spec_lw']
-            if if_plot_phot:
-                fres_lb = output_MC['tot']['fres']['phot_lb'] / output_MC['tot']['fmod']['phot_lb']
-                ferr_b  = output_MC['tot']['ferr']['phot_lb'][0]*ferr_num / output_MC['tot']['fmod']['phot_lb'][0]
-
-        alpha_ratio = 10/self.num_loops
-
-        #####################
-        fig, axs = plt.subplots(2, 1, figsize=figsize, dpi=100, gridspec_kw={'height_ratios':[3,1]})
-        plt.subplots_adjust(bottom=0.08, top=0.94, left=0.08, right=0.98, hspace=0, wspace=0)
-        ax0, ax1 = axs
-        #####################
-
-        #####################
-        # plot original data
-        ax0.errorbar(self.spec['wave_w']/z_ratio_wave, self.spec['flux_w']*z_ratio_flux, 
-                     linewidth=1.5, color='C7', alpha=1, label='Observed spec.', zorder=1)
-        if if_plot_phot:
-            ax0.errorbar(wave_b, self.phot['flux_b']*z_ratio_flux, output_MC['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
-                         fmt='o', markersize=8, color='k', alpha=0.5, label='Observed phot.'+r' ($\pm 3\sigma$)', zorder=3)
-        #####################
-
-        #####################
-        # plot total model spectra
-        for i_loop in range(self.num_loops): 
-            line, = ax0.plot(wave_w, output_MC['tot']['fmod'][flux_grid][i_loop]*z_ratio_flux, 
-                             '-', linewidth=1.5, color='C1', alpha=min(1, 1*alpha_ratio), zorder=2)
-            if i_loop == 0: line.set_label('Total models spec.')
-        if if_plot_phot:
-            for i_loop in range(self.num_loops):
-                line = ax0.scatter(wave_b, output_MC['tot']['fmod']['phot_lb'][i_loop]*z_ratio_flux, 
-                                   marker='o', s=200, linewidth=2, facecolor='None', edgecolor='C5', alpha=min(1, 0.5*alpha_ratio), zorder=3)
-                if i_loop == 0: line.set_label('Total models phot.')
-        # plot each model spectra
-        for mod_name in self.rev_mod_type.split('+'): 
-            comp_name_c = copy([*output_MC[mod_name]])
-            if if_plot_comp:
-                # plot each comp
-                if len(comp_name_c) > 2:
-                    comp_name_c = comp_name_c[-1:]+comp_name_c[:-1] # move 'sum' to the begining
-                else:
-                    comp_name_c = comp_name_c[:-1] # hide 'sum' if only one comp
-            else:
-                comp_name_c = comp_name_c[-1:] # only plot 'sum'
-            for comp_name in comp_name_c:
-                for i_loop in range(self.num_loops): 
-                    line, = ax0.plot(wave_w, output_MC[mod_name][comp_name][flux_grid][i_loop]*z_ratio_flux, 
-                                     linestyle=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linestyle'], 
-                                     linewidth=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linewidth'], 
-                                     color=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['color'], 
-                                     alpha=min(1, self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['alpha']*alpha_ratio), zorder=3)
-                    # if i_loop == 0: line.set_label(mod_name+':'+comp)
-                # make obvious labels
-                ax0.plot([0], [0], 
-                         linestyle=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linestyle'], 
-                         linewidth=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['linewidth'], 
-                         color=self.mod_dict_M[mod_name]['spec_mod'].plot_style_C[comp_name]['color'], 
-                         alpha=1, label=(mod_name+':'+comp_name) if if_plot_comp else mod_name)
-        #####################
-
-        #####################
-        # plot residuals
-        ax1.plot([0], [0], '-', linewidth=1, color='C2', alpha=1, label='Residuals spec.') # make obvious label
-        for i_loop in range(self.num_loops): 
-            line, = ax1.plot(self.spec['wave_w']/z_ratio_wave, fres_lw[i_loop], '-', linewidth=1, color='C2', alpha=min(1, 0.1*alpha_ratio), zorder=1)
-            # if i_loop == 0: line.set_label('Residuals spec.')
-            if if_plot_phot:
-                line, = ax1.plot(wave_b, fres_lb[i_loop], 'o', color='C6', alpha=min(1, 0.25*alpha_ratio), zorder=3)
-                # if i_loop == 0: line.set_label('Residuals phot.')
-        if if_plot_phot:
-            ind_o_b = np.argsort(wave_b)
-            ax1.plot(wave_b[ind_o_b], fres_lb[0][ind_o_b], '--o', color='C6', alpha=0.75, label='Residuals phot.', zorder=3)
-        ax1.plot(wave_w, wave_w*0, '--', color='C7', alpha=0.3, zorder=0)
-        #####################
-
-        #####################
-        # plot flux errors
-        if self.have_phot:
-            if if_plot_phot:
-                error_type = '(modified)'
-            else:
-                error_type = '(original)'
-        else:
-            error_type = ''
-        ax0.fill_between(self.spec['wave_w']/z_ratio_wave, -output_MC['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, output_MC['tot']['ferr']['spec_lw'][0]*ferr_num*z_ratio_flux, 
-                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+error_type, zorder=0)
-        ax1.fill_between(self.spec['wave_w']/z_ratio_wave, -ferr_w, ferr_w, 
-                         facecolor='C5', edgecolor='C5', alpha=0.25, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error spec.'+error_type, zorder=0)
-        if if_plot_phot:
-            # ax0.errorbar(wave_b, wave_b*0, yerr=output_MC['tot']['ferr']['phot_lb'][0]*ferr_num*z_ratio_flux, 
-            #              fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=0)
-            ax1.errorbar(wave_b, wave_b*0, yerr=ferr_b, 
-                         fmt='.', markersize=0.1, linewidth=10, color='C7', alpha=0.3, label=r'$\pm$'+f'{ferr_num}'+r'$\sigma$ error phot.(modified)', zorder=2)
-        #####################
-
-        #####################
-        # x- and -y ranges
-        xmin = self.spec['wave_w'][self.spec['mask_valid_w']].min() * 0.98
-        xmax = self.spec['wave_w'][self.spec['mask_valid_w']].max() * 1.01
-        if if_plot_phot & (plot_range == 'SED'):
-            xmin = min(xmin, self.phot['wave_b'].min() * 0.9)
-            xmax = max(xmax, self.phot['wave_b'].max() * 1.1)
-        for ax in axs: ax.set_xlim(xmin/z_ratio_wave, xmax/z_ratio_wave)
-
-        ymax_flux = output_MC['tot']['fmod'][flux_grid][0].max() * 1.03
-        if xyscale[1] == 'linear':
-            ymin_flux = -0.03 * ymax_flux
-            if 'line' in self.mod_name_T:
-                ymin_flux = min(ymin_flux, output_MC[self.mod_name_T['line']]['sum'][flux_grid][0].min() * 1.02) # for absorption lines
-        elif xyscale[1] == 'log':
-            ymin_flux = np.median(output_MC['tot']['ferr']['spec_lw'][0])
-        ax0.set_ylim(ymin_flux*z_ratio_flux, ymax_flux*z_ratio_flux)
-
-        ymax_fres = np.median(ferr_w) * 3
-        if if_plot_phot:
-            ymax_fres = max(ymax_fres, np.median(ferr_b) * 3)
-        ax1.set_ylim(-ymax_fres, ymax_fres) # ferr_w/b is already *z_ratio_flux
-        for ax in axs:
-            ax.fill_between(self.spec['wave_w']/z_ratio_wave, -ymax_fres*z_ratio_flux*~self.spec['mask_valid_w'], ymax_flux*z_ratio_flux*~self.spec['mask_valid_w'], 
-                            hatch='////', facecolor='None', edgecolor='C5', alpha=0.5, zorder=0) 
-            ax.set_xscale(xyscale[0])
-        ax0.set_yscale(xyscale[1])
-        #####################
-
-        if legend_loc is None:
-            ax0.legend(ncol=4); ax1.legend(ncol=4, loc=4)
-        else:
-            ax0.legend(ncol=4, loc=legend_loc[0]); ax1.legend(ncol=4, loc=legend_loc[1])
-        ax0.tick_params(axis='x', which='both', labelbottom=False)
-        # ax0.set_title('The best-fit spectra in the wavelength range of the data spectrum.')
-        if flux_form in ['Fnu', 'fnu']:
-            ax0.set_ylabel(f"Flux (mJy)")
-        else:
-            ax0.set_ylabel(f"Flux ({self.spec_flux_scale:.0e}"+r' erg s$^{-1}$cm$^{-2}\AA^{-1}$)')
-        ax1.set_ylabel(ax1_ylabel)
-        # wave_unit_str = r'$\mu$m' if wave_unit in ['um', 'micron'] else r'$\AA$'
-        wave_unit_str = wave_unit.replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
-        ax1.set_xlabel(('Rest' if wave_type == 'rest' else 'Observed')+' wavelength ('+wave_unit_str+')') # , labelpad=0
-
-        if title is not None: ax0.set_title(title)
-
-        # attach SEFI cat
-        if if_plot_icon:
-            icon_dir = str(Path(__file__).parent)+'/auxiliaries/'
-            icon_file = icon_dir + ('icon_s3fit.dat' if step == 'joint_fit_3' else 'icon_s1fit.dat')
-            icon = plt.imread(icon_file)
-            zoom = 0.01 * fig.get_figheight()
-            abox = AnnotationBbox(OffsetImage(icon, zoom=zoom), (0.99, 0.01), xycoords='figure fraction', box_alignment=(1, 0), frameon=False)
-            ax1.add_artist(abox)
-
-        if output_plotname is not None:
-            if output_plotname.split('.')[-1] in ['pdf', 'PDF']:
-                plt.savefig('./tmp.svg', dpi=dpi, transparent=False)
-                _ = os.system('svg42pdf ./tmp.svg ' + output_plotname)
-                _ = os.system('rm ./tmp.svg')
-            else:
-                plt.savefig(output_plotname, dpi=dpi, transparent=False) # dpi='figure'
-

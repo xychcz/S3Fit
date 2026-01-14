@@ -10,7 +10,18 @@ np.set_printoptions(linewidth=10000)
 import astropy.units as u
 import astropy.constants as const
 
-from .auxiliary_functions import casefold, Fnu_over_Flam, spec_to_phot
+from pathlib import Path
+from importlib.util import spec_from_file_location, module_from_spec
+def import_module_from_path(path):
+    spec = spec_from_file_location('_dynamic', path)
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+# import from absolute path to be used by model frame out of installed directory
+aux_func = import_module_from_path(str(Path(__file__).parent) + '/auxiliary_functions.py')
+casefold, fnu_over_flam, spec_to_phot = aux_func.casefold, aux_func.fnu_over_flam, aux_func.spec_to_phot
+# from .auxiliary_functions import casefold, fnu_over_flam, spec_to_phot
 
 class ConfigFrame(object):
 
@@ -282,7 +293,8 @@ class ConfigFrame(object):
 
 class PhotFrame(object):
     def __init__(self, 
-                 name_b=None, flux_b=None, ferr_b=None, flux_unit='mJy', # on input data
+                 name_b=None, flux_b=None, ferr_b=None, # on input data
+                 input_flux_unit='mJy', output_flux_unit='erg s-1 cm-2 angstrom-1', 
                  trans_dir=None, trans_rsmp=10, # on transmission curves
                  wave_w=None, wave_unit='angstrom', wave_num=None): # on corresonding SED range
         # add file_bac, file_iron later
@@ -290,7 +302,8 @@ class PhotFrame(object):
         self.name_b = copy(name_b)
         self.flux_b = copy(flux_b)
         self.ferr_b = copy(ferr_b) 
-        self.flux_unit = flux_unit
+        self.input_flux_unit  = input_flux_unit
+        self.output_flux_unit = output_flux_unit
 
         self.trans_dir = copy(trans_dir)
         self.trans_rsmp = trans_rsmp
@@ -306,14 +319,17 @@ class PhotFrame(object):
                                                                              wave_w=self.wave_w, wave_num=self.wave_num)
         self.wave_b = spec_to_phot(self.wave_w, self.wave_w, self.trans_bw)
 
-        # convert to erg/s/cm2/A
-        if u.Unit(self.flux_unit).is_equivalent('mJy'):
-            rFlamFnu_b = 1 / Fnu_over_Flam(self.wave_w, trans_bw=self.trans_bw, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit=self.flux_unit)
-            self.flux_b *= rFlamFnu_b 
-            self.ferr_b *= rFlamFnu_b 
-        elif u.Unit(self.flux_unit).is_equivalent('erg s-1 cm-2 angstrom-1'):
-            self.flux_b *= u.Unit(self.flux_unit).to('erg s-1 cm-2 angstrom-1')
-            self.ferr_b *= u.Unit(self.flux_unit).to('erg s-1 cm-2 angstrom-1')
+        # convert flux unit
+        if u.Unit(self.input_flux_unit).is_equivalent(self.output_flux_unit):
+            flux_ratio_b = u.Unit(self.input_flux_unit).to(self.output_flux_unit)
+        elif u.Unit(self.input_flux_unit).is_equivalent('mJy'):
+            flux_ratio_b = 1 / fnu_over_flam(self.wave_w, trans_bw=self.trans_bw, flam_unit=self.output_flux_unit, fnu_unit=self.input_flux_unit)
+        elif u.Unit(self.input_flux_unit).is_equivalent('erg s-1 cm-2 angstrom-1'):
+            flux_ratio_b = fnu_over_flam(self.wave_w, trans_bw=self.trans_bw, flam_unit=self.input_flux_unit, fnu_unit=self.output_flux_unit)
+        else:
+            raise ValueError((f"The input_flux_unit, {self.input_flux_unit}, is not a valid flux unit."))
+        self.flux_b *= flux_ratio_b 
+        self.ferr_b *= flux_ratio_b 
         
     def read_transmission(self, name_b=None, trans_dir=None, trans_rsmp=None, wave_w=None, wave_num=None):        
         if trans_dir[-1] != '/': trans_dir += '/'
@@ -331,7 +347,7 @@ class PhotFrame(object):
             logw_width_min = 1e16
             for name in name_b: 
                 filterdata = np.loadtxt(trans_dir+name+'.dat')
-                wave_ini, trans_ini = filterdata[:,0], filterdata[:,1]
+                wave_ini, trans_ini = filterdata[:,0], filterdata[:,1] # wave_ini in angstrom
                 w_min = np.minimum(w_min, wave_ini.min())
                 w_max = np.maximum(w_max, wave_ini.max())
                 mask_w = trans_ini/trans_ini.max() > 0.5 
@@ -361,31 +377,4 @@ class PhotFrame(object):
             trans_bw = np.array(trans_bw)
 
         return trans_dict, trans_bw, wave_w
-        # Flam (mean) = INT(Flam * Tlam, x=lam) / INT(Tlam, x=lam), where INT(Tlam, x=lam) = 1
-        # Fnu (mean) = INT(Flam * Tlam, x=lam) / INT(Tlam * dnu/dlam, x=lam)
-        
-    # def rFnuFlam_func(self, wave_w, trans_bw=None, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit='mJy'):
-    #     unitFlam = 1.0 * u.Unit(Flam_unit)
-    #     rDnuDlam = const.c / (wave_w * u.angstrom)**2
-    #     if trans_bw is None:
-    #         # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
-    #         return (unitFlam / rDnuDlam).to(Fnu_unit).value
-    #     else:
-    #         # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
-    #         unitFint = unitFlam * (1.0 * u.angstrom)
-    #         # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
-    #         width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
-    #         return (unitFint / width_nu).to(Fnu_unit).value
-        
-    # def spec2phot(self, wave_w, spec_mw, trans_bw):
-    #     # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)
-    #     if (spec_mw.ndim == 1) & (trans_bw.ndim == 1):
-    #         return np.trapezoid(trans_bw * spec_mw, x=wave_w, axis=0) # return flux, 1-model, 1-band
-    #     if (spec_mw.ndim == 1) & (trans_bw.ndim == 2):
-    #         return np.trapezoid(trans_bw * spec_mw[None,:], x=wave_w, axis=1) # return flux_b, 1-model, multi-band
-    #     if (spec_mw.ndim == 2) & (trans_bw.ndim == 1):
-    #         return np.trapezoid(trans_bw[None,:] * spec_mw, x=wave_w, axis=1) # return flux_m, multi-model, 1-band
-    #     if (spec_mw.ndim == 2) & (trans_bw.ndim == 2):
-    #         return np.trapezoid(trans_bw[None,:,:] * spec_mw[:,None,:], x=wave_w, axis=2) # return flux_mb
-    #     # short for np.trapezoid(trans * spec, x=wave, axis=axis) / np.trapezoid(trans, x=wave, axis=axis), trans is normalized to int=1
 

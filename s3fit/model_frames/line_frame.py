@@ -10,7 +10,6 @@ from scipy.interpolate import RegularGridInterpolator
 
 from ..auxiliaries.auxiliary_frames import ConfigFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters, roman_to_int, color_list_dict, wave_air_to_vac, convolve_fix_width_fft
-# from ..auxiliaries.basic_model_functions import single_line
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
@@ -93,14 +92,16 @@ class LineFrame(object):
 
         # group line info to a list
         for i_comp in range(self.num_comps):
-            if isinstance(self.cframe.comp_info_cI[i_comp]['line_used'], str): self.cframe.comp_info_cI[i_comp]['line_used'] = [self.cframe.comp_info_cI[i_comp]['line_used']]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['line_used'], str): 
+                self.cframe.comp_info_cI[i_comp]['line_used'] = [self.cframe.comp_info_cI[i_comp]['line_used']]
             self.cframe.comp_info_cI[i_comp]['line_used'] = np.array(self.cframe.comp_info_cI[i_comp]['line_used'])
-            if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], str): self.cframe.comp_info_cI[i_comp]['line_ties'] = [self.cframe.comp_info_cI[i_comp]['line_ties']] # to allow pure hydrogen
-            if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], tuple): self.cframe.comp_info_cI[i_comp]['line_ties'] = [self.cframe.comp_info_cI[i_comp]['line_ties']]
-            if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], list):
-                if all( isinstance(item, str) for item in self.cframe.comp_info_cI[i_comp]['line_ties'] ):
-                    if len(self.cframe.comp_info_cI[i_comp]['line_ties']) > 1: 
-                        self.cframe.comp_info_cI[i_comp]['line_ties'] = [tuple(self.cframe.comp_info_cI[i_comp]['line_ties'])] # to allow single tied group
+
+            if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], (str, tuple)): # support str to allow pure hydrogen ties
+                self.cframe.comp_info_cI[i_comp]['line_ties'] = [self.cframe.comp_info_cI[i_comp]['line_ties']]
+            # if isinstance(self.cframe.comp_info_cI[i_comp]['line_ties'], list): # to allow tied group in a single list
+            #     if all( isinstance(line_tie, str) for line_tie in self.cframe.comp_info_cI[i_comp]['line_ties'] ):
+            #         if len(self.cframe.comp_info_cI[i_comp]['line_ties']) > 1:  # pass ['hydrogen'] that is alread valid
+            #             self.cframe.comp_info_cI[i_comp]['line_ties'] = [tuple(self.cframe.comp_info_cI[i_comp]['line_ties'])] 
 
     ##########################################################################
 

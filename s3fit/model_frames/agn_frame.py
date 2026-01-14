@@ -14,7 +14,6 @@ import astropy.constants as const
 
 from ..auxiliaries.auxiliary_frames import ConfigFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict, convolve_var_width_fft
-# from ..auxiliaries.basic_model_functions import powerlaw_func, blackbody_func, recombination_func
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class AGNFrame(object):
@@ -56,10 +55,10 @@ class AGNFrame(object):
             if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody', 'recombination']:
                 self.num_coeffs_c[i_comp] = 1 # one independent element per component
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
-                if self.cframe.comp_info_cI[i_comp]['segments']: 
-                    self.num_coeffs_c[i_comp] = self.iron_dict['orig_flux_ew'].shape[0] # multiple independent segments
+                if self.cframe.comp_info_cI[i_comp]['wave_segments'] is not None: 
+                    self.num_coeffs_c[i_comp] = len(self.cframe.comp_info_cI[i_comp]['wave_segments'])
                 else:
-                    self.num_coeffs_c[i_comp] = 1 # one independent segment
+                    self.num_coeffs_c[i_comp] = 1
         self.num_coeffs = self.num_coeffs_c.sum()
 
         # currently do not consider negative spectra 
@@ -71,8 +70,8 @@ class AGNFrame(object):
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     print_log(f"Lower-level principal quantum number of Hydrogen recombination continuum: {self.cframe.comp_info_cI[i_comp]['H_series']}", self.log_message)
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
-                    if self.cframe.comp_info_cI[i_comp]['segments']: 
-                        print_log(f"Wavelength segments for fitting of Fe II template: {self.iron_dict['wave_segments'][self.iron_dict['orig_flux_norm_e']>0].tolist()}", self.log_message)
+                    if self.cframe.comp_info_cI[i_comp]['wave_segments'] is not None: 
+                        print_log(f"Wavelength segments for fitting of Fe II template: {self.iron_dict['wave_segments_valid']}", self.log_message)
 
         # set plot styles
         self.plot_style_C = {}
@@ -136,87 +135,139 @@ class AGNFrame(object):
 
         # set inherited or default info if not specified in config
         # model-level info
-        self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
-        self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
+        # self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
+        # self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
 
         # component-level info
         # format of returned flux / Lum density or integrated values
         for i_comp in range(self.num_comps):
             # either 2-unit-nested tuples (for wave and value, respectively) or dictionary as follows are supported
-            ret_value_formats = [((3000, 10, 'angstrom', 'rest'), ('Flam', 'erg s-1 cm-2 angstrom-1', 'observed')), 
+            ret_emission_set = [ ((3000, 10, 'angstrom', 'rest'), ('Flam', 'erg s-1 cm-2 angstrom-1', 'observed')), 
                                  {'wave_center': 5100, 'wave_width': 10, 'wave_unit': 'angstrom', 'wave_frame': 'rest', 
                                   'value_form': 'Flam', 'value_unit': 'erg s-1 cm-2 angstrom-1', 'value_state': 'observed'},
-                                 (( 912, 30000, 'angstrom', 'rest'), ('intLum', 'L_sun', 'intrinsic')),
+                                 ((912, 30000, 'angstrom', 'rest'), ('intLum', 'L_sun', 'intrinsic')),
                                  {'wave_min': 912, 'wave_max': 30000, 'wave_unit': 'angstrom', 'wave_frame': 'rest', 
                                   'value_form': 'intLum', 'value_unit': 'L_sun', 'value_state': 'absorbed'} ]
             if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody']:
-                ret_value_formats += [ ((3000, 10, 'angstrom', 'rest'), ('lamLlam', 'erg s-1', 'intrinsic')),
-                                       ((5100, 10, 'angstrom', 'rest'), ('lamLlam', 'erg s-1', 'intrinsic')) ]
-            self.cframe.retrieve_inherited_info('ret_value_formats', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=ret_value_formats)
+                ret_emission_set += [ ((3000, 10, 'angstrom', 'rest'), ('lamLlam', 'erg s-1', 'intrinsic')),
+                                      ((5100, 10, 'angstrom', 'rest'), ('lamLlam', 'erg s-1', 'intrinsic')) ]
+            self.cframe.retrieve_inherited_info('ret_emission_set', i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=ret_emission_set)
             # 'wave_unit': any length unit supported by astropy.unit
             # 'value_form': 'Flam', 'lamFlam', 'Fnu', 'nuFnu', 'intFlux'; 'Llam', 'lamLlam', 'Lnu', 'nuLnu', intLum'
             # 'value_state': 'intrinsic', 'observed', 'absorbed' (i.e., dust absorbed)
             # 'value_unit': any flux/luminosity or its density unit supported by astropy.unit
  
-            # re-categorize ret_value_formats
-            if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue # user can set None to skip all of these calculations
+            if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is None: continue # user can set None to skip all of these calculations
             # group line info to a list
-            if isinstance(self.cframe.comp_info_cI[i_comp]['ret_value_formats'], (tuple, dict)): 
-                self.cframe.comp_info_cI[i_comp]['ret_value_formats'] = [self.cframe.comp_info_cI[i_comp]['ret_value_formats']]
-            # convert tuple format to dict
-            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                tmp_tuple = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
-                if isinstance(tmp_tuple, tuple):
-                    tmp_dict = {}
-                    wave_0, wave_1 = tmp_tuple[0][:2]
+            if isinstance(self.cframe.comp_info_cI[i_comp]['ret_emission_set'], (tuple, dict)): 
+                self.cframe.comp_info_cI[i_comp]['ret_emission_set'] = [self.cframe.comp_info_cI[i_comp]['ret_emission_set']]
+            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_emission_set'])):
+                tmp_format = self.cframe.comp_info_cI[i_comp]['ret_emission_set'][i_ret]
+                # convert tuple format to dict
+                if isinstance(tmp_format, tuple):
+                    ret_emi_F = {}
+                    wave_0, wave_1 = tmp_format[0][:2]
                     if wave_0 > wave_1:
-                        tmp_dict['wave_center'], tmp_dict['wave_width'] = wave_0, wave_1
+                        ret_emi_F['wave_center'], ret_emi_F['wave_width'] = wave_0, wave_1
                     else:
-                        tmp_dict['wave_min'], tmp_dict['wave_max'] = wave_0, wave_1 if wave_1 > wave_0 else wave_0+1
-                    tmp_dict['wave_unit']  = tmp_tuple[0][2]
-                    tmp_dict['wave_frame'] = tmp_tuple[0][3] if len(tmp_tuple[0]) > 3 else 'rest'
-                    tmp_dict['value_form'], tmp_dict['value_unit'], tmp_dict['value_state'] = tmp_tuple[1]
-                else:
-                    tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                        ret_emi_F['wave_min'], ret_emi_F['wave_max'] = wave_0, wave_1 if wave_1 > wave_0 else wave_0+1
+                    if len(tmp_format[0]) > 2: ret_emi_F['wave_unit']  = tmp_format[0][2]
+                    if len(tmp_format[0]) > 3: ret_emi_F['wave_frame'] = tmp_format[0][3]
+                    ret_emi_F['value_form'], ret_emi_F['value_unit'], ret_emi_F['value_state'] = tmp_format[1]
+                elif isinstance(tmp_format, dict):
+                    ret_emi_F = tmp_format
+                # set default 
+                if 'wave_unit'  not in ret_emi_F: ret_emi_F['wave_unit']  = 'angstrom'
+                if 'wave_frame' not in ret_emi_F: ret_emi_F['wave_frame'] = 'rest'
                 # check alternatives
-                tmp_dict['wave_frame'] = 'obs' if casefold(tmp_dict['wave_frame']) in ['observed', 'obs', 'obs.'] else 'rest'
-                if tmp_dict['value_form'] == 'flam': tmp_dict['value_form'] = 'Flam'
-                if tmp_dict['value_form'] == 'fnu' : tmp_dict['value_form'] = 'Fnu'
-                if casefold(tmp_dict['value_state']) in ['intrinsic', 'original']:
-                    tmp_dict['value_state'] = 'intrinsic'
-                elif casefold(tmp_dict['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
-                    tmp_dict['value_state'] = 'observed'
-                elif casefold(tmp_dict['value_state']) in ['absorbed', 'dust']:
-                    tmp_dict['value_state'] = 'absorbed'
-                self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret] = tmp_dict
+                if ret_emi_F['wave_unit'] == 'A': ret_emi_F['wave_unit'] = 'angstrom'
+                ret_emi_F['wave_frame'] = 'obs' if casefold(ret_emi_F['wave_frame']) in ['observed', 'obs', 'obs.'] else 'rest'
+                if ret_emi_F['value_form'] == 'flam': ret_emi_F['value_form'] = 'Flam'
+                if ret_emi_F['value_form'] == 'fnu' : ret_emi_F['value_form'] = 'Fnu'
+                if casefold(ret_emi_F['value_state']) in ['intrinsic', 'original']:
+                    ret_emi_F['value_state'] = 'intrinsic'
+                elif casefold(ret_emi_F['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
+                    ret_emi_F['value_state'] = 'observed'
+                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust']:
+                    ret_emi_F['value_state'] = 'absorbed'
+                self.cframe.comp_info_cI[i_comp]['ret_emission_set'][i_ret] = ret_emi_F
 
         # other component-level info
         for i_comp in range(self.num_comps):
             if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
-                # truncated range and index of powerlaw, either nested tuple or dict format, e.g., {'wave_range': (5, None), 'wave_unit': 'micron', 'alpha_lambda': -4}
-                self.cframe.retrieve_inherited_info('truncation', i_comp=i_comp, default=[((None, 0.01), 'micron',  0.2), 
-                                                                                          ((0.01, 0.10), 'micron', -1.0), 
-                                                                                          ((5.00, None), 'micron', -4.0)])
+                # truncated range and index of powerlaw, either nested tuple or dict format, 
+                # e.g., {'wave_min': 5, 'wave_max': None, 'wave_unit': 'micron', 'wave_frame': 'rest', 'alpha_lambda': -4}
+                self.cframe.retrieve_inherited_info('truncation', i_comp=i_comp, default=[((None, 0.01, 'micron', 'rest'),  0.2), 
+                                                                                          ((0.01, 0.10, 'micron', 'rest'), -1.0), 
+                                                                                          ((5.00, None, 'micron', 'rest'), -4.0)])
                 # the adopted values follow Schartmann et al. 2005; Feltre et al. 2012; Stalevski et al. 2016
+
+                if self.cframe.comp_info_cI[i_comp]['truncation'] is None: continue # user can set None to skip all of these calculations
+                # group single info to a list
+                if isinstance(self.cframe.comp_info_cI[i_comp]['truncation'], (tuple, dict)): 
+                    self.cframe.comp_info_cI[i_comp]['truncation'] = [self.cframe.comp_info_cI[i_comp]['truncation']]
+                for i_tr in range(len(self.cframe.comp_info_cI[i_comp]['truncation'])):
+                    tmp_format = self.cframe.comp_info_cI[i_comp]['truncation'][i_tr]
+                    # convert tuple format to dict
+                    if isinstance(tmp_format, tuple): 
+                        tr_slice = {}
+                        tr_slice['wave_min'], tr_slice['wave_max'] = tmp_format[0][:2]
+                        if len(tmp_format[0]) > 2: tr_slice['wave_unit']  = tmp_format[0][2]
+                        if len(tmp_format[0]) > 3: tr_slice['wave_frame'] = tmp_format[0][3]
+                        tr_slice['alpha_lambda'] = tmp_format[1]
+                    elif isinstance(tmp_format, dict):
+                        tr_slice = tmp_format
+                    # set default 
+                    if 'wave_unit'  not in tr_slice: tr_slice['wave_unit']  = 'angstrom'
+                    if 'wave_frame' not in tr_slice: tr_slice['wave_frame'] = 'rest'
+                    # check alternatives
+                    if tr_slice['wave_unit'] == 'A': tr_slice['wave_unit'] = 'angstrom'
+                    tr_slice['wave_frame'] = 'obs' if casefold(tr_slice['wave_frame']) in ['observed', 'obs', 'obs.'] else 'rest'
+                    self.cframe.comp_info_cI[i_comp]['truncation'][i_tr] = tr_slice
+
+        for i_comp in range(self.num_comps):
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                 self.cframe.retrieve_inherited_info('H_series', i_comp=i_comp, default=[2,3,4,5])
-            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
-                self.cframe.retrieve_inherited_info('segments', i_comp=i_comp, default=False)
+                # series of free-bound transition; can be the lower-level numbers or greek notations or combinations, e.g., [2,' Paschen']
 
-        # group single info to a list
-        for i_comp in range(self.num_comps):
-            if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
-                if isinstance(self.cframe.comp_info_cI[i_comp]['truncation'], (tuple, dict)): self.cframe.comp_info_cI[i_comp]['truncation'] = [self.cframe.comp_info_cI[i_comp]['truncation']]
-            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
-                if isinstance(self.cframe.comp_info_cI[i_comp]['H_series'], (str, int)): self.cframe.comp_info_cI[i_comp]['H_series'] = [self.cframe.comp_info_cI[i_comp]['H_series']]
-
-        # check alternative info
-        for i_comp in range(self.num_comps):
-            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
+                # if self.cframe.comp_info_cI[i_comp]['H_series'] is None: continue
+                # group single info to a list
+                if isinstance(self.cframe.comp_info_cI[i_comp]['H_series'], (str, int)): 
+                    self.cframe.comp_info_cI[i_comp]['H_series'] = [self.cframe.comp_info_cI[i_comp]['H_series']]
                 # translate greek notations to number of lower-level number
                 H_series_dict = {'balmer': 2, 'paschen': 3, 'brackett': 4, 'pfund': 5, 'humphreys': 6}
-                self.cframe.comp_info_cI[i_comp]['H_series'] = [H_series_dict[casefold(series)] if casefold(series) in H_series_dict else series for series in self.cframe.comp_info_cI[i_comp]['H_series']]
+                self.cframe.comp_info_cI[i_comp]['H_series'] = [ H_series_dict[casefold(series)] if casefold(series) in H_series_dict else series 
+                                                                 for series in self.cframe.comp_info_cI[i_comp]['H_series'] ]
                 self.cframe.comp_info_cI[i_comp]['H_series'] = list(dict.fromkeys( self.cframe.comp_info_cI[i_comp]['H_series'] )) # remove duplicate
+
+
+        for i_comp in range(self.num_comps):
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                self.cframe.retrieve_inherited_info('wave_segments', i_comp=i_comp, default=None)
+                # [(1000,2150), (2150,2650), (2650,3020), (3020,4000), (4000,4800), (4800,5600), (5600,6800), (6800,7600)]
+
+                if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None: continue # user can set None to skip all of these calculations
+                # group single info to a list
+                if isinstance(self.cframe.comp_info_cI[i_comp]['wave_segments'], (tuple, dict)): 
+                    self.cframe.comp_info_cI[i_comp]['wave_segments'] = [self.cframe.comp_info_cI[i_comp]['wave_segments']]
+                for i_seg in range(len(self.cframe.comp_info_cI[i_comp]['wave_segments'])):
+                    tmp_format = self.cframe.comp_info_cI[i_comp]['wave_segments'][i_seg]
+                    # convert tuple format to dict
+                    if isinstance(tmp_format, tuple):
+                        if isinstance(tmp_format[0], tuple): tmp_format = tmp_format[0] # allow nested tuples as ret_emission_set
+                        wave_segment = {}
+                        wave_segment['wave_min'], wave_segment['wave_max'] = tmp_format[:2]
+                        if len(tmp_format) > 2: wave_segment['wave_unit']  = tmp_format[2]
+                        if len(tmp_format) > 3: wave_segment['wave_frame'] = tmp_format[3]
+                    elif isinstance(tmp_format, dict):
+                        wave_segment = tmp_format
+                    # set default 
+                    if 'wave_unit'  not in wave_segment: wave_segment['wave_unit']  = 'angstrom'
+                    if 'wave_frame' not in wave_segment: wave_segment['wave_frame'] = 'rest'
+                    # check alternatives
+                    if wave_segment['wave_unit'] == 'A': wave_segment['wave_unit'] = 'angstrom'
+                    wave_segment['wave_frame'] = 'obs' if casefold(wave_segment['wave_frame']) in ['observed', 'obs', 'obs.'] else 'rest'
+                    self.cframe.comp_info_cI[i_comp]['wave_segments'][i_seg] = wave_segment
 
     ##########################################################################
 
@@ -255,21 +306,19 @@ class AGNFrame(object):
 
         # set cutting index in longer and shorter wavelength ranges
         if truncation is not None:
-            slices = []
-            for slice in truncation:
-                if isinstance(slice, tuple): 
-                    wave_range, wave_unit, alpha_truncated = slice
-                elif isinstance(slice, dict):
-                    wave_range, wave_unit, alpha_truncated = slice['wave_range'], slice['wave_unit'], slice['alpha_lambda']
-                wave_ratio = 1e4 if casefold(wave_unit) in ['micron', 'um'] else 1
-                wave_left  = wave_range[0]*wave_ratio if wave_range[0] is not None else min(wave_range[1]*wave_ratio*0.9, min(wavelength))
-                wave_right = wave_range[1]*wave_ratio if wave_range[1] is not None else max(wave_range[0]*wave_ratio*1.1, max(wavelength))
-                slices.append([wave_left, wave_right, alpha_truncated])
-            slice_sv = np.array(slices)
+            tr_slices = []
+            for tr_slice in truncation:
+                wave_min, wave_max = tr_slice['wave_min'], tr_slice['wave_max']
+                wave_ratio = u.Unit(tr_slice['wave_unit']).to('angstrom')
+                if tr_slice['wave_frame'] != 'rest': wave_ratio /= (1+self.v0_redshift) # convert obs wave to rest frame
+                wave_left  = wave_min*wave_ratio if wave_min is not None else min(wave_max*wave_ratio*0.9, min(wavelength))
+                wave_right = wave_max*wave_ratio if wave_max is not None else max(wave_min*wave_ratio*1.1, max(wavelength))
+                tr_slices.append([wave_left, wave_right, tr_slice['alpha_lambda']])
+            tr_slice_sv = np.array(tr_slices)
 
             wave_left_0 = 3000
-            if sum(slice_sv[:,1] < wave_left_0) > 0:
-                slice_short_sv = slice_sv[slice_sv[:,1] < wave_left_0, :]
+            if sum(tr_slice_sv[:,1] < wave_left_0) > 0:
+                slice_short_sv = tr_slice_sv[tr_slice_sv[:,1] < wave_left_0, :]
                 slice_short_sv = slice_short_sv[np.argsort(slice_short_sv[:,1])[::-1], :]
                 pl_right = self.bending_powerlaw(slice_short_sv[0,1], wave_norm, 1, alpha_lambda1, alpha_lambda2, curvature, bending)
                 for i_slice in range(slice_short_sv.shape[0]):
@@ -280,8 +329,8 @@ class AGNFrame(object):
                     pl_right = self.simple_powerlaw(wave_left, wave_right, pl_right, alpha_truncated)
 
             wave_right_0 = 5100
-            if sum(slice_sv[:,0] > wave_right_0) > 0:
-                slice_long_sv = slice_sv[slice_sv[:,0] > wave_right_0, :]
+            if sum(tr_slice_sv[:,0] > wave_right_0) > 0:
+                slice_long_sv = tr_slice_sv[tr_slice_sv[:,0] > wave_right_0, :]
                 slice_long_sv = slice_long_sv[np.argsort(slice_long_sv[:,0]), :]
                 pl_left = self.bending_powerlaw(slice_long_sv[0,0], wave_norm, 1, alpha_lambda1, alpha_lambda2, curvature, bending)
                 for i_slice in range(slice_long_sv.shape[0]):
@@ -410,88 +459,100 @@ class AGNFrame(object):
         self.iron_dict['dw_fwhm_dsp_w'] = self.dw_fwhm_dsp_w
 
         # set segments
-        self.iron_dict['wave_segments'] = np.array([[1000,2150], [2150,2650], [2650,3020], [3020,4000], [4000,4800], [4800,5600], [5600,6800], [6800,7600]])
-        self.iron_dict['init_flux_ew'] = []
-        self.iron_dict['init_flux_norm_e']  = []
-        self.iron_dict['orig_flux_ew'] = []
-        self.iron_dict['orig_flux_norm_e']  = []
-        for wave_range in self.iron_dict['wave_segments']:
-            tmp_init_flux_w = np.zeros_like(self.iron_dict['init_wave_w'])
-            mask_w = (self.iron_dict['init_wave_w'] >= wave_range[0]) & (self.iron_dict['init_wave_w'] < wave_range[1])
-            tmp_init_flux_w[mask_w] = copy(self.iron_dict['init_flux_w'][mask_w])
-            tmp_init_flux_norm = np.trapezoid(tmp_init_flux_w, x=self.iron_dict['init_wave_w'])
-            self.iron_dict['init_flux_ew'].append(tmp_init_flux_w)
-            self.iron_dict['init_flux_norm_e'].append(tmp_init_flux_norm)
+        for i_comp in range(self.num_comps):
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None: continue
 
-            tmp_orig_flux_w = np.zeros_like(self.iron_dict['orig_wave_w'])
-            mask_w = (self.iron_dict['orig_wave_w'] >= wave_range[0]) & (self.iron_dict['orig_wave_w'] < wave_range[1])
-            tmp_orig_flux_w[mask_w] = copy(self.iron_dict['orig_flux_w'][mask_w])
-            tmp_orig_flux_norm = np.trapezoid(tmp_orig_flux_w, x=self.iron_dict['orig_wave_w'])
-            if tmp_orig_flux_norm / tmp_init_flux_norm < 0.05: 
-                tmp_orig_flux_w *= 0 # avoid using poorly covered range
-                tmp_orig_flux_norm *= 0 
-            self.iron_dict['orig_flux_ew'].append(tmp_orig_flux_w)
-            self.iron_dict['orig_flux_norm_e'].append(tmp_orig_flux_norm)
+                self.iron_dict['init_flux_ew'] = [] # with the init_wave_w of iron template
+                self.iron_dict['orig_flux_ew'] = [] # follow the defined orig_wave_w
+                self.iron_dict['wave_segments_valid'] = []
 
-        self.iron_dict['init_flux_ew'] = np.array(self.iron_dict['init_flux_ew'])
-        self.iron_dict['init_flux_norm_e'] = np.array(self.iron_dict['init_flux_norm_e'])
-        self.iron_dict['orig_flux_ew'] = np.array(self.iron_dict['orig_flux_ew'])
-        self.iron_dict['orig_flux_norm_e'] = np.array(self.iron_dict['orig_flux_norm_e'])
+                for wave_segment in self.cframe.comp_info_cI[i_comp]['wave_segments']:
+                    wave_ratio = u.Unit(wave_segment['wave_unit']).to('angstrom')
+                    if wave_segment['wave_frame'] != 'rest': wave_ratio /= (1+self.v0_redshift) # convert obs wave to rest frame
+                    wave_min, wave_max = wave_segment['wave_min']*wave_ratio, wave_segment['wave_max']*wave_ratio
+
+                    tmp_init_flux_w = np.zeros_like(self.iron_dict['init_wave_w'])
+                    mask_w = (self.iron_dict['init_wave_w'] >= wave_min) & (self.iron_dict['init_wave_w'] < wave_max)
+                    tmp_init_flux_w[mask_w] = copy(self.iron_dict['init_flux_w'][mask_w])
+                    tmp_init_flux_norm = np.trapezoid(tmp_init_flux_w, x=self.iron_dict['init_wave_w'])
+                    self.iron_dict['init_flux_ew'].append(tmp_init_flux_w)
+
+                    tmp_orig_flux_w = np.zeros_like(self.iron_dict['orig_wave_w'])
+                    mask_w = (self.iron_dict['orig_wave_w'] >= wave_min) & (self.iron_dict['orig_wave_w'] < wave_max)
+                    tmp_orig_flux_w[mask_w] = copy(self.iron_dict['orig_flux_w'][mask_w])
+                    tmp_orig_flux_norm = np.trapezoid(tmp_orig_flux_w, x=self.iron_dict['orig_wave_w'])
+                    if tmp_orig_flux_norm / tmp_init_flux_norm > 0.05: 
+                        self.iron_dict['wave_segments_valid'].append([wave_min, wave_max])
+                        # add to ret_emission_set
+                        ret_emi_F = copy(wave_segment)
+                        ret_emi_F['value_form'] = 'intLum'
+                        ret_emi_F['value_unit'] = 'erg s-1'
+                        ret_emi_F['value_state'] = 'intrinsic'
+                        if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is None: 
+                            self.cframe.comp_info_cI[i_comp]['ret_emission_set'] = []
+                        self.cframe.comp_info_cI[i_comp]['ret_emission_set'].append(ret_emi_F)
+                    else:
+                        tmp_orig_flux_w *= 0 # avoid using poorly covered range
+                        tmp_orig_flux_norm *= 0 
+                    self.iron_dict['orig_flux_ew'].append(tmp_orig_flux_w)
+
+                self.iron_dict['init_flux_ew'] = np.array(self.iron_dict['init_flux_ew'])
+                self.iron_dict['orig_flux_ew'] = np.array(self.iron_dict['orig_flux_ew'])
 
     ##########################################################################
 
     def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
                       if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, 
-                      if_redshift=True, if_convolve=True, conv_nbin=None, if_full_range=False, dpix_resample=None): 
+                      if_redshift=True, if_convolve=True, conv_nbin=None, if_full_range=False): 
 
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
         if isinstance(components, str): components = [components]
+
+        if if_full_range:
+            orig_wave_w = np.logspace(np.log10(min(obs_wave_w)/(1+self.v0_redshift))-0.5, np.log10(max(obs_wave_w)/(1+self.v0_redshift))+0.5, 1000)
+            if_convolve = False # do not convolve in this case
+        else:
+            orig_wave_w = copy(self.orig_wave_w)
 
         obs_flux_mcomp_ew = None
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             if components is not None:
                 if comp_name not in components: continue
 
-            orig_wave_w = copy(self.orig_wave_w)
             # read and append intrinsic templates in rest frame
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 alpha_lambda = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda']]
-                pl = self.powerlaw_func(orig_wave_w, alpha_lambda1=alpha_lambda, bending=False)
-                orig_flux_int_ew = pl[None,:] # convert to (1,w) format
+                orig_flux_int_ew = self.powerlaw_func(orig_wave_w, alpha_lambda1=alpha_lambda, 
+                                                      bending=False, truncation=self.cframe.comp_info_cI[i_comp]['truncation'])
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                 alpha_lambda1 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda1']]
                 alpha_lambda2 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda2']]
                 wave_turn     = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['wave_turn']]
                 curvature     = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['curvature']]
-                pl = self.powerlaw_func(orig_wave_w, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, bending=True)
-                orig_flux_int_ew = pl[None,:] # convert to (1,w) format
+                orig_flux_int_ew = self.powerlaw_func(orig_wave_w, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, 
+                                                      bending=True, truncation=self.cframe.comp_info_cI[i_comp]['truncation'])
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 log_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tem']]
-                bb = self.blackbody_func(orig_wave_w, log_tem=log_tem)
-                orig_flux_int_ew = bb[None,:] # convert to (1,w) format
+                orig_flux_int_ew = self.blackbody_func(orig_wave_w, log_tem=log_tem)
             if self.cframe.comp_info_cI[i_comp]['mod_used'] =='recombination':
                 log_e_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
                 log_tau_be = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tau_be']]
-                rec = self.recombination_func(orig_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
-                orig_flux_int_ew = rec[None,:] # convert to (1,w) format
+                orig_flux_int_ew = self.recombination_func(orig_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                 if if_full_range:
                     orig_wave_w = copy(self.iron_dict['init_wave_w'])
-                    # do not convolve in this case
-                    if_convolve = False 
-                    if self.cframe.comp_info_cI[i_comp]['segments']:
-                        iron = self.iron_dict['init_flux_ew']
-                        orig_flux_int_ew = copy(iron)
+                    if self.cframe.comp_info_cI[i_comp]['wave_segments'] is not None:
+                        orig_flux_int_ew = self.iron_dict['init_flux_ew']
                     else:
-                        iron = self.iron_dict['init_flux_w']
-                        orig_flux_int_ew = iron[None,:] # convert to (1,w) format
+                        orig_flux_int_ew = self.iron_dict['init_flux_w']
                 else:
-                    if self.cframe.comp_info_cI[i_comp]['segments']:
-                        iron = self.iron_dict['orig_flux_ew']
-                        orig_flux_int_ew = copy(iron)
+                    if self.cframe.comp_info_cI[i_comp]['wave_segments'] is not None:
+                        orig_flux_int_ew = self.iron_dict['orig_flux_ew']
                     else:
-                        iron = self.iron_dict['orig_flux_w']
-                        orig_flux_int_ew = iron[None,:] # convert to (1,w) format
+                        orig_flux_int_ew = self.iron_dict['orig_flux_w']
+
+            if orig_flux_int_ew.ndim == 1: orig_flux_int_ew = orig_flux_int_ew[None,:] # convert to (1,w) format
 
             # dust extinction
             if if_dust_ext & ('Av' in self.cframe.par_index_cP[i_comp]):
@@ -558,37 +619,39 @@ class AGNFrame(object):
             best_par_lp[:, self.fframe.par_name_p == 'fwhm'] *= (1+self.fframe.v0_redshift) / (1+self.fframe.rev_v0_redshift)
 
         self.num_loops = self.fframe.num_loops # for print_results
-        self.spec_flux_scale = self.fframe.spec_flux_scale # to calculate luminosity in printing
         comp_name_c = self.cframe.comp_name_c
         num_comps = self.cframe.num_comps
         par_name_cp = self.cframe.par_name_cp
 
         # list the properties to be output
-        value_names_additive = [] # ['flux_3000', 'flux_5100', 'flux_wavenorm']
+        value_names_additive = []
         ret_names_additive = None
         value_names_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':       
-                value_names_C[comp_name] = value_names_additive + [] # ['log_lamLlam_3000', 'log_lamLlam_5100', 'log_lamLlam_wavenorm']
+                value_names_C[comp_name] = value_names_additive + []
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':       
-                value_names_C[comp_name] = value_names_additive + ['flux_waveturn'] # 'log_lamLlam_3000', 'log_lamLlam_5100', 'log_lamLlam_wavenorm', 'log_lamLlam_waveturn', 
+                value_names_C[comp_name] = value_names_additive + ['log_Flam_waveturn']
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
-                value_names_C[comp_name] = value_names_additive + ['log_intLum_bol'] # 'log_lamLlam_3000', 'log_lamLlam_5100', 'log_lamLlam_wavenorm', 
+                value_names_C[comp_name] = value_names_additive + ['log_intLum_bol']
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                 value_names_C[comp_name] = value_names_additive + ['log_intLum_bol']
-            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':      
-                value_names_C[comp_name] = value_names_additive + ['log_intLum_uv', 'log_intLum_opt']
-
-            if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue
-            ret_names = []
-            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
-                if 'wave_center' in tmp_dict:
-                    wave_name = f"{tmp_dict['wave_center']}{tmp_dict['wave_unit']}"
+            if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
+                if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None:
+                    value_names_C[comp_name] = value_names_additive + ['log_intLum_uv', 'log_intLum_opt']
                 else:
-                    wave_name = f"{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}"
-                ret_name = f"log_{tmp_dict['value_form']}_{wave_name}_{tmp_dict['value_state']}_u_{tmp_dict['value_unit']}"
-                ret_names.append(ret_name)
+                    value_names_C[comp_name] = value_names_additive + []
+
+            ret_names = []
+            if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None:
+                for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
+                    if 'wave_center' in ret_emi_F:
+                        wave_name = f"{ret_emi_F['wave_center']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    else:
+                        wave_name = f"{ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
+                    ret_names.append(ret_name)
+
             value_names_C[comp_name] += ret_names
             if ret_names_additive is None: 
                 ret_names_additive = ret_names
@@ -627,122 +690,88 @@ class AGNFrame(object):
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
+                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
 
-                # tmp_spec_w = self.fframe.output_MC[self.mod_name][comp_name]['spec_lw'][i_loop, :]
-                # mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 3000) < 25 # for observed flux at rest 3000 angstrom
-                # if mask_norm_w.sum() > 0:
-                #     output_C[comp_name]['value_Vl']['flux_3000'][i_loop] = tmp_spec_w[mask_norm_w].mean()
-                #     output_C['sum']['value_Vl']['flux_3000'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-                # mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - 5100) < 25 # for observed flux at rest 5100 angstrom
-                # if mask_norm_w.sum() > 0:
-                #     output_C[comp_name]['value_Vl']['flux_5100'][i_loop] = tmp_spec_w[mask_norm_w].mean()
-                #     output_C['sum']['value_Vl']['flux_5100'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-                # mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - self.cframe.mod_info_I['w_norm']) < self.cframe.mod_info_I['dw_norm'] # for observed flux at user given wavenorm
-                # if mask_norm_w.sum() > 0:
-                #     output_C[comp_name]['value_Vl']['flux_wavenorm'][i_loop] = tmp_spec_w[mask_norm_w].mean()
-                #     output_C['sum']['value_Vl']['flux_wavenorm'][i_loop] += tmp_spec_w[mask_norm_w].mean()
-
-                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm').value**2 # in cm2
-                unitconv = lum_area * self.spec_flux_scale * u.Unit('erg/s').to('L_sun') # convert intrinsic flux in erg/s/cm2/A to Lum in Lsun/A
- 
-                # if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
-                #     alpha_lambda = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda']]
-                #     for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm']], ['3000', '5100', 'wavenorm']):
-                #         flux_wave = coeff_e[0] * self.powerlaw_func(wave, alpha_lambda1=alpha_lambda, bending=False)
-                #         lamLlam_wave = flux_wave * unitconv * wave
-                #         output_C[comp_name]['value_Vl']['log_lamLlam_'+wave_str][i_loop] = np.log10(lamLlam_wave)
+                tmp_flux_unit = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1 cm-2 angstrom-1')]
+                self.default_Flam_unit = tmp_flux_unit[0] if len(tmp_flux_unit) > 0 else 'erg s-1 cm-2 angstrom-1' # save to use in print_results
+                tmp_lum_unit  = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1')]
+                self.default_intLum_unit  = tmp_lum_unit [0] if len(tmp_lum_unit)  > 0 else 'erg s-1' # save to use in print_results
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
-                    # alpha_lambda1 = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda1']]
-                    # alpha_lambda2 = par_p[self.cframe.par_index_cP[i_comp]['alpha_lambda2']]
-                    # wave_turn     = par_p[self.cframe.par_index_cP[i_comp]['wave_turn']]
-                    # curvature     = par_p[self.cframe.par_index_cP[i_comp]['curvature']]
-                    # for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm'], wave_turn], ['3000', '5100', 'wavenorm', 'waveturn']):
-                    #     flux_wave = coeff_e[0] * self.powerlaw_func(wave, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, bending=True)
-                    #     lamLlam_wave = flux_wave * unitconv * wave
-                    #     output_C[comp_name]['value_Vl']['log_lamLlam_'+wave_str][i_loop] = np.log10(lamLlam_wave)
-                    # mask_norm_w = np.abs(self.fframe.spec['wave_w']/(1+rev_redshift) - wave_turn) < self.cframe.mod_info_I['dw_norm'] 
-                    # if mask_norm_w.sum() > 0:
-                    #     output_C[comp_name]['value_Vl']['flux_waveturn'][i_loop] = tmp_spec_w[mask_norm_w].mean()
-                    output_C[comp_name]['value_Vl']['flux_waveturn'][i_loop] = coeff_e[0]
+                    output_C[comp_name]['value_Vl']['log_Flam_waveturn'][i_loop] = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit)).to(self.default_Flam_unit).value
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     log_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_tem']]
-                    # for (wave, wave_str) in zip([3000, 5100, self.cframe.mod_info_I['w_norm']], ['3000', '5100', 'wavenorm']):
-                    #     flux_wave = coeff_e[0] * self.blackbody_func(wave, log_tem=log_tem, )
-                    #     lamLlam_wave = flux_wave * unitconv * wave
-                    #     output_C[comp_name]['value_Vl']['log_lamLlam_'+wave_str][i_loop] = np.log10(lamLlam_wave)
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
-                    tmp_bb_w = self.blackbody_func(tmp_wave_w, log_tem=log_tem)
-                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_bb_w, x=tmp_wave_w))
+                    tmp_bb_w = coeff_e[0] * self.blackbody_func(tmp_wave_w, log_tem=log_tem)
+                    tmp_lum = np.trapezoid(tmp_bb_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
+                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_lum)
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     log_e_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_e_tem']]
                     log_tau_be = par_p[self.cframe.par_index_cP[i_comp]['log_tau_be']]
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
-                    tmp_rec_w = self.recombination_func(tmp_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
-                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(coeff_e[0] * unitconv * np.trapezoid(tmp_rec_w, x=tmp_wave_w))
+                    tmp_rec_w = coeff_e[0] * self.recombination_func(tmp_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
+                    tmp_lum = np.trapezoid(tmp_rec_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
+                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_lum)
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
-                    if self.cframe.comp_info_cI[i_comp]['segments']:
-                        coeff_uv  = (coeff_e[1:4] * self.iron_dict['init_flux_norm_e'][1:4])[coeff_e[1:4] > 0].sum()
-                        coeff_opt = (coeff_e[4:6] * self.iron_dict['init_flux_norm_e'][4:6])[coeff_e[4:6] > 0].sum()
-                    else:
-                        coeff_uv  = coeff_e[0]
-                        coeff_opt = coeff_e[0] * self.iron_dict['flux_opt_uv_ratio']
-                    output_C[comp_name]['value_Vl']['log_intLum_uv' ][i_loop] = np.log10(coeff_uv  * unitconv)
-                    output_C[comp_name]['value_Vl']['log_intLum_opt'][i_loop] = np.log10(coeff_opt * unitconv)
+                    if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None:
+                        tmp_lum_uv  = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 1                                   * u.angstrom).to(self.default_intLum_unit).value
+                        tmp_lum_opt = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.iron_dict['flux_opt_uv_ratio'] * u.angstrom).to(self.default_intLum_unit).value
+                        output_C[comp_name]['value_Vl']['log_intLum_uv' ][i_loop] = np.log10(tmp_lum_uv)
+                        output_C[comp_name]['value_Vl']['log_intLum_opt'][i_loop] = np.log10(tmp_lum_opt)
 
-                # calculate requested flux/Lum in given wavelength ranges
-                if self.cframe.comp_info_cI[i_comp]['ret_value_formats'] is None: continue
                 tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
-                for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                    tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+                # calculate requested flux/Lum in given wavelength ranges
+                if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
+                    for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
+                        if 'wave_center' in ret_emi_F:
+                            wave_0, wave_1 = ret_emi_F['wave_center'] - ret_emi_F['wave_width'], ret_emi_F['wave_center'] + ret_emi_F['wave_width']
+                            wave_name = f"{ret_emi_F['wave_center']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                        else:
+                            wave_0, wave_1 = ret_emi_F['wave_min'], ret_emi_F['wave_max']
+                            wave_name = f"{ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                        wave_ratio = u.Unit(ret_emi_F['wave_unit']).to('angstrom')
+                        if ret_emi_F['wave_frame'] == 'rest': wave_ratio *= (1+rev_redshift) # rest wave to obs wave, which is required by create_models
+                        tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
 
-                    if 'wave_center' in tmp_dict:
-                        wave_0, wave_1 = tmp_dict['wave_center'] - tmp_dict['wave_width'], tmp_dict['wave_center'] + tmp_dict['wave_width']
-                        wave_name = f"{tmp_dict['wave_center']}{tmp_dict['wave_unit']}"
-                    else:
-                        wave_0, wave_1 = tmp_dict['wave_min'], tmp_dict['wave_max']
-                        wave_name = f"{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}"
-                    wave_ratio = u.Unit(tmp_dict['wave_unit']).to('angstrom')
-                    if tmp_dict['wave_frame'] == 'rest': wave_ratio *= (1+rev_redshift) # rest wave to obs wave
-                    tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
+                        if ret_emi_F['value_state'] in ['intrinsic','absorbed']:
+                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                             if_dust_ext=False, if_redshift=True, if_full_range=True) # flux in obs frame
+                            intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                        if ret_emi_F['value_state'] in ['observed','absorbed']:
+                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                                                             if_dust_ext=True,  if_redshift=True, if_full_range=True) # flux in obs frame
+                            observed_flux_w = tmp_coeff_e @ tmp_flux_ew
+                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
+                        if ret_emi_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
+                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
 
-                    if tmp_dict['value_state'] in ['intrinsic','absorbed']:
-                        tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                         if_dust_ext=False, if_redshift=True, if_full_range=True, dpix_resample=300) # flux in obs frame
-                        intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
-                    if tmp_dict['value_state'] in ['observed','absorbed']:
-                        tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                         if_dust_ext=True,  if_redshift=True, if_full_range=True, dpix_resample=300) # flux in obs frame
-                        observed_flux_w = tmp_coeff_e @ tmp_flux_ew
-                    if tmp_dict['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
-                    if tmp_dict['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
-                    if tmp_dict['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
+                        tmp_wave_w *= u.angstrom
+                        tmp_flux_w *= u.Unit(self.fframe.spec_flux_unit)
+                        tmp_Flam    = tmp_flux_w.mean()
+                        tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
+                        tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
 
-                    tmp_Flam = tmp_flux_w.mean()
-                    tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
-                    tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
+                        if ret_emi_F['value_form'] ==     'Flam'          : ret_value = tmp_Flam
+                        if ret_emi_F['value_form'] in ['lamFlam', 'nuFnu']: ret_value = tmp_lamFlam
+                        if ret_emi_F['value_form'] ==  'intFlux'          : ret_value = tmp_intFlux
 
-                    if tmp_dict['value_form'] ==     'Flam'          : ret_value = tmp_Flam    * u.Unit('erg s-1 cm-2 angstrom-1').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] in ['lamFlam', 'nuFnu']: ret_value = tmp_lamFlam * u.Unit('erg s-1 cm-2').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] ==  'intFlux'          : ret_value = tmp_intFlux * u.Unit('erg s-1 cm-2').to(tmp_dict['value_unit'])
+                        if ret_emi_F['value_form'] ==     'Llam'          : ret_value = tmp_Flam    * lum_area
+                        if ret_emi_F['value_form'] in ['lamLlam', 'nuLnu']: ret_value = tmp_lamFlam * lum_area
+                        if ret_emi_F['value_form'] ==  'intLum'           : ret_value = tmp_intFlux * lum_area
 
-                    if tmp_dict['value_form'] ==     'Llam'          : ret_value = tmp_Flam    * lum_area * u.Unit('erg s-1 angstrom-1').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] in ['lamLlam', 'nuLnu']: ret_value = tmp_lamFlam * lum_area * u.Unit('erg s-1').to(tmp_dict['value_unit'])
-                    if tmp_dict['value_form'] ==  'intLum'           : ret_value = tmp_intFlux * lum_area * u.Unit('erg s-1').to(tmp_dict['value_unit'])
+                        if ret_emi_F['value_form'] ==     'Fnu'           : ret_value = tmp_Flam               * tmp_wave_w.mean()**2 / const.c
+                        if ret_emi_F['value_form'] ==     'Lnu'           : ret_value = tmp_Flam    * lum_area * tmp_wave_w.mean()**2 / const.c
 
-                    if tmp_dict['value_form'] == 'Fnu' : ret_value = (tmp_Flam       * u.Unit('erg s-1 cm-2 angstrom-1') * (tmp_wave_w.mean()*u.angstrom)**2 / const.c).to(tmp_dict['value_unit']).value
-                    if tmp_dict['value_form'] == 'Lnu' : ret_value = (tmp_Flam * lum_area * u.Unit('erg s-1 angstrom-1') * (tmp_wave_w.mean()*u.angstrom)**2 / const.c).to(tmp_dict['value_unit']).value
-
-                    ret_value *= self.spec_flux_scale
-                    ret_name = f"log_{tmp_dict['value_form']}_{wave_name}_{tmp_dict['value_state']}_u_{tmp_dict['value_unit']}"
-                    output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
-                    if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
+                        ret_value = ret_value.to(ret_emi_F['value_unit']).value
+                        ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
+                        output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
+                        if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
 
         for value_name in output_C['sum']['value_Vl']:
-            if (value_name[:8] in ['log_Flam', 'log_Fnu_']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum_']): 
+            if (value_name[:8] in ['log_Flam', 'log_Fnu ']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum ']): 
                 output_C['sum']['value_Vl'][value_name] = np.log10(output_C['sum']['value_Vl'][value_name])
 
         ############################################################
@@ -771,63 +800,58 @@ class AGNFrame(object):
             print_name_CV[comp_name]['voff'] = 'Velocity shift in relative to z_sys (km s-1)'
             print_name_CV[comp_name]['fwhm'] = 'Velocity FWHM (km s-1)'
             print_name_CV[comp_name]['Av'] = 'Extinction (Av)'
-            # print_name_CV[comp_name]['log_lamLlam_3000'] = f"λL3000 (rest,intrinsic) "
-            # print_name_CV[comp_name]['log_lamLlam_5100'] = f"λL5100 (rest,intrinsic) "
-            # print_name_CV[comp_name]['log_lamLlam_wavenorm'] = f"λL{self.cframe.mod_info_I['w_norm']:.0f} (rest,intrinsic) "
-            # print_name_CV[comp_name]['flux_3000'] = f"F3000 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            # print_name_CV[comp_name]['flux_5100'] = f"F5100 (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-            # print_name_CV[comp_name]['flux_wavenorm'] = f"F{self.cframe.mod_info_I['w_norm']:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 print_name_CV[comp_name]['alpha_lambda'] = 'Powerlaw α_λ'
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                 print_name_CV[comp_name]['curvature'] = 'Curvature'
                 print_name_CV[comp_name]['wave_turn'] = 'Turning wavelength (rest, Å)'
                 wave_turn = self.output_C[[*self.output_C][i_comp]]['value_Vl']['wave_turn'][0]
-                print_name_CV[comp_name]['alpha_lambda1'] = f"Powerlaw α1_λ (λ < {wave_turn:.0f})"
-                print_name_CV[comp_name]['alpha_lambda2'] = f"Powerlaw α2_λ (λ > {wave_turn:.0f})"
-                print_name_CV[comp_name]['flux_waveturn'] = f"F{wave_turn:.0f} (rest,extinct) ({self.spec_flux_scale:.0e} erg/s/cm2/Å)"
-                print_name_CV[comp_name]['log_lamLlam_waveturn'] = f"λL{wave_turn:.0f} (rest,intrinsic) "
+                print_name_CV[comp_name]['alpha_lambda1'] = f"Powerlaw α1_λ (λ < {wave_turn:.0f} Å)"
+                print_name_CV[comp_name]['alpha_lambda2'] = f"Powerlaw α2_λ (λ > {wave_turn:.0f} Å)"
+                print_name_CV[comp_name]['log_Flam_waveturn'] = f"Observed flux density (Fλ, log {self.default_Flam_unit}) at rest {wave_turn:.0f} Å".replace('angstrom', 'Å').replace('Angstrom', 'Å')
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 print_name_CV[comp_name]['log_tem'] = 'Blackbody temperature (log K)'
-                print_name_CV[comp_name]['log_intLum_bol'] = f"Blackbody bolometric lum. (log L☉)"
+                print_name_CV[comp_name]['log_intLum_bol'] = f"Blackbody bolometric lum. (log {self.default_intLum_unit})".replace('L_sun', 'L☉')
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                 print_name_CV[comp_name]['log_e_tem'] = 'Recombination cont. e- temperature (log K)'
                 print_name_CV[comp_name]['log_tau_be'] = 'Recombination cont. optical depth at 3646 Å (log τ)'
-                print_name_CV[comp_name]['log_intLum_bol'] = f"Recombination cont. bolometric lum. (log L☉)"
+                print_name_CV[comp_name]['log_intLum_bol'] = f"Recombination cont. bolometric lum. (log {self.default_intLum_unit})".replace('L_sun', 'L☉')
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
-                print_name_CV[comp_name]['log_intLum_uv']  = 'Intrinsic lum. (integrated, log L☉) at rest UV (2150-4000 Å)'
-                print_name_CV[comp_name]['log_intLum_opt'] = 'Intrinsic lum. (integrated, log L☉) at rest optical (4000-5600 Å)'
+                print_name_CV[comp_name]['log_intLum_uv' ] = f"Intrinsic lum. (integrated, log {self.default_intLum_unit}) at rest UV (2150-4000 Å)".replace('L_sun', 'L☉')
+                print_name_CV[comp_name]['log_intLum_opt'] = f"Intrinsic lum. (integrated, log {self.default_intLum_unit}) at rest optical (4000-5600 Å)".replace('L_sun', 'L☉')
 
-            for i_ret in range(len(self.cframe.comp_info_cI[i_comp]['ret_value_formats'])):
-                tmp_dict = self.cframe.comp_info_cI[i_comp]['ret_value_formats'][i_ret]
+            if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
+                for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
+                    if 'wave_center' in ret_emi_F:
+                        wave_name = f"{ret_emi_F['wave_center']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    else:
+                        wave_name = f"{ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} ({ret_emi_F['wave_frame']}, {ret_emi_F['wave_unit']})"
+                    ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
 
-                if 'wave_center' in tmp_dict:
-                    wave_name = f"{tmp_dict['wave_center']}{tmp_dict['wave_unit']}"
-                else:
-                    wave_name = f"{tmp_dict['wave_min']}_{tmp_dict['wave_max']}{tmp_dict['wave_unit']}"
-                ret_name = f"log_{tmp_dict['value_form']}_{wave_name}_{tmp_dict['value_state']}_u_{tmp_dict['value_unit']}"
+                    tmp_value_state = copy(ret_emi_F['value_state']) # avoid changing the original set, which is used elsewhere
+                    if tmp_value_state == 'absorbed' : tmp_value_state = 'dust-'+tmp_value_state
+                    print_name_CV[comp_name][ret_name] = f"{tmp_value_state.capitalize()} "
 
-                if tmp_dict['value_state'] == 'absorbed' : tmp_dict['value_state'] = 'dust-'+tmp_dict['value_state']
-                print_name_CV[comp_name][ret_name] = f"{tmp_dict['value_state'].capitalize()} "
+                    ret_emi_F['value_unit'] = ret_emi_F['value_unit'].replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm').replace('L_sun', 'L☉')
+                    if ret_emi_F['value_form'] ==    'Flam': print_name_CV[comp_name][ret_name] += f"flux density (Fλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==    'Llam': print_name_CV[comp_name][ret_name] += f"lum. density (Lλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==    'Fnu' : print_name_CV[comp_name][ret_name] += f"flux density (Fν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==    'Lnu' : print_name_CV[comp_name][ret_name] += f"lum. density (Lν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'lamFlam': print_name_CV[comp_name][ret_name] += f"flux (λFλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'lamLlam': print_name_CV[comp_name][ret_name] += f"lum. (λLλ, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==  'nuFnu' : print_name_CV[comp_name][ret_name] += f"flux (νFν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] ==  'nuLnu' : print_name_CV[comp_name][ret_name] += f"lum. (νLν, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'intFlux': print_name_CV[comp_name][ret_name] += f"flux (integrated, log {ret_emi_F['value_unit']})"
+                    if ret_emi_F['value_form'] == 'intLum' : print_name_CV[comp_name][ret_name] += f"lum. (integrated, log {ret_emi_F['value_unit']})"
 
-                tmp_dict['value_unit'] = tmp_dict['value_unit'].replace('L_sun', 'L☉').replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
-                if tmp_dict['value_form'] ==    'Flam': print_name_CV[comp_name][ret_name] += f"flux density (Fλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==    'Llam': print_name_CV[comp_name][ret_name] += f"lum. density (Lλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==    'Fnu' : print_name_CV[comp_name][ret_name] += f"flux density (Fν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==    'Lnu' : print_name_CV[comp_name][ret_name] += f"lum. density (Lν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'lamFlam': print_name_CV[comp_name][ret_name] += f"flux (λFλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'lamLlam': print_name_CV[comp_name][ret_name] += f"lum. (λLλ, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==  'nuFnu' : print_name_CV[comp_name][ret_name] += f"flux (νFν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] ==  'nuLnu' : print_name_CV[comp_name][ret_name] += f"lum. (νLν, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'intFlux': print_name_CV[comp_name][ret_name] += f"flux (integrated, log {tmp_dict['value_unit']})"
-                if tmp_dict['value_form'] == 'intLum' : print_name_CV[comp_name][ret_name] += f"lum. (integrated, log {tmp_dict['value_unit']})"
+                    tmp_wave_unit = ret_emi_F['wave_unit'].replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
+                    tmp_wave_frame = copy(ret_emi_F['wave_frame'])
+                    if tmp_wave_frame == 'obs': tmp_wave_frame += '.'
+                    if 'wave_center' in ret_emi_F:
+                        print_name_CV[comp_name][ret_name] += f" at {tmp_wave_frame} {ret_emi_F['wave_center']} {tmp_wave_unit}"
+                    else:
+                        print_name_CV[comp_name][ret_name] += f" at {tmp_wave_frame} {ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} {tmp_wave_unit}"
 
-                tmp_dict['wave_unit'] = tmp_dict['wave_unit'].replace('angstrom', 'Å').replace('Angstrom', 'Å').replace('um', 'µm').replace('micron', 'µm')
-                if tmp_dict['wave_frame'] == 'obs' : tmp_dict['wave_frame'] += '.'
-                if 'wave_center' in tmp_dict:
-                    print_name_CV[comp_name][ret_name] += f" at {tmp_dict['wave_frame']} {tmp_dict['wave_center']} {tmp_dict['wave_unit']}"
-                else:
-                    print_name_CV[comp_name][ret_name] += f" at {tmp_dict['wave_frame']} {tmp_dict['wave_min']}-{tmp_dict['wave_max']} {tmp_dict['wave_unit']}"
         print_name_CV['sum'] = {}
         for value_name in self.output_C['sum']['value_Vl']:
             print_name_CV['sum'][value_name] = copy(print_name_CV[self.comp_name_c[0]][value_name])
@@ -848,23 +872,18 @@ class AGNFrame(object):
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                     value_names += ['alpha_lambda']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
-                    value_names += ['curvature', 'wave_turn', 'alpha_lambda1', 'alpha_lambda2', 'flux_waveturn', 'log_lamLlam_waveturn']
+                    value_names += ['curvature', 'wave_turn', 'alpha_lambda1', 'alpha_lambda2', 'log_Flam_waveturn']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     value_names += ['log_tem', 'log_intLum_bol']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     value_names += ['log_e_tem', 'log_tau_be', 'log_intLum_bol']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
-                    value_names += ['log_intLum_uv', 'log_intLum_opt']
-                # if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw', 'blackbody']:
-                #     value_names += ['log_lamLlam_3000', 'log_lamLlam_5100']
-                #     if self.cframe.mod_info_I['w_norm'] not in [3000,5100]: value_names += ['log_lamLlam_wavenorm']
+                    if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None:
+                        value_names += ['log_intLum_uv', 'log_intLum_opt']
             elif self.cframe.num_comps >= 2: # print sum only if using >= 2 comps
                 print_log(f"# Best-fit properties of the sum of all AGN components.", log)
             else: 
                 continue
-            # value_names += ['flux_3000', 'flux_5100']
-            # if self.cframe.mod_info_I['w_norm'] not in [3000,5100]: value_names += ['flux_wavenorm']
-
             value_names += [value_name for value_name in [*value_Vl] if value_name not in value_names]
 
             if i_comp < self.cframe.num_comps:

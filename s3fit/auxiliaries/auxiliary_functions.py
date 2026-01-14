@@ -3,7 +3,8 @@
 # Repository: https://github.com/xychcz/S3Fit
 # Contact: s3fit@xychen.me
 
-import time
+import time, colorsys
+from copy import deepcopy as copy
 import numpy as np
 np.set_printoptions(linewidth=10000)
 import scipy.sparse as sparse
@@ -12,7 +13,6 @@ from scipy.interpolate import interp1d
 import astropy.units as u
 import astropy.constants as const
 import matplotlib.colors as mcolors
-import colorsys
 
 #####################################################################
 ######################### print functions ###########################
@@ -124,18 +124,19 @@ def wave_air_to_vac(wave_air, extrapolate=True):
 #####################################################################
 ###################### Photometric conversion #######################
 
-def Fnu_over_Flam(wave_w, trans_bw=None, Flam_unit='erg s-1 cm-2 angstrom-1', Fnu_unit='mJy'):
-    unitFlam = 1.0 * u.Unit(Flam_unit)
+def fnu_over_flam(input_wave_w, trans_bw=None, wave_unit='angstrom', flam_unit='erg s-1 cm-2 angstrom-1', fnu_unit='mJy'):
+    wave_w = copy(input_wave_w) * u.Unit(wave_unit).to('angstrom') # convert wave to angstrom
+    unitFlam = 1.0 * u.Unit(flam_unit)
     rDnuDlam = const.c / (wave_w * u.angstrom)**2
     if trans_bw is None:
         # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
-        return (unitFlam / rDnuDlam).to(Fnu_unit).value
+        return (unitFlam / rDnuDlam).to(fnu_unit).value
     else:
         # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
         unitFint = unitFlam * (1.0 * u.angstrom)
         # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
         width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
-        return (unitFint / width_nu).to(Fnu_unit).value
+        return (unitFint / width_nu).to(fnu_unit).value
     
 def spec_to_phot(wave_w, spec_mw, trans_bw):
     # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)
