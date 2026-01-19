@@ -20,7 +20,7 @@ from ..auxiliaries.extinct_laws import ExtLaw
 class StellarFrame(object):
     def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, R_inst_rw=None, 
-                 w_min=None, w_max=None, 
+                 wave_min=None, wave_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
@@ -29,8 +29,8 @@ class StellarFrame(object):
         self.config = config
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
-        self.w_min = w_min
-        self.w_max = w_max
+        self.wave_min = wave_min
+        self.wave_max = wave_max
         self.Rratio_mod = Rratio_mod # resolution ratio of model / instrument
         self.dw_fwhm_dsp = dw_fwhm_dsp # model convolving width for downsampling (rest frame)
         self.dw_pix_inst = dw_pix_inst # data sampling width (obs frame)
@@ -41,6 +41,10 @@ class StellarFrame(object):
         self.comp_name_c = self.cframe.comp_name_c
         self.num_comps = self.cframe.num_comps
         self.check_config()
+
+        # check if the requested range (wave_min,wave_max) is within the defined range
+        self.wave_min_def, self.wave_max_def = 912, 1e5 # angstrom
+        self.enable = (self.wave_max > self.wave_min_def) & (self.wave_min < self.wave_max_def)
 
         self.sfh_name_c = np.array([info['sfh_name'] for info in self.cframe.comp_info_cI])
         if self.num_comps > 1:
@@ -66,25 +70,29 @@ class StellarFrame(object):
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             i_par_log_csp_age = self.cframe.par_index_cP[i_comp]['log_csp_age']
             age_universe = cosmo.age(self.v0_redshift).to(self.age_unit).value
+            age_min_allowed = self.age_e[self.mask_lite_allowed(if_ssp=True, i_comp=i_comp)].min()
             if self.cframe.par_max_cp[i_comp][i_par_log_csp_age] > np.log10(age_universe):
                 self.cframe.par_max_cp[i_comp][i_par_log_csp_age] = np.log10(age_universe)
                 print_log(f"[WARNING]: Upper bound of log_csp_age of the component '{comp_name}' "
                     +f" is reset to the universe age {age_universe:.3f} {self.age_unit} at z = {self.v0_redshift}.", self.log_message)
             if self.cframe.par_min_cp[i_comp][i_par_log_csp_age] > np.log10(age_universe):
-                self.cframe.par_min_cp[i_comp][i_par_log_csp_age] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
+                self.cframe.par_min_cp[i_comp][i_par_log_csp_age] = np.log10(age_min_allowed*1.0001) # take a factor of 1.0001 to avoid (csp_age-ssp_age) < 0
                 print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{comp_name}' "
                     +f" exceeds the universe age {age_universe:.3f} {self.age_unit} at z = {self.v0_redshift}, "
-                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} {self.age_unit}.", self.log_message)
-            if self.cframe.par_min_cp[i_comp][i_par_log_csp_age] < np.log10(self.age_e[self.mask_lite_allowed()].min()):
-                self.cframe.par_min_cp[i_comp][i_par_log_csp_age] = np.log10(self.age_e[self.mask_lite_allowed()].min()*1.0001)
+                    +f" is reset to the available minimum SSP age {age_min_allowed:.3f} {self.age_unit}.", self.log_message)
+            if self.cframe.par_min_cp[i_comp][i_par_log_csp_age] < np.log10(age_min_allowed):
+                self.cframe.par_min_cp[i_comp][i_par_log_csp_age] = np.log10(age_min_allowed*1.0001)
                 print_log(f"[WARNING]: Lower bound of log_csp_age of the component '{comp_name}' "
-                    +f" is reset to the available minimum SSP age {self.age_e[self.mask_lite_allowed()].min():.3f} {self.age_unit}.", self.log_message) 
+                    +f" is reset to the available minimum SSP age {age_min_allowed:.3f} {self.age_unit}.", self.log_message) 
 
         if self.verbose:
-            print_log(f"SSP models number: {self.mask_lite_allowed().sum()} used in a total of {self.num_models}", self.log_message)
-            print_log(f"SSP models age range ({self.age_unit}): from {self.age_e[self.mask_lite_allowed()].min():.3f} to {self.age_e[self.mask_lite_allowed()].max():.3f}", self.log_message)
-            print_log(f"SSP models metallicity (Z/H): {np.unique(self.met_e[self.mask_lite_allowed()])}", self.log_message) 
-            print_log(f"SFH functions: {self.sfh_name_c} for {self.cframe.comp_name_c} components, respectively.", self.log_message)
+            for (i_comp, comp_name) in enumerate(self.comp_name_c):
+                mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=i_comp)
+                print_log(f"Component ({i_comp}) '{comp_name}':", self.log_message)
+                print_log(f"    SSP models number: {mask_lite_allowed_e.sum()} used in a total of {self.num_templates}", self.log_message)
+                print_log(f"    SSP models age range ({self.age_unit}): from {self.age_e[mask_lite_allowed_e].min():.3f} to {self.age_e[mask_lite_allowed_e].max():.3f}", self.log_message)
+                print_log(f"    SSP models metallicity (Z/H): {np.unique(self.met_e[mask_lite_allowed_e])}", self.log_message) 
+                print_log(f"    CSP SFH function: '{self.sfh_name_c[i_comp]}'", self.log_message)
 
         # set plot styles
         self.plot_style_C = {}
@@ -121,7 +129,7 @@ class StellarFrame(object):
 
         # set inherited or default info if not specified in config
         # model-level info
-        # self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
+        # self.cframe.retrieve_inherited_info( 'wave_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
         # self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
 
         # component-level info
@@ -172,7 +180,7 @@ class StellarFrame(object):
                     ret_emi_F['value_state'] = 'intrinsic'
                 elif casefold(ret_emi_F['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
                     ret_emi_F['value_state'] = 'observed'
-                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust']:
+                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust absorbed', 'dust-absorbed']:
                     ret_emi_F['value_state'] = 'absorbed'
                 self.cframe.comp_info_cI[i_comp]['ret_emission_set'][i_ret] = ret_emi_F
 
@@ -222,7 +230,7 @@ class StellarFrame(object):
                     ret_sfr_F['value_state'] = 'intrinsic'
                 elif casefold(ret_sfr_F['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
                     ret_sfr_F['value_state'] = 'observed'
-                elif casefold(ret_sfr_F['value_state']) in ['absorbed', 'dust']:
+                elif casefold(ret_sfr_F['value_state']) in ['absorbed', 'dust absorbed', 'dust-absorbed']:
                     ret_sfr_F['value_state'] = 'absorbed'
                 self.cframe.comp_info_cI[i_comp]['ret_SFR_set'][i_ret] = ret_sfr_F
 
@@ -269,14 +277,14 @@ class StellarFrame(object):
         # template resolution step of 0.1 angstrom, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
         self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
-        self.num_models = self.init_lum_ew.shape[0]
-        self.mass_e = np.ones(self.num_models, dtype='float')
-        self.remain_massfrac_e = ssp_lib[2].data
-        # leave remain_massfrac_e = 1 if not provided. 
+        self.num_templates = self.init_lum_ew.shape[0]
+        self.mass_e = np.ones(self.num_templates, dtype='float') # i.e., self.init_norm_e, initially normalized by mass
+        self.mass_unit = 'M_sun' # i.e., self.init_norm_unit
+        self.remain_massfrac_e = ssp_lib[2].data # leave remain_massfrac_e = 1 if not provided. 
 
-        self.age_e = np.zeros(self.num_models, dtype='float')
-        self.met_e = np.zeros(self.num_models, dtype='float')
-        for i_e in range(self.num_models):
+        self.age_e = np.zeros(self.num_templates, dtype='float')
+        self.met_e = np.zeros(self.num_templates, dtype='float')
+        for i_e in range(self.num_templates):
             met, age = self.header[f'NAME{i_e}'].split('.dat')[0].split('_')[1:3]
             self.age_e[i_e] = 10.0**float(age.replace('logt',''))
             self.met_e[i_e] = float(met.replace('Z',''))
@@ -292,27 +300,18 @@ class StellarFrame(object):
         self.init_wave_unit = 'angstrom'
         if self.init_wave_medium == 'air': self.init_wave_w = wave_air_to_vac(self.init_wave_w)
 
-        ##############################################################
-
         # convert the normalization from per unit mass to per unit L5500
-        self.init_norm_e = copy(self.mass_e)
-        self.init_norm_unit = 'M_sun'
-        # calculate the mean L5500 
-        self.w_norm, self.dw_norm = 5500, 10
-        mask_5500_w = np.abs(self.init_wave_w - self.w_norm) < self.dw_norm
+        self.wave_norm, self.dw_norm = 5500, 10
+        mask_5500_w = np.abs(self.init_wave_w - self.wave_norm) < self.dw_norm
         scale_lum_e = np.mean(self.init_lum_ew[:, mask_5500_w], axis=1)
-        # scale models by scale_lum_e * init_lum_unit
+        scale_lum_unit = copy(self.init_lum_unit)
+        # scale models by scale_lum_e * scale_lum_unit
         self.init_lum_ew /= scale_lum_e[:, None]
-        self.init_norm_e /= scale_lum_e
-        self.init_norm_unit = str(u.Unit(self.init_norm_unit) / u.Unit(self.init_lum_unit)) # update before init_lum_unit
-        self.init_lum_unit  = str(u.dimensionless_unscaled) # the scaled model is in dimensionless unit
+        self.init_lum_unit = str(u.Unit(self.init_lum_unit) / u.Unit(scale_lum_unit)) # dimensionless unscaled
+        self.mass_e /= scale_lum_e
+        self.mass_unit = str(u.Unit(self.mass_unit) / u.Unit(scale_lum_unit))
 
         ##############################################################
-
-        # calculate mass-to-lum ratio, which is required for calculation of SFH
-        # here take lum = L5500 to match the above scale_lum_e, then mtol equals to the updated init_norm_e
-        self.mtol_e = self.init_norm_e
-        self.mtol_unit = self.init_norm_unit
 
         self.age_a, index_ua_a = np.unique(self.age_e, return_inverse=True)
         self.met_m, index_um_m = np.unique(self.met_e, return_inverse=True)
@@ -323,13 +322,13 @@ class StellarFrame(object):
         self.duration_e = duration_a[index_ua_a] # np.tile(duration_a, (self.num_mets,1)).flatten()
 
         # assume constant SFH across adjacent age bins, then mtol can be converted to sfr-to-lum (L5500) ratio:
-        self.sfrtol_e = self.mtol_e / (self.duration_e * u.Unit(self.age_unit).to('yr'))
-        self.sfrtol_unit = str(u.Unit(self.mtol_unit) / u.Unit('yr')) # update before init_lum_unit
+        self.sfr_e = self.mass_e / (self.duration_e * u.Unit(self.age_unit).to('yr'))
+        self.sfr_unit = str(u.Unit(self.mass_unit) / u.Unit('yr')) 
 
         ##############################################################
 
         # select model spectra in given wavelength range
-        mask_select_w = (self.init_wave_w >= self.w_min) & (self.init_wave_w <= self.w_max)
+        mask_select_w = (self.init_wave_w >= self.wave_min) & (self.init_wave_w <= self.wave_max)
         orig_wave_w = self.init_wave_w[   mask_select_w]
         orig_lum_ew = self.init_lum_ew[:, mask_select_w]
 
@@ -387,13 +386,100 @@ class StellarFrame(object):
         self.ext_index_e = np.dot(d_logw_w, d_logf_ew.T) / np.dot(d_logw_w, d_logw_w)
         self.ext_ratio_e = 10.0**(mn_logf_e - self.ext_index_e * mn_logw)
 
-        if self.w_max > self.init_wave_max:
+        if self.wave_max > self.init_wave_max:
             ext_wave_logbin = 0.02
-            ext_wave_num = int(np.round(np.log10(self.w_max/self.init_wave_max) / ext_wave_logbin))
-            ext_wave_w = np.logspace(np.log10(self.init_wave_max+1), np.log10(self.w_max), ext_wave_num)
+            ext_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_wave_max) / ext_wave_logbin))
+            ext_wave_w = np.logspace(np.log10(self.init_wave_max), np.log10(self.wave_max), ext_wave_num)[1:]
             ext_lum_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
             self.orig_wave_w = np.hstack((self.orig_wave_w, ext_wave_w))
             self.orig_lum_ew = np.hstack((self.orig_lum_ew, ext_lum_ew))
+
+    ##########################################################################
+
+    def mask_lite_allowed(self, i_comp=None, if_ssp=True, if_csp=False):
+        if if_csp: if_ssp = False
+
+        if if_ssp: 
+            # mask for all SSP elements, for an individual comp with i_comp
+            log_age_min, log_age_max = self.cframe.comp_info_cI[i_comp]['log_ssp_age_min'], self.cframe.comp_info_cI[i_comp]['log_ssp_age_max']
+            age_min = self.age_e.min() if log_age_min is None else 10.0**log_age_min
+            age_max = cosmo.age(self.v0_redshift).value if log_age_max in ['universe', 'Universe'] else 10.0**log_age_max
+            mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
+            met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
+            if met_sel != 'all':
+                if met_sel in ['solar', 'Solar']:
+                    mask_lite_ssp_e &= self.met_e == 0.02
+                else:
+                    mask_lite_ssp_e &= np.isin(self.met_e, met_sel)
+            return mask_lite_ssp_e
+
+        else: 
+            # mask for all CSP elements, loop for all comps
+            mask_lite_csp_e = np.array([], dtype='bool')
+            for i_comp in range(self.num_comps):
+                tmp_mask_e = np.ones(self.num_mets, dtype='bool') 
+                met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
+                if met_sel != 'all':
+                    if met_sel == 'solar':
+                        tmp_mask_e &= np.unique(self.met_e) == 0.02
+                    else:
+                        tmp_mask_e &= np.isin(np.unique(self.met_e), met_sel)
+                mask_lite_csp_e = np.hstack((mask_lite_csp_e, tmp_mask_e))
+            return mask_lite_csp_e
+
+    def mask_lite_with_num_mods(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
+        if self.sfh_name_c[0] == 'nonparametric':
+            # only used in nonparametic, single component
+            mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
+
+            ages_full, num_ages_full = np.unique(self.age_e), len(np.unique(self.age_e))
+            ages_allowed = np.unique(self.age_e[ mask_lite_allowed_e ])
+            ages_lite = np.logspace(np.log10(ages_allowed.min()), np.log10(ages_allowed.max()), num=num_ages_lite)
+            ages_lite *= 10.0**((np.random.rand(num_ages_lite)-0.5)*np.log10(ages_lite[1]/ages_lite[0]))
+            # request log-even ages with random shift
+            ind_ages_lite = [np.where(np.abs(ages_full-a)==np.min(np.abs(ages_full-a)))[0][0] for a in ages_lite]
+            # np.round(np.linspace(0, num_ages_full-1, num_ages_lite)).astype(int)
+            ind_mets_lite = [2,1,3,0][:num_mets_lite] # Z = 0.02 (solar), 0.008, 0.05, 0.004, select with this order
+            ind_ssp_lite = np.array([ind_met*num_ages_full+np.arange(num_ages_full)[ind_age] 
+                                     for ind_met in ind_mets_lite for ind_age in ind_ages_lite])
+            mask_lite_ssp_e = np.zeros_like(self.age_e, dtype='bool')
+            mask_lite_ssp_e[ind_ssp_lite] = True
+            mask_lite_ssp_e &= mask_lite_allowed_e
+            if verbose: print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
+            return mask_lite_ssp_e
+
+        else:
+            mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
+            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message) 
+            return mask_lite_csp_e
+
+    def mask_lite_with_coeffs(self, coeffs=None, mask=None, num_mods_min=32, verbose=True):
+        if self.sfh_name_c[0] == 'nonparametric':
+            # only used in nonparametic, single component
+            mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
+
+            coeffs_full = np.zeros(self.num_templates)
+            coeffs_full[mask if mask is not None else mask_lite_allowed_e] = coeffs
+            coeffs_sort = np.sort(coeffs_full)
+            # coeffs_min = coeffs_sort[np.cumsum(coeffs_sort)/np.sum(coeffs_sort) < 0.01].max() 
+            # # i.e., keep coeffs with sum > 99%
+            # mask_ssp_lite = coeffs_full >= np.minimum(coeffs_min, coeffs_sort[-num_mods_min]) 
+            # # keep minimum num of models
+            # mask_ssp_lite &= mask_lite_allowed_e
+            # print('Number of used SSP models:', mask_ssp_lite.sum()) #, np.unique(self.age_e[mask_ssp_lite]))
+            # print('Ages with coeffs.sum > 99%:', np.unique(self.age_e[coeffs_full >= coeffs_min]))
+            mask_lite_ssp_e = coeffs_full >= coeffs_sort[-num_mods_min]
+            mask_lite_ssp_e &= mask_lite_allowed_e
+            if verbose: 
+                print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
+                print_log(f'Coeffs.sum of used SSP models: {1-np.cumsum(coeffs_sort)[-num_mods_min]/np.sum(coeffs_sort)}', self.log_message) 
+                print_log(f'Ages of dominant SSP models: {np.unique(self.age_e[coeffs_full >= coeffs_sort[-5]])}', self.log_message) 
+            return mask_lite_ssp_e
+
+        else:
+            mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
+            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message)             
+            return mask_lite_csp_e
 
     ##########################################################################
 
@@ -429,10 +515,10 @@ class StellarFrame(object):
         # or directly add new SFH function here. 
         ##########################################################################
 
-        sfh_func_e[~self.mask_lite_allowed(i_comp)] = 0 # do not use ssp out of allowed range
+        sfh_func_e[~self.mask_lite_allowed(if_ssp=True, i_comp=i_comp)] = 0 # do not use ssp out of allowed range
         sfh_func_e[evo_time_e < 0] = 0 # do not use ssp older than csp_age 
 
-        lum_weight_e = sfh_func_e / self.sfrtol_e # convert SFH (in unit of Msun/yr) to L5500
+        lum_weight_e = sfh_func_e / self.sfr_e # convert SFH (in unit of Msun/yr) to L5500 (sfr_e is normalzied by L5500)
         if any(lum_weight_e > 0): lum_weight_e /= lum_weight_e.sum() # convert to dimensionless lum-weight
         # therefore the csp spectrum, (init_lum_ew * lum_weight_e).sum(axis=0), is still normalized at unit L5500
         # ssp_coeff_e = (csp_coeff * lum_weight_e) for direct usage of init_lum_ew (i.e., nonparametic SFH).
@@ -464,7 +550,7 @@ class StellarFrame(object):
             orig_wave_lib_w  = np.hstack((orig_wave_lib_w [  orig_wave_lib_w <= self.init_wave_max], self.init_wave_w[  self.init_wave_w > self.init_wave_max]))
             # extrapolate at longer wavelength end
             if max(obs_wave_w)/(1+self.v0_redshift) > max(orig_wave_lib_w):
-                ext_wave_w  = np.logspace(np.log10(max(orig_wave_lib_w)+10), np.log10(max(obs_wave_w)/(1+self.v0_redshift)+1000), 50)
+                ext_wave_w  = np.logspace(np.log10(max(orig_wave_lib_w)), np.log10(max(obs_wave_w)/(1+self.v0_redshift)+1000), 1+50)[1:]
                 ext_flux_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
                 orig_wave_lib_w  = np.hstack((orig_wave_lib_w,  ext_wave_w ))
                 orig_flux_lib_ew = np.hstack((orig_flux_lib_ew, ext_flux_ew))
@@ -531,85 +617,6 @@ class StellarFrame(object):
 
         return obs_flux_mcomp_ew
     
-    def mask_lite_allowed(self, i_comp=0, csp=False):
-        if not csp: 
-            # mask for all SSP elements, for an individual comp
-            log_age_min, log_age_max = self.cframe.comp_info_cI[i_comp]['log_ssp_age_min'], self.cframe.comp_info_cI[i_comp]['log_ssp_age_max']
-            age_min = self.age_e.min() if log_age_min is None else 10.0**log_age_min
-            age_max = cosmo.age(self.v0_redshift).value if log_age_max in ['universe', 'Universe'] else 10.0**log_age_max
-            mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
-            met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
-            if met_sel != 'all':
-                if met_sel in ['solar', 'Solar']:
-                    mask_lite_ssp_e &= self.met_e == 0.02
-                else:
-                    mask_lite_ssp_e &= np.isin(self.met_e, met_sel)
-            return mask_lite_ssp_e
-
-        else: 
-            # mask for all CSP elements, loop for all comps
-            mask_lite_csp_e = np.array([], dtype='bool')
-            for i_comp in range(self.num_comps):
-                tmp_mask_e = np.ones(self.num_mets, dtype='bool') 
-                met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
-                if met_sel != 'all':
-                    if met_sel == 'solar':
-                        tmp_mask_e &= np.unique(self.met_e) == 0.02
-                    else:
-                        tmp_mask_e &= np.isin(np.unique(self.met_e), met_sel)
-                mask_lite_csp_e = np.hstack((mask_lite_csp_e, tmp_mask_e))
-            return mask_lite_csp_e
-
-    def mask_lite_with_num_mods(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
-        if self.sfh_name_c[0] == 'nonparametric':
-            # only used in nonparametic, single component
-            ages_full, num_ages_full = np.unique(self.age_e), len(np.unique(self.age_e))
-            ages_allowed = np.unique(self.age_e[self.mask_lite_allowed()])
-            ages_lite = np.logspace(np.log10(ages_allowed.min()), np.log10(ages_allowed.max()), num=num_ages_lite)
-            ages_lite *= 10.0**((np.random.rand(num_ages_lite)-0.5)*np.log10(ages_lite[1]/ages_lite[0]))
-            # request log-even ages with random shift
-            ind_ages_lite = [np.where(np.abs(ages_full-a)==np.min(np.abs(ages_full-a)))[0][0] for a in ages_lite]
-            # np.round(np.linspace(0, num_ages_full-1, num_ages_lite)).astype(int)
-            ind_mets_lite = [2,1,3,0][:num_mets_lite] # Z = 0.02 (solar), 0.008, 0.05, 0.004, select with this order
-            ind_ssp_lite = np.array([ind_met*num_ages_full+np.arange(num_ages_full)[ind_age] 
-                                     for ind_met in ind_mets_lite for ind_age in ind_ages_lite])
-            mask_lite_ssp_e = np.zeros_like(self.age_e, dtype='bool')
-            mask_lite_ssp_e[ind_ssp_lite] = True
-            mask_lite_ssp_e &= self.mask_lite_allowed()
-            if verbose: print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
-            return mask_lite_ssp_e
-
-        else:
-            mask_lite_csp_e = self.mask_lite_allowed(csp=True)
-            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message) 
-            return mask_lite_csp_e
-
-    def mask_lite_with_coeffs(self, coeffs=None, mask=None, num_mods_min=32, verbose=True):
-        if self.sfh_name_c[0] == 'nonparametric':
-            # only used in nonparametic, single component
-            coeffs_full = np.zeros(self.num_models)
-            coeffs_full[mask if mask is not None else self.mask_lite_allowed()] = coeffs
-            coeffs_sort = np.sort(coeffs_full)
-            # coeffs_min = coeffs_sort[np.cumsum(coeffs_sort)/np.sum(coeffs_sort) < 0.01].max() 
-            # # i.e., keep coeffs with sum > 99%
-            # mask_ssp_lite = coeffs_full >= np.minimum(coeffs_min, coeffs_sort[-num_mods_min]) 
-            # # keep minimum num of models
-            # mask_ssp_lite &= self.mask_lite_allowed()
-            # print('Number of used SSP models:', mask_ssp_lite.sum()) #, np.unique(self.age_e[mask_ssp_lite]))
-            # print('Ages with coeffs.sum > 99%:', np.unique(self.age_e[coeffs_full >= coeffs_min]))
-            mask_lite_ssp_e = coeffs_full >= coeffs_sort[-num_mods_min]
-            mask_lite_ssp_e &= self.mask_lite_allowed()
-            if verbose: 
-                print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
-                print_log(f'Coeffs.sum of used SSP models: {1-np.cumsum(coeffs_sort)[-num_mods_min]/np.sum(coeffs_sort)}', self.log_message) 
-                print_log(f'Ages of dominant SSP models: {np.unique(self.age_e[coeffs_full >= coeffs_sort[-5]])}', self.log_message) 
-            return mask_lite_ssp_e
-
-        else:
-            mask_lite_csp_e = self.mask_lite_allowed(csp=True)
-            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message)             
-            return mask_lite_csp_e
-
     ##########################################################################
     ########################## Output functions ##############################
 
@@ -717,9 +724,8 @@ class StellarFrame(object):
                 output_C[comp_name]['value_Vl']['sigma'][i_loop] = fwhm/np.sqrt(np.log(256))
 
                 lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
-                Lum_5500_e = coeff_e * u.Unit(self.fframe.spec_flux_unit) * lum_area # intrinsic L5500, with unit of (spec_flux_unit * cm2)
-                lamLlam_5500_e = (Lum_5500_e * self.w_norm * u.angstrom).to('L_sun').value
-                Mass_formed_e = (Lum_5500_e * self.mtol_e * u.Unit(self.mtol_unit)).to('M_sun').value
+                lamLlam_5500_e = (coeff_e * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.wave_norm * u.angstrom            ).to('L_sun').value
+                Mass_formed_e  = (coeff_e * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.mass_e    * u.Unit(self.mass_unit)).to('M_sun').value
                 Mass_remaining_e = Mass_formed_e * self.remain_massfrac_e
 
                 output_C[comp_name]['value_Vl']['log_lamLlam_5500'][i_loop]   = np.log10(lamLlam_5500_e.sum())
@@ -888,7 +894,7 @@ class StellarFrame(object):
             print_name_CV[comp_name]['redshift'] = 'Redshift (from continuum absorptions)'
             print_name_CV[comp_name]['log_Mass_formed'] = 'Stellar mass (total mass formed during lifetime) (log M☉)'
             print_name_CV[comp_name]['log_Mass_remaining'] = 'Stellar mass (currently remaining mass) (log M☉)'
-            print_name_CV[comp_name]['log_MtoL'] = f"Mass-to-light (λL{self.w_norm}) ratio (log M☉/L☉)"
+            print_name_CV[comp_name]['log_MtoL'] = f"Mass-to-light (λL{self.wave_norm}) ratio (log M☉/L☉)"
             print_name_CV[comp_name]['log_Age_Lweight'] = f"Luminosity-weight age (log {self.age_unit})"
             print_name_CV[comp_name]['log_Age_Mweight'] = f"Mass-weight age (log {self.age_unit})"
             print_name_CV[comp_name]['log_Z_Lweight'] = 'Luminosity-weight metallicity (log Z)'
@@ -995,7 +1001,7 @@ class StellarFrame(object):
         i_comp = 0 # only enable one comp if nonparametric SFH is used
         if self.sfh_name_c[i_comp] == 'nonparametric':
             print_log('# Best-fit single stellar populations (SSP) with nonparametric SFH', log)
-            cols = f"ID,Age ({self.age_unit}),Metallicity,Coeff.mean,Coeff.rms,log(M☉/λL{self.w_norm})"
+            cols = f"ID,Age ({self.age_unit}),Metallicity,Coeff.mean,Coeff.rms,log(M☉/λL{self.wave_norm})"
             fmt_cols = '| {0:^4} | {1:^10} | {2:^6} | {3:^6} | {4:^9} | {5:^8} |'
             fmt_numbers = '| {:=04d} |   {:=6.4f}   |    {:=6.4f}   |   {:=6.4f}   |   {:=6.4f}  |    {:=6.4f}    |'
             cols_split = cols.split(',')
@@ -1004,9 +1010,10 @@ class StellarFrame(object):
             print_log(tbl_border, log)
             print_log(tbl_title, log)
             print_log(tbl_border, log)
-            for i_e in range(self.num_models):
-                coeff_norm_mn_e  = self.output_C[self.cframe.comp_name_c[i_comp]]['coeff_norm_le'][mask_l].mean(axis=0)
-                coeff_norm_std_e = self.output_C[self.cframe.comp_name_c[i_comp]]['coeff_norm_le'].std(axis=0)
+            coeff_norm_mn_e  = self.output_C[self.cframe.comp_name_c[i_comp]]['coeff_norm_le'][mask_l].mean(axis=0)
+            coeff_norm_std_e = self.output_C[self.cframe.comp_name_c[i_comp]]['coeff_norm_le'].std(axis=0)
+            mtol_e = ((self.mass_e * u.Unit(self.mass_unit)) / (self.wave_norm * u.angstrom)).to('M_sun L_sun-1').value
+            for i_e in range(self.num_templates):
                 if coeff_norm_mn_e[i_e] < 0.01: continue
                 tbl_row = []
                 tbl_row.append(i_e)
@@ -1014,10 +1021,10 @@ class StellarFrame(object):
                 tbl_row.append(self.met_e[i_e])
                 tbl_row.append(coeff_norm_mn_e[i_e]) 
                 tbl_row.append(coeff_norm_std_e[i_e])
-                tbl_row.append(np.log10(self.mtol_e[i_e]))
+                tbl_row.append(np.log10(mtol_e[i_e]))
                 print_log(fmt_numbers.format(*tbl_row), log)
             print_log(tbl_border, log)
-            print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest {self.w_norm} Å.", log)
+            print_log(f"[Note] Coeff is the normalized fraction of the intrinsic flux at rest {self.wave_norm} Å.", log)
             print_log(f"[Note] only SSPs with Coeff over 1% are listed.", log)
             print_log('', log)
 
@@ -1050,8 +1057,7 @@ class StellarFrame(object):
                 rev_redshift = (1+self.v0_redshift) * (1+voff/299792.458) - 1
 
                 lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
-                Lum_5500_e = coeff_e * u.Unit(self.fframe.spec_flux_unit) * lum_area # intrinsic L5500, with unit of (spec_flux_unit * cm2)
-                sfr_e = (Lum_5500_e * self.sfrtol_e * u.Unit(self.sfrtol_unit)).to('M_sun yr-1').value
+                sfr_e = (coeff_e * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.sfr_e * u.Unit(self.sfr_unit)).to('M_sun yr-1').value
                 output_sfh_lcza[i_loop,i_comp,:,:] = sfr_e.reshape(self.num_mets, self.num_ages)
 
         if num_bins is not None:

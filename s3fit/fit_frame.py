@@ -65,7 +65,7 @@ class FitFrame(object):
                  spec_wave_unit='angstrom', spec_flux_unit='erg s-1 cm-2 angstrom-1', 
                  # photometirc data
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
-                 sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, phot_trans_rsmp=10, 
+                 sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, phot_trans_rsmp=None, 
                  # connection between spectral and photometric data
                  phot_calib_b=None, inst_calib_ratio=0.1, if_rev_inst_calib_ratio=True, inst_calib_smooth=1e4, 
                  if_keep_invalid=False, 
@@ -436,10 +436,10 @@ class FitFrame(object):
         # set fitting wavelength range (rest frame) with tolerance: voff=[-1000,1000] km s-1, fwhm max = 1000 km s-1
         voff_tol = 1500; fwhm_tol = 1500
         dw_pad_per_w = 4 * fwhm_tol/np.sqrt(np.log(256))/299792.458 # convolving kernel pad per wavelength (+/-4sigma)
-        self.spec_wmin = self.spec['wave_w'].min() / (1+self.v0_redshift) / (1+voff_tol/299792.458) * (1-dw_pad_per_w) #- 100
-        self.spec_wmax = self.spec['wave_w'].max() / (1+self.v0_redshift) / (1-voff_tol/299792.458) * (1+dw_pad_per_w) #+ 100
-        self.spec_wmin = np.maximum(self.spec_wmin, 912) # set lower limit of wavelength to 912A
-        print_log(f"Spectral fitting will be performed in wavelength range (rest frame, Å): from {self.spec_wmin:.3f} to {self.spec_wmax:.3f}", self.log_message, verbose)
+        self.spec_wmin_rest = self.spec['wave_w'].min() / (1+self.v0_redshift) / (1+voff_tol/299792.458) * (1-dw_pad_per_w) #- 100
+        self.spec_wmax_rest = self.spec['wave_w'].max() / (1+self.v0_redshift) / (1-voff_tol/299792.458) * (1+dw_pad_per_w) #+ 100
+        self.spec_wmin_rest = np.maximum(self.spec_wmin_rest, 912) # set lower limit of wavelength to 912A
+        print_log(f"Spectral fitting will be performed in wavelength range (rest frame, Å): from {self.spec_wmin_rest:.3f} to {self.spec_wmax_rest:.3f}", self.log_message, verbose)
         print_log(f"[Note] The wavelength range is extended for tolerances of redshift of {self.v0_redshift}+-{voff_tol/299792.458:.4f} (+-{voff_tol} km s-1) "+
                   f"and convolution/dispersion FWHM of max {fwhm_tol} km s-1.", self.log_message, verbose)
 
@@ -475,9 +475,9 @@ class FitFrame(object):
             self.sed = {'wave_w': self.pframe.wave_w} 
             self.num_sed_wave = len(self.pframe.wave_w)
             # set fitting wavelength range (rest frame)
-            self.sed_wmin = self.pframe.wave_w.min() / (1+self.v0_redshift)
-            self.sed_wmax = self.pframe.wave_w.max() / (1+self.v0_redshift)
-            print_log(f"SED fitting is performed in wavelength range (rest frame, Å): from {self.sed_wmin:.3f} to {self.sed_wmax:.3f}", self.log_message, verbose) 
+            self.sed_wmin_rest = self.pframe.wave_w.min() / (1+self.v0_redshift)
+            self.sed_wmax_rest = self.pframe.wave_w.max() / (1+self.v0_redshift)
+            print_log(f"SED fitting is performed in wavelength range (rest frame, Å): from {self.sed_wmin_rest:.3f} to {self.sed_wmax_rest:.3f}", self.log_message, verbose) 
 
             if self.phot_calib_b is not None:
                 # corrent spectrum based on selected photometeic points
@@ -522,17 +522,15 @@ class FitFrame(object):
                 from .model_frames.stellar_frame import StellarFrame
                 self.mod_dict_M[mod_name]['spec_mod'] = StellarFrame(fframe=self, mod_name=mod_name, config=self.mod_reg_M[mod_name], 
                                                                      v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                                     w_min=self.spec_wmin, w_max=self.spec_wmax, 
+                                                                     wave_min=self.spec_wmin_rest, wave_max=self.spec_wmax_rest, 
                                                                      Rratio_mod=self.root_info_I['model_R_ratio'], dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                      log_message=self.log_message) 
-                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e5)
                 if self.have_phot:
                     self.mod_dict_M[mod_name]['sed_mod'] = StellarFrame(fframe=self, mod_name=mod_name, config=self.mod_reg_M[mod_name], 
                                                                         v0_redshift=self.v0_redshift, R_inst_rw=None, 
-                                                                        w_min=self.sed_wmin, w_max=self.sed_wmax, 
+                                                                        wave_min=self.sed_wmin_rest, wave_max=self.sed_wmax_rest, 
                                                                         dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 angstrom
                                                                         verbose=False) 
-                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e5)
             ############################################################
             mod_term = 'agn'
             keywords = ['agn', 'quasar', 'qso', 'seyfert', 'basic', 'simple', 'fundamental']
@@ -544,18 +542,16 @@ class FitFrame(object):
                 self.mod_dict_M[mod_name]['spec_mod'] = AGNFrame(mod_name=mod_name, fframe=self, 
                                                                  config=self.mod_reg_M[mod_name], 
                                                                  v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'],
-                                                                 w_min=self.spec_wmin, w_max=self.spec_wmax, 
+                                                                 wave_min=self.spec_wmin_rest, wave_max=self.spec_wmax_rest, 
                                                                  Rratio_mod=self.root_info_I['model_R_ratio'], dw_pix_inst=np.median(np.diff(self.spec['wave_w'])), 
                                                                  log_message=self.log_message) 
-                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e7)
                 if self.have_phot:
                     self.mod_dict_M[mod_name]['sed_mod'] = AGNFrame(mod_name=mod_name, fframe=self, 
                                                                     config=self.mod_reg_M[mod_name], 
                                                                     v0_redshift=self.v0_redshift, R_inst_rw=None, 
-                                                                    w_min=self.sed_wmin, w_max=self.sed_wmax,
+                                                                    wave_min=self.sed_wmin_rest, wave_max=self.sed_wmax_rest,
                                                                     dw_fwhm_dsp=4000/100, dw_pix_inst=None, # convolving with R=100 at rest 4000 angstrom
                                                                     verbose=False) 
-                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
             ############################################################
             mod_term = 'torus'
             keywords = ['torus']
@@ -567,11 +563,14 @@ class FitFrame(object):
                 self.mod_dict_M[mod_name]['spec_mod'] = TorusFrame(mod_name=mod_name, fframe=self, 
                                                                    config=self.mod_reg_M[mod_name], 
                                                                    v0_redshift=self.v0_redshift, 
-                                                                   log_message=self.log_message) 
-                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 1e4) & (self.spec_wmin < 1e7)
+                                                                   wave_min=self.spec_wmin_rest, wave_max=self.spec_wmax_rest, 
+                                                                   log_message=self.log_message)
                 if self.have_phot:
-                    self.mod_dict_M[mod_name]['sed_mod'] = self.mod_dict_M[mod_name]['spec_mod'] # just copy
-                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 1e4) & (self.sed_wmin < 1e7)
+                    self.mod_dict_M[mod_name]['sed_mod'] = TorusFrame(mod_name=mod_name, fframe=self, 
+                                                                     config=self.mod_reg_M[mod_name], 
+                                                                     v0_redshift=self.v0_redshift, 
+                                                                     wave_min=self.sed_wmin_rest, wave_max=self.sed_wmax_rest,
+                                                                     verbose=False)
             ############################################################
             mod_term = 'line'
             keywords = ['line']
@@ -583,12 +582,11 @@ class FitFrame(object):
                 self.mod_dict_M[mod_name]['spec_mod'] = LineFrame(mod_name=mod_name, fframe=self, 
                                                                   config=self.mod_reg_M[mod_name], 
                                                                   v0_redshift=self.v0_redshift, R_inst_rw=self.spec['R_inst_rw'], 
-                                                                  w_min=self.spec_wmin, w_max=self.spec_wmax, mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']], 
+                                                                  wave_min=self.spec_wmin_rest, wave_max=self.spec_wmax_rest, 
+                                                                  mask_valid_rw=[self.spec['wave_w'], self.spec['mask_valid_w']],
                                                                   log_message=self.log_message) 
-                self.mod_dict_M[mod_name]['spec_enable'] = (self.spec_wmax > 912) & (self.spec_wmin < 1e7) 
                 if self.have_phot:
                     self.mod_dict_M[mod_name]['sed_mod'] = self.mod_dict_M[mod_name]['spec_mod'] # just copy, only fit lines in spectral wavelength range
-                    self.mod_dict_M[mod_name]['sed_enable'] = (self.sed_wmax > 912) & (self.sed_wmin < 1e7)
             ############################################################
 
     def initialize_models(self):
@@ -598,28 +596,30 @@ class FitFrame(object):
 
         self.load_models()
 
+        # add short aliases to simplify the callback
+        for mod_name in self.mod_dict_M:
+            setattr(self, self.mod_dict_M[mod_name]['term'], self.mod_dict_M[mod_name]['spec_mod']) 
+            self.mod_dict_M[mod_name]['cframe']      = self.mod_dict_M[mod_name]['spec_mod'].cframe
+            self.mod_dict_M[mod_name]['num_pars']    = self.mod_dict_M[mod_name]['spec_mod'].cframe.num_pars
+            self.mod_dict_M[mod_name]['num_coeffs']  = self.mod_dict_M[mod_name]['spec_mod'].num_coeffs
+            self.mod_dict_M[mod_name]['spec_func']   = self.mod_dict_M[mod_name]['spec_mod'].create_models
+            self.mod_dict_M[mod_name]['spec_enable'] = self.mod_dict_M[mod_name]['spec_mod'].enable
+            if self.have_phot:
+                self.mod_dict_M[mod_name]['sed_func']   = self.mod_dict_M[mod_name]['sed_mod'].create_models
+                self.mod_dict_M[mod_name]['sed_enable'] = self.mod_dict_M[mod_name]['sed_mod'].enable
+        self.full_mod_type = '+'.join([*self.mod_dict_M])
+
         print_log(center_string('Model summary', 80), self.log_message)
         print_log(f"S3Fit imports these models: {[*self.mod_dict_M]}.", self.log_message)
         for mod_name in self.mod_dict_M:
             if self.have_phot:
                 if not (self.mod_dict_M[mod_name]['spec_enable'] | self.mod_dict_M[mod_name]['sed_enable']): 
-                    print_log(f"'{mod_name}' model will not be enabled in the fitting since the defined wavelength range "+
-                              f"is not covered by both of the input spectrum and photometric-SED.", self.log_message)
+                    print_log(f"'{mod_name}' model will not be enabled in the fitting since the defined wavelength range, "+
+                              f"{self.mod_dict_M[mod_name]['sed_mod'].wave_min_def:.2e}--{self.mod_dict_M[mod_name]['sed_mod'].wave_max_def:.2e} Å, is not covered by the input data.", self.log_message)
             else:
                 if not self.mod_dict_M[mod_name]['spec_enable']: 
-                    print_log(f"'{mod_name}' model will not be enabled in the spectral fitting since the defined wavelength range "+
-                              f"is not covered by the input spectrum.", self.log_message)
-
-        # add short aliases to simplify the callback
-        self.full_mod_type = '+'.join([*self.mod_dict_M])
-        for mod_name in self.mod_dict_M:
-            setattr(self, self.mod_dict_M[mod_name]['term'], self.mod_dict_M[mod_name]['spec_mod']) 
-            self.mod_dict_M[mod_name]['cframe'] = self.mod_dict_M[mod_name]['spec_mod'].cframe
-            self.mod_dict_M[mod_name]['num_pars'] = self.mod_dict_M[mod_name]['spec_mod'].cframe.num_pars
-            self.mod_dict_M[mod_name]['num_coeffs'] = self.mod_dict_M[mod_name]['spec_mod'].num_coeffs
-            self.mod_dict_M[mod_name]['spec_func'] = self.mod_dict_M[mod_name]['spec_mod'].create_models
-            if self.have_phot:
-                self.mod_dict_M[mod_name]['sed_func'] = self.mod_dict_M[mod_name]['sed_mod'].create_models
+                    print_log(f"'{mod_name}' model will not be enabled in the spectral fitting since the defined wavelength range, "+
+                              f"{self.mod_dict_M[mod_name]['spec_mod'].wave_min_def:.2e}--{self.mod_dict_M[mod_name]['spec_mod'].wave_max_def:.2e} Å, is not covered by the input data.",self.log_message)
 
         # create non-line mask if line is enabled
         if 'line' in self.get_mod_term(self.full_mod_type.split('+')): 
@@ -1046,44 +1046,48 @@ class FitFrame(object):
     ###############################################################################
     ############################## Fitting Functions ##############################
 
-    def log_to_linear_lsq(self, A, b, x0, alpha=1e-3, epsilon=1e-8):
-        # Try to solve Ax = b by minimizing |ln(Ax) - ln(b)|^2 .
-        # Use the first-order Taylor expansion: ln(Ax) ~= ln(Ax0) + A(x-x0)/Ax0
-        # and then non-linear ln(Ax) = ln(b)
-        # is converted to linear Jx = k = (Jx0 - ln(Ax0) + ln(b)), where J = A/Ax0.
+    def log_to_linear_lsq(self, A_wm, b_w, x0_m, alpha=1e-3):
+        # try to solve A_wm @ x_m = b_w by minimizing |ln(A_wm @ x_m) - ln(b_w)|^2
+        # use the first-order Taylor expansion surrounding linear lsq x0_m = solution.x: 
+        # ln(A_wm @ x_m) ~= ln(A_wm @ x0_m) + A_wm @ (x_m - x0_m) / (A_wm @ x0_m) = (A_wm @ x_m) / Ax0_w + ln(Ax0_w) - 1, Ax0_w = A_wm @ x0_m
+        # and then non-linear ln(A_wm @ x_m) = ln(b_w)
+        # is converted to linear (A_wm @ x_m) / Ax0_w = ln(b_w) - ln(Ax0_w) + 1
+        # or A_wm @ x_m = Ax0_w * (ln(b_w) - ln(Ax0_w) + 1)
 
-        Ax0 = A @ x0 # = np.dot(A, x0)
-        Ax0[Ax0 < 0] = b.min() * 0.01 # force positive model values; b (flux) only contains positive values
-        J = A / Ax0[:, None]
-        k = J @ x0 - np.log(Ax0) + np.log(b)
+        Ax0_w = A_wm @ x0_m # = np.dot(A_wm, x0_m)
+        Ax0_w[Ax0_w <= 0] = b_w.min() * alpha 
+        # force positive model values; the transfered b_w (flux) only contains positive values
+        J_wm = A_wm / Ax0_w[:, None]
+        k_w = np.log(b_w) - np.log(Ax0_w) + 1
 
-        # # Use regularization with positivity constraints to avoid too small Ax0 or b in ln(),
-        # # i.e., the function actually minimize |ln(Ax + eps) - ln(b + eps)|^2 . 
-        # minimal = max(epsilon, alpha*np.median(Ax0), alpha*np.median(b)) 
-        # J = A / (Ax0 + minimal)[:, None]
-        # k = J @ x0 - np.log(Ax0 + minimal) + np.log(b + minimal)
-
-        return J, k
+        return J_wm, k_w
 
     def linear_lsq_solver(self, flux_w, fmod_ew, weight_w, fit_grid='linear', verbose=False):
         # Solve linear least-square functions to obtain the normlization values (i.e., coeffs) of each models
 
         mask_valid_w = weight_w > 0 # i.e., ferr_w > 0; if fit_grid='log' also with flux_w > 0
-        # Define Jacobian matrix and constants in the linear equations: A_wm @ x_m = b_w
-        # Only use data and model in valid wavelengths. 
+        # define Jacobian matrix and constants in the linear equations: A_wm @ x_m = b_w
+        # only use data and model in valid wavelengths. 
         A_wm = (fmod_ew.T * weight_w[:,None])[mask_valid_w,:]
-        b_w = (flux_w * weight_w)[mask_valid_w]
+        b_w = (flux_w * weight_w)[mask_valid_w] # weight_w ~= 1/ferr_x, so b_w ~= (S/N)_w
 
         solution = lsq_linear(A_wm, b_w, bounds=(0., np.inf), verbose=verbose) 
         # max_iter=200, lsmr_tol='auto', tol=1e-12, 
 
         if fit_grid == 'log':
-            # convolve Ax = b by minimizing |ln(Ax) - ln(b)|^2
-            # to Jx = k by minimizing |Jx - k|^2
-            # Taylor expansion surrounding linear lsq solution.x
-            J_wm, k_w = self.log_to_linear_lsq(A_wm, b_w, solution.x)
-            # solve Jx = k by minimizing |Jx - k|^2
-            solution = lsq_linear(J_wm, k_w, bounds=(0., np.inf), verbose=verbose)
+            # try to solve A_wm @ x_m = b_w by minimizing |ln(A_wm @ x_m) - ln(b_w)|^2
+            # use the first-order Taylor expansion surrounding linear lsq x0_m = solution.x: 
+            # ln(A_wm @ x_m) ~= ln(A_wm @ x0_m) + A_wm @ (x_m - x0_m) / (A_wm @ x0_m) = (A_wm @ x_m) / Ax0_w + ln(Ax0_w) - 1
+            # Ax0_w = A_wm @ x0_m, is the best-fit model using x0_m
+            # then non-linear question, ln(A_wm @ x_m) = ln(b_w), is converted to linear:
+            # (A_wm @ x_m) / Ax0_w = ln(b_w) - ln(Ax0_w) + 1 = 1 + ln(b_w / Ax0_w)
+            # or A_wm @ x_m = k_w = (1 + ln(b_w / Ax0_w)) * Ax0_w
+            # here force Ax0_w[Ax0_w <= 0] = b_w[Ax0_w <= 0], then k_w[Ax0_w < 1e-10] = Ax0_w[Ax0_w < 1e-10]
+            # i.e., for the _w with too-small Ax0_w (i.e., too-small S/N), keep linear-fitting result
+            # do not use Ax0_w < 0 to avoid too small Ax0_w
+            Ax0_w = A_wm @ solution.x
+            Ax0_w[Ax0_w < 1e-10] = b_w[Ax0_w < 1e-10]
+            solution = lsq_linear(A_wm, (1 + np.log(b_w / Ax0_w)) * Ax0_w, bounds=(0., np.inf), verbose=verbose)
 
         coeff_e = solution.x
         ret_fmod_w = coeff_e @ fmod_ew # Returns best model in the full wavelength (not limited by mask_valid_w)
@@ -1096,13 +1100,16 @@ class FitFrame(object):
             chi_w[mask_valid_w] = np.log(ret_fmod_w[mask_valid_w] / flux_w[mask_valid_w]) * (flux_w * weight_w)[mask_valid_w]
 
         if (coeff_e < 0).any(): 
-            self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w}
+            self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w, 'b_w':b_w}
+            if fit_grid == 'log': self.error['Ax0_w'] = Ax0_w
             raise ValueError((f"Negative model coeff: {np.where(coeff_e <0)}-th in {coeff_e}."))
         if (~np.isfinite(coeff_e)).any():
-            self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w}
+            self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w, 'b_w':b_w}
+            if fit_grid == 'log': self.error['Ax0_w'] = Ax0_w
             raise ValueError((f"NaN or Inf detected in model coeff: {np.where(~np.isfinite(coeff_e))}-th in {coeff_e}."))
         if (~np.isfinite(chi_w)).any():
-            self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w}
+            self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w, 'b_w':b_w}
+            if fit_grid == 'log': self.error['Ax0_w'] = Ax0_w
             print('flux_w at chi_w=nan:', flux_w[~np.isfinite(chi_w)])
             print('fmod_w at chi_w=nan:', ret_fmod_w[~np.isfinite(chi_w)])
             raise ValueError((f"NaN or Inf detected in residuals at chi_w."))
@@ -1157,11 +1164,11 @@ class FitFrame(object):
 
         mask_valid_w = mask_w & (ferr_w > 0)
         if fit_grid == 'log': 
-            if (mask_valid_w & (flux_w > 0)).sum() / mask_valid_w.sum() > 0.8:
-                mask_valid_w &= flux_w > 0
+            if (mask_valid_w & (flux_w > 0)).sum() / mask_valid_w.sum() < 0.8:
+                fit_grid = 'linear'
+                print_log(f"[WARNING] Over 20% of the input data has non-positive values, reset fit_grid = {fit_grid}.", self.log_message)
             else:
-                fit_grid == 'linear'
-                print_log(f"[WARNING] Over 20% of the input data has non-positive values, reset fit_grid = linear.", self.log_message)
+                mask_valid_w &= flux_w > 0
 
         significance_w = self.spec['significance_w']
         if fit_phot: significance_w = np.hstack((self.spec['significance_w'], self.phot['significance_b']))
@@ -1508,7 +1515,7 @@ class FitFrame(object):
         if 'line' in self.get_mod_term(self.full_mod_type.split('+')): 
             # obtain a rough fit of emission lines with continuum of cont_fit_init subtracted
             line_fit_init = self.nonlinear_process(None, (spec_fmock_w - cont_fit_init['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                   self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_grid='linear', conv_nbin=None,
+                                                   self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_grid='linear', conv_nbin=None, 
                                                    annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                    fit_message='line_fit_init: spectral fitting, initialize emission lines', i_loop=i_loop)
         else:
@@ -1644,7 +1651,7 @@ class FitFrame(object):
             # in steps above, stellar models in a sparse grid of ages (and metalicities) are used, now update continuum fitting with all allowed stellar models
             # initialize parameters using best-fit of cont_fit_2a
             if 'stellar' in self.get_mod_term(cont_type.split('+')): 
-                mask_lite_stellar_e = self.stellar.mask_lite_allowed(csp=(self.stellar.sfh_name_c[0]!='nonparametric'))
+                mask_lite_stellar_e = self.stellar.mask_lite_allowed(if_csp=(self.stellar.sfh_name_c[0]!='nonparametric'))
                 mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['stellar'], mask_lite_stellar_e, input_mask_lite_Me=mask_lite_Me)
                 cont_fit_2b = self.nonlinear_process(cont_fit_2a['final_par_p'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
                                                      cont_type, mask_lite_Me, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
@@ -1714,7 +1721,7 @@ class FitFrame(object):
             ########################################
             # update mask_lite_Me for stellar models for spectrum+SED continuum fitting
             if 'stellar' in self.get_mod_term(cont_type.split('+')): 
-                mask_lite_stellar_e = self.stellar.mask_lite_allowed(csp=(self.stellar.sfh_name_c[0]!='nonparametric'))
+                mask_lite_stellar_e = self.stellar.mask_lite_allowed(if_csp=(self.stellar.sfh_name_c[0]!='nonparametric'))
                 mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['stellar'], mask_lite_stellar_e, input_mask_lite_Me=mask_lite_Me)
             # update scaled error based on chi_sq of cont_fit_3a and re-create mock data
             specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3a['chi_sq'])
@@ -2054,7 +2061,7 @@ class FitFrame(object):
             else:
                 if not self.mod_dict_M[mod_name]['spec_enable']: continue
             tmp_output_C = self.mod_dict_M[mod_name]['spec_mod'].extract_results(step=step, if_print_results=if_print_results, if_return_results=True, 
-                                                                                              if_rev_v0_redshift=if_rev_v0_redshift, if_show_average=if_show_average)
+                                                                                 if_rev_v0_redshift=if_rev_v0_redshift, if_show_average=if_show_average)
             comp_name_c = self.mod_dict_M[mod_name]['cframe'].comp_name_c
             for (i_comp, comp_name) in enumerate(comp_name_c):
                 output_MC[mod_name][comp_name]['par_lp']   = tmp_output_C[comp_name]['par_lp']

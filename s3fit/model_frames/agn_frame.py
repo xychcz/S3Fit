@@ -19,7 +19,7 @@ from ..auxiliaries.extinct_laws import ExtLaw
 class AGNFrame(object):
     def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, R_inst_rw=None, 
-                 w_min=None, w_max=None, 
+                 wave_min=None, wave_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
                  verbose=True, log_message=[]):
 
@@ -28,8 +28,8 @@ class AGNFrame(object):
         self.config = config
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw        
-        self.w_min = w_min
-        self.w_max = w_max
+        self.wave_min = wave_min
+        self.wave_max = wave_max
         self.Rratio_mod = Rratio_mod # resolution ratio of model / instrument
         self.dw_fwhm_dsp = dw_fwhm_dsp # model convolving width for downsampling (rest frame)
         self.dw_pix_inst = dw_pix_inst # data sampling width (obs frame)
@@ -41,10 +41,14 @@ class AGNFrame(object):
         self.num_comps = self.cframe.num_comps
         self.check_config()
 
+        # check if the requested range (wave_min,wave_max) is within the defined range
+        self.wave_min_def, self.wave_max_def = 912, 1e7 # angstrom
+        self.enable = (self.wave_max > self.wave_min_def) & (self.wave_min < self.wave_max_def)
+
         # set original wavelength grid, required to project iron template
         orig_wave_logbin = 0.05
-        orig_wave_num = int(np.round(np.log10(w_max/w_min) / orig_wave_logbin))
-        self.orig_wave_w = np.logspace(np.log10(w_min), np.log10(w_max), num=orig_wave_num)
+        orig_wave_num = int(np.round(np.log10(wave_max/wave_min) / orig_wave_logbin))
+        self.orig_wave_w = np.logspace(np.log10(wave_min), np.log10(wave_max), num=orig_wave_num)
         # load iron template
         if 'iron' in [self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]: 
             self.read_iron()
@@ -188,7 +192,7 @@ class AGNFrame(object):
                     ret_emi_F['value_state'] = 'intrinsic'
                 elif casefold(ret_emi_F['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
                     ret_emi_F['value_state'] = 'observed'
-                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust']:
+                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust absorbed', 'dust-absorbed']:
                     ret_emi_F['value_state'] = 'absorbed'
                 self.cframe.comp_info_cI[i_comp]['ret_emission_set'][i_ret] = ret_emi_F
 
@@ -239,7 +243,6 @@ class AGNFrame(object):
                 self.cframe.comp_info_cI[i_comp]['H_series'] = [ H_series_dict[casefold(series)] if casefold(series) in H_series_dict else series 
                                                                  for series in self.cframe.comp_info_cI[i_comp]['H_series'] ]
                 self.cframe.comp_info_cI[i_comp]['H_series'] = list(dict.fromkeys( self.cframe.comp_info_cI[i_comp]['H_series'] )) # remove duplicate
-
 
         for i_comp in range(self.num_comps):
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
@@ -446,7 +449,7 @@ class AGNFrame(object):
                 self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[::self.dpix_dsp]
 
         # select model spectra in given wavelength range
-        mask_select_w = (iron_wave_w >= self.w_min) & (iron_wave_w <= self.w_max)
+        mask_select_w = (iron_wave_w >= self.wave_min) & (iron_wave_w <= self.wave_max)
         iron_wave_w = iron_wave_w[mask_select_w]
         iron_flux_w = iron_flux_w[mask_select_w]
         self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[mask_select_w]

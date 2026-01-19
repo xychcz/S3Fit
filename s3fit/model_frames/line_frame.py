@@ -16,7 +16,7 @@ class LineFrame(object):
     def __init__(self, mod_name=None, fframe=None, 
                  config=None, use_pyneb=False, 
                  v0_redshift=0, R_inst_rw=None, 
-                 w_min=None, w_max=None, mask_valid_rw=None, 
+                 wave_min=None, wave_max=None, mask_valid_rw=None, 
                  verbose=True, log_message=[]):
 
         self.mod_name = mod_name
@@ -24,8 +24,8 @@ class LineFrame(object):
         self.config = config
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
-        self.w_min = w_min
-        self.w_max = w_max
+        self.wave_min = wave_min
+        self.wave_max = wave_max
         self.mask_valid_rw = mask_valid_rw
         self.verbose = verbose
         self.log_message = log_message
@@ -34,6 +34,10 @@ class LineFrame(object):
         self.comp_name_c = self.cframe.comp_name_c
         self.num_comps = len(self.cframe.comp_info_cI)
         self.check_config()
+
+        # check if the requested range (wave_min,wave_max) is within the defined range
+        self.wave_min_def, self.wave_max_def = 912, 1e7 # angstrom
+        self.enable = (self.wave_max > self.wave_min_def) & (self.wave_min < self.wave_max_def)
 
         for item in ['use_pyneb', 'if_use_pyneb']:
             if item in self.cframe.mod_info_I: self.use_pyneb = self.cframe.mod_info_I[item]
@@ -594,8 +598,8 @@ class LineFrame(object):
         # update self.linename_n, self.linelist_full, and self.linelist_default and the other corresponding linelists
 
         # only keep covered lines
-        mask_valid_n  = self.linerest_n > self.w_min
-        mask_valid_n &= self.linerest_n < self.w_max
+        mask_valid_n  = self.linerest_n > self.wave_min
+        mask_valid_n &= self.linerest_n < self.wave_max
         self.linename_n = self.linename_n[mask_valid_n]
         self.linerest_n = self.linerest_n[mask_valid_n]
         self.lineratio_n = self.lineratio_n[mask_valid_n]

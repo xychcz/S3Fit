@@ -295,7 +295,7 @@ class PhotFrame(object):
     def __init__(self, 
                  name_b=None, flux_b=None, ferr_b=None, # on input data
                  input_flux_unit='mJy', output_flux_unit='erg s-1 cm-2 angstrom-1', 
-                 trans_dir=None, trans_rsmp=10, # on transmission curves
+                 trans_dir=None, trans_rsmp=None, # on transmission curves; old default trans_rsmp=10
                  wave_w=None, wave_unit='angstrom', wave_num=None): # on corresonding SED range
         # add file_bac, file_iron later
         
@@ -343,19 +343,33 @@ class PhotFrame(object):
             trans_bw = 1
 
         if wave_w is None:
-            w_min, w_max = 1e16, 0
-            logw_width_min = 1e16
+            if (wave_num is None) & (trans_rsmp is None): 
+                wave_w = []
+            else:
+                w_min, w_max, logw_width_min = 1e16, 0, 1e16
             for name in name_b: 
                 filterdata = np.loadtxt(trans_dir+name+'.dat')
                 wave_ini, trans_ini = filterdata[:,0], filterdata[:,1] # wave_ini in angstrom
-                w_min = np.minimum(w_min, wave_ini.min())
-                w_max = np.maximum(w_max, wave_ini.max())
-                mask_w = trans_ini/trans_ini.max() > 0.5 
-                logw_width = np.log10(wave_ini[mask_w].max()) - np.log10(wave_ini[mask_w].min()) # FWHM in log
-                logw_width_min = np.minimum(logw_width_min, logw_width)
-            if wave_num is None: 
-                wave_num = int((np.log10(w_max) - np.log10(w_min)) / (logw_width_min / trans_rsmp))
-            wave_w = np.logspace(np.log10(w_min)-0.1, np.log10(w_max)+0.1, num=wave_num)
+                if (wave_num is None) & (trans_rsmp is None): 
+                    wbin_ini = np.gradient(wave_ini)
+                    cumsum_ini = np.cumsum(trans_ini)
+                    cumsum_ini /= cumsum_ini[-1]
+                    for (w,dw,t,c) in zip(wave_ini,wbin_ini,trans_ini,cumsum_ini):
+                        if not any(abs(np.array(wave_w) - w) < dw): # avoid overlapping point
+                            if (c > 1e-4) & (c < (1-1e-4)): # avoid point at both ends
+                                wave_w.append(w)
+                else:
+                    w_min = min(w_min, wave_ini.min())
+                    w_max = max(w_max, wave_ini.max())
+                    mask_w = trans_ini/trans_ini.max() > 0.5 
+                    logw_width = np.log10(wave_ini[mask_w].max()) - np.log10(wave_ini[mask_w].min()) # FWHM in log
+                    logw_width_min = min(logw_width_min, logw_width)
+            if (wave_num is None) & (trans_rsmp is None): 
+                wave_w = np.sort(wave_w)
+            else:
+                if wave_num is None: 
+                    wave_num = int((np.log10(w_max) - np.log10(w_min)) / (logw_width_min / trans_rsmp))
+                wave_w = np.logspace(np.log10(w_min)-0.1, np.log10(w_max)+0.1, num=wave_num)
 
         trans_dict = {}
         for name in name_b:

@@ -18,15 +18,15 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 class TorusFrame(object): 
     def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, 
-                 w_min=None, w_max=None, 
+                 wave_min=None, wave_max=None, 
                  verbose=True, log_message=[]): 
 
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config 
         self.v0_redshift = v0_redshift        
-        self.w_min = w_min # currently not used
-        self.w_max = w_max # currently not used
+        self.wave_min = wave_min
+        self.wave_max = wave_max
         self.verbose = verbose
         self.log_message = log_message
 
@@ -35,17 +35,24 @@ class TorusFrame(object):
         self.num_comps = self.cframe.num_comps
         self.check_config()
 
-        # one independent element per component since disc and torus are tied
+        # check if the requested range (wave_min,wave_max) is within the defined range
+        if 'disc' in [mod_used for i_comp in range(self.num_comps) for mod_used in self.cframe.comp_info_cI[i_comp]['mod_used']]:
+            self.wave_min_def, self.wave_max_def = 912, 1e7 # angstrom
+        else:
+            self.wave_min_def, self.wave_max_def = 1e4, 1e7 # angstrom
+        self.enable = (self.wave_max > self.wave_min_def) & (self.wave_min < self.wave_max_def)
+
+        # one independent element per component, since disc and dust spectra are tied for a single component
         self.num_coeffs_c = np.ones(self.num_comps, dtype='int')
         self.num_coeffs = self.num_coeffs_c.sum()
 
         # currently do not consider negative SED 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
 
-        self.read_skirtor()
+        self.read_torus_library()
 
         if self.verbose:
-            print_log(f"SKIRTor torus model components: {np.array([self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]).T}", self.log_message)
+            print_log(f"Torus model components: {[self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]}", self.log_message)
 
         # set plot styles
         self.plot_style_C = {}
@@ -59,6 +66,15 @@ class TorusFrame(object):
     ##########################################################################
 
     def check_config(self):
+
+        # check alternative model names
+        for i_comp in range(self.num_comps):
+            mod_used = []
+            if any( np.isin(casefold(self.cframe.comp_info_cI[i_comp]['mod_used']), ['disc', 'disk', 'agn']) ): 
+                mod_used.append('disc')
+            if any( np.isin(casefold(self.cframe.comp_info_cI[i_comp]['mod_used']), ['dust', 'torus']) ): 
+                mod_used.append('dust')
+            self.cframe.comp_info_cI[i_comp]['mod_used'] = mod_used
 
         ############################################################
         # to be compatible with old version <= 2.2.4
@@ -118,114 +134,226 @@ class TorusFrame(object):
                     ret_emi_F['value_state'] = 'intrinsic'
                 elif casefold(ret_emi_F['value_state']) in ['observed', 'reddened', 'attenuated', 'extincted', 'extinct']:
                     ret_emi_F['value_state'] = 'observed'
-                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust']:
+                elif casefold(ret_emi_F['value_state']) in ['absorbed', 'dust absorbed', 'dust-absorbed']:
                     ret_emi_F['value_state'] = 'absorbed'
                 self.cframe.comp_info_cI[i_comp]['ret_emission_set'][i_ret] = ret_emi_F
 
     ##########################################################################
 
-    def read_skirtor(self): 
+    def read_torus_library(self): 
         # https://sites.google.com/site/skirtorus/sed-library
-        # skirtor_disc = np.loadtxt(self.file_disc) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
-        # skirtor_torus = np.loadtxt(self.file_dust) # [n_wave_ini+6, n_tau*n_oa*n_rrat*n_incl+1]
         for item in ['file', 'file_path']:
             if item in self.cframe.mod_info_I: torus_file = self.cframe.mod_info_I[item]
         skirtor_lib = fits.open(torus_file)
-        skirtor_disc = skirtor_lib[0].data[0]
-        skirtor_torus = skirtor_lib[0].data[1]
+        skirtor_disc = skirtor_lib[0].data[0].T # [1 + n_tau_si * n_h_open * n_r_ratio * n_incl, 6 + n_wave_ini]
+        skirtor_dust = skirtor_lib[0].data[1].T # [1 + n_tau_si * n_h_open * n_r_ratio * n_incl, 6 + n_wave_ini]
 
-        self.init_wave_w = skirtor_disc[6:-1,0] # 1e-3 to 1e3 um; omit the last one with zero-value SED
-        self.init_wave_unit = 'micron'
-        self.init_wave_medium = 'vac' # not sensitive due to sampling rate
+        # mimic the user input from mod_info_I
+        template = {}
+        template['wave'] = {'value': skirtor_disc[0, 6:], 'unit': 'micron', 'medium': None} # 1e-3 to 1e3 micron
+        template['pars'] = {'opt_depth_9.7': skirtor_disc[1:, 0], 'radii_ratio': skirtor_disc[1:, 2], 'half_open_angle': skirtor_disc[1:, 1], 'inclination': skirtor_disc[1:, 3]}
+        template['spec'] = {'disc': skirtor_disc[1:, 6:], 'dust': skirtor_dust[1:, 6:], 'unit': 'erg s-1 micron-1'}
+        # attributes
+        template['mass_dust' ] = {'value': skirtor_disc[1:, 4]              , 'unit': 'M_sun'}
+        template['frac_abs'  ] = {'value': skirtor_disc[1:, 5]              , 'unit': ''     }
+        template['intLum_agn'] = {'value': np.ones(len(skirtor_disc[1:, 5])), 'unit': 'L_sun'}
+        # in the original library the sed and mass_dust is normalized to Lum_AGN of 1 Lsun; Lum_dust = frac_abs * Lum_AGN
 
-        n_tau = 5; tau = np.array([ 3, 5, 7, 9, 11 ])
-        n_oa = 8; oa = np.array([ 10, 20, 30, 40, 50, 60, 70, 80 ])
-        n_rrat = 3; rrat = np.array([ 10, 20, 30 ])
-        n_incl = 10; incl = np.array([ 0, 10, 20, 30, 40, 50, 60, 70, 80, 90 ])
-                
-        disc  = np.zeros([n_tau, n_oa, n_rrat, n_incl, len(self.init_wave_w)]) 
-        torus = np.zeros([n_tau, n_oa, n_rrat, n_incl, len(self.init_wave_w)]) 
-        mass  = np.zeros([n_tau, n_oa, n_rrat]) # torus dust mass
-        eb    = np.zeros([n_tau, n_oa, n_rrat]) 
-        # All spectra are given in erg/s/um, normalized to disc lum of 1 Lsun
-        # Not that the spectra in lum unit should be considered as flux * 4pi * dl2, 
-        # where flux is depended on viewing angle and 
-        # the 1 Lsun normalization is integrated with anisotropic flux function.
-        # Dust mass in Msun
-        # eb is energy balance ratio of torus, i.e., inclination integrated Lum_torus/Lum_AGN(intrinsic)
+        ###############################
 
-        # self.lum_norm = 1e10 # normlize model by 1e10 Lsun
-        for i_tau in range(n_tau):
-            for i_oa in range(n_oa):
-                for i_rrat in range(n_rrat):
-                    for i_incl in range(n_incl):
-                        mask  = skirtor_disc[0,:] == tau[i_tau] 
-                        mask &= skirtor_disc[1,:] == oa[i_oa] 
-                        mask &= skirtor_disc[2,:] == rrat[i_rrat] 
-                        mask &= skirtor_disc[3,:] == incl[i_incl] 
-                        mass [i_tau, i_oa, i_rrat] = skirtor_torus[4,mask][0]
-                        eb   [i_tau, i_oa, i_rrat] = skirtor_torus[5,mask][0]
-                        disc [i_tau, i_oa, i_rrat, i_incl, :] = skirtor_disc [6:-1,mask][:,0]
-                        torus[i_tau, i_oa, i_rrat, i_incl, :] = skirtor_torus[6:-1,mask][:,0]
-                        # in the original library the torus sed and mass is normalized to Lum_AGN of 1 Lsun, 
-                        # here renormlized them to Lum_Torus of self.lum_norm Lsun (i.e., Lum_AGN = self.lum_norm Lsun / EB_Torus) 
-                        disc [i_tau, i_oa, i_rrat, i_incl, :] *= 1 / eb[i_tau, i_oa, i_rrat] # self.lum_norm
-                        torus[i_tau, i_oa, i_rrat, i_incl, :] *= 1 / eb[i_tau, i_oa, i_rrat] # self.lum_norm
-                        mass [i_tau, i_oa, i_rrat]            *= 1 / eb[i_tau, i_oa, i_rrat] # self.lum_norm
+        # internal recording
+        self.init_wave_w       = template['wave']['value']
+        self.init_wave_unit    = template['wave']['unit']
+        self.init_wave_medium  = template['wave']['medium']
+
+        self.init_par_Pe       = template['pars']
+        self.num_templates     = len(list(self.init_par_Pe.values())[0])
+
+        self.init_lum_disc_ew  = template['spec']['disc']
+        self.init_lum_dust_ew  = template['spec']['dust']
+        self.init_lum_unit     = template['spec']['unit']
+
+        self.init_mass_dust_e  = template['mass_dust']['value']
+        self.init_mass_unit    = template['mass_dust']['unit' ]
+
+        self.init_frac_abs_e   = template['frac_abs' ]['value']
+
+        self.init_intLum_agn_e = template['intLum_agn']['value'] # i.e., self.init_norm_e
+        self.init_intLum_unit  = template['intLum_agn']['unit' ] # i.e., self.init_norm_unit
+
+        self.init_spec_S = {key: {'spec_ew': value, 'unit': template['spec']['unit']} for key, value in template['spec'].items() if key not in ['unit']}
+        self.init_attr_A = {key: value for key, value in template.items() if key not in ['wave', 'spec', 'pars']}
+
+        # self.init_wave_w
+        # self.init_wave_unit
+        # self.init_spec_S[spec_name]['spec_ew'] / ['unit']
+        # self.init_attr_A[attr_name]['attr_e' ] / ['unit']
+
+        ###############################
 
         # convert wave unit to angstrom in vacuum
         self.init_wave_w *= u.Unit(self.init_wave_unit).to('angstrom')
         self.init_wave_unit = 'angstrom'
         if self.init_wave_medium == 'air': self.init_wave_w = wave_air_to_vac(self.init_wave_w)
 
-        # convert the normalization from per unit mass to per unit L5500
-        self.init_lum_unit = 'erg s-1 micron-1'
-        self.init_norm_e = 1 # norm is L_torus
-        self.init_norm_unit = 'L_sun'
-        self.init_mass_unit = 'M_sun'
-        # update normalization to avoid too low values
-        scale_lum_e = torus.max()/10
-        # scale models by scale_lum_e * init_lum_unit
-        disc  /= scale_lum_e
-        torus /= scale_lum_e
-        mass /= scale_lum_e
-        self.init_norm_e /= scale_lum_e
-        self.init_norm_unit = str(u.Unit(self.init_norm_unit) / u.Unit(self.init_lum_unit)) # update before init_lum_unit
-        self.init_mass_unit = str(u.Unit(self.init_mass_unit) / u.Unit(self.init_lum_unit)) # update before init_lum_unit
-        self.init_lum_unit  = str(u.dimensionless_unscaled) # the scaled model is in dimensionless unit
+        # update normalization to avoid outlier values
+        scale_lum_e    = self.init_lum_dust_ew.max(axis=1) * 1e-2
+        scale_lum_unit = copy(self.init_lum_unit)
+        # scale models by scale_lum_e * scale_lum_unit
+        self.init_lum_disc_ew   /= scale_lum_e[:, None]
+        self.init_lum_dust_ew   /= scale_lum_e[:, None]
+        self.init_lum_unit       = str(u.Unit(self.init_lum_unit) / u.Unit(scale_lum_unit)) # dimensionless unscaled
+        self.init_mass_dust_e   /= scale_lum_e
+        self.init_mass_unit      = str(u.Unit(self.init_mass_unit) / u.Unit(scale_lum_unit))
+        self.init_intLum_agn_e  /= scale_lum_e
+        self.init_intLum_unit    = str(u.Unit(self.init_intLum_unit) / u.Unit(scale_lum_unit))
+        # self.init_frac_abs_e is not affected 
 
-        # # convert unit: 1 erg/s/um -> spec_flux_scale * erg/s/angstrom/cm2
-        # lum_dist = cosmo.luminosity_distance(self.v0_redshift).to('cm').value
-        # lum_area = 4*np.pi * lum_dist**2 # in cm2
-        # disc  *= 1e-4 / lum_area / self.fframe.spec_flux_scale
-        # torus *= 1e-4 / lum_area / self.fframe.spec_flux_scale
-        disc [disc  <= 0] = disc [disc  > 0].min()
-        torus[torus <= 0] = torus[torus > 0].min()
-        
-        # for interpolation
-        ini_pars = (tau, oa, rrat, incl, np.log10(self.init_wave_w))    
-        fun_logdisc  = RegularGridInterpolator(ini_pars, np.log10(disc ), method='linear', bounds_error=False)
-        fun_logtorus = RegularGridInterpolator(ini_pars, np.log10(torus), method='linear', bounds_error=False)
-        # set bounds_error=False to avoid error by slight exceeding of x-val generated by least_square func
-        # but do not use pars outside of initial range
-        ini_pars = (tau, oa, rrat)    
-        fun_mass = RegularGridInterpolator(ini_pars, mass, method='linear', bounds_error=False)
-        fun_eb   = RegularGridInterpolator(ini_pars, eb,   method='linear', bounds_error=False)
+        ###############################
 
-        self.skirtor = {'tau':tau, 'oa':oa, 'rratio':rrat, 'incl':incl, 
-                        'wave':self.init_wave_w, 'log_wave':np.log10(self.init_wave_w), 
-                        'disc':disc, 'fun_logdisc':fun_logdisc, 
-                        'torus':torus, 'fun_logtorus':fun_logtorus, 
-                        'mass':mass, 'fun_mass':fun_mass, 
-                        'eb':eb, 'fun_eb':fun_eb } 
+        # extended to longer wavelength
+        if self.wave_max > self.init_wave_w[-1]:
+            ext_wave_logbin = np.log10(self.init_wave_w[-1] / self.init_wave_w[-2])
+            ext_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_wave_w[-1]) / ext_wave_logbin))
+            ext_wave_w = np.logspace(np.log10(self.init_wave_w[-1]), np.log10(self.wave_max), ext_wave_num)[1:]
+            i_w = -2 # avoid zero values at the end
+            index_e = np.log10(self.init_lum_disc_ew[:,i_w-1] / self.init_lum_disc_ew[:,i_w]) / np.log10(self.init_wave_w[None,i_w-1] / self.init_wave_w[None,i_w])
+            ext_lum_ew  = (ext_wave_w / self.init_wave_w[i_w])[None,:] ** index_e[:,None] * self.init_lum_disc_ew[:,i_w][:,None]
+            self.init_lum_disc_ew = np.hstack((self.init_lum_disc_ew, ext_lum_ew))
+            i_w = -1
+            index_e = np.log10(self.init_lum_dust_ew[:,i_w-1] / self.init_lum_dust_ew[:,i_w]) / np.log10(self.init_wave_w[None,i_w-1] / self.init_wave_w[None,i_w])
+            ext_lum_ew  = (ext_wave_w / self.init_wave_w[i_w])[None,:] ** index_e[:,None] * self.init_lum_dust_ew[:,i_w][:,None]
+            self.init_lum_dust_ew = np.hstack((self.init_lum_dust_ew, ext_lum_ew))
+            self.init_wave_w = np.hstack((self.init_wave_w, ext_wave_w))
+
+        # avoid non-positive values
+        self.init_lum_disc_ew[self.init_lum_disc_ew <= 0] = self.init_lum_disc_ew[self.init_lum_disc_ew > 0].min() * 1e-4
+        self.init_lum_dust_ew[self.init_lum_dust_ew <= 0] = self.init_lum_dust_ew[self.init_lum_dust_ew > 0].min() * 1e-4
         
-    def get_info(self, tau, oa, rratio):
-        fun_mass = self.skirtor['fun_mass']
-        fun_eb   = self.skirtor['fun_eb']
-        gen_pars = np.array([tau, oa, rratio])
-        gen_mass = fun_mass(gen_pars)
-        gen_eb   = fun_eb(gen_pars)
-        return gen_mass, gen_eb
+        ###############################
+
+        # sort each par
+        index_e = np.lexsort(tuple([par_e for par_e in self.init_par_Pe.values()]))
+        self.init_par_Pe = {par_name: par_e[index_e] for par_name, par_e in self.init_par_Pe.items()}
+        self.init_lum_disc_ew  = self.init_lum_disc_ew [index_e, :]
+        self.init_lum_dust_ew  = self.init_lum_dust_ew [index_e, :]
+        self.init_mass_dust_e  = self.init_mass_dust_e [index_e]
+        self.init_frac_abs_e   = self.init_frac_abs_e  [index_e]
+        self.init_intLum_agn_e = self.init_intLum_agn_e[index_e]
+
+        # transfer to multi-dimontional par-grid
+        self.init_par_uniq_Pu = {par_name: np.unique(par_e) for par_name, par_e in self.init_par_Pe.items()}
+        self.init_lum_disc_gw  = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()] + [len(self.init_wave_w)]) 
+        self.init_lum_dust_gw  = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()] + [len(self.init_wave_w)]) 
+        self.init_mass_dust_g  = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
+        self.init_frac_abs_g   = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
+        self.init_intLum_agn_g = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
+
+        for i_e in range(self.num_templates):
+            i_uniq_list = []
+            for par_uniq, par_e in zip(self.init_par_uniq_Pu.values(), self.init_par_Pe.values()):
+                i_uniq_list.append(np.where(par_uniq == par_e[i_e])[0][0])
+            i_uniq_tuple = tuple(i_uniq_list)  
+            self.init_lum_disc_gw [i_uniq_tuple] = self.init_lum_disc_ew [i_e, :]
+            self.init_lum_dust_gw [i_uniq_tuple] = self.init_lum_dust_ew [i_e, :]
+            self.init_mass_dust_g [i_uniq_tuple] = self.init_mass_dust_e [i_e]
+            self.init_frac_abs_g  [i_uniq_tuple] = self.init_frac_abs_e  [i_e]
+            self.init_intLum_agn_g[i_uniq_tuple] = self.init_intLum_agn_e[i_e]
+
+        ###############################
+
+        # build interpolation function
+        self.init_log_wave_w = np.log10(self.init_wave_w)
+        init_par_uniq_tuple = tuple(self.init_par_uniq_Pu.values())
+        init_par_uniq_log_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_log_wave_w])
+        self.interp_func_R = {}
+        self.interp_func_R['log_lum_disc_w'] = RegularGridInterpolator(init_par_uniq_log_wave_tuple, np.log10(self.init_lum_disc_gw),  method='linear', bounds_error=False)
+        self.interp_func_R['log_lum_dust_w'] = RegularGridInterpolator(init_par_uniq_log_wave_tuple, np.log10(self.init_lum_dust_gw),  method='linear', bounds_error=False)
+        self.interp_func_R['log_mass_dust' ] = RegularGridInterpolator(init_par_uniq_tuple,          np.log10(self.init_mass_dust_g),  method='linear', bounds_error=False)
+        self.interp_func_R['frac_abs'      ] = RegularGridInterpolator(init_par_uniq_tuple,          self.init_frac_abs_g,             method='linear', bounds_error=False)
+        self.interp_func_R['log_intLum_agn'] = RegularGridInterpolator(init_par_uniq_tuple,          np.log10(self.init_intLum_agn_g), method='linear', bounds_error=False)
+        # set bounds_error=False to avoid error by slight exceeding of x-val generated by least_square function
+        # but should avoid using pars outside of initial range manually
+
+    def interp_model(self, input_par_p, input_par_index_P, ret_name=None):
+        input_par_list = [input_par_p[input_par_index_P[par_name]] for par_name in self.init_par_uniq_Pu.keys()]
+        if ret_name in ['log_lum_disc_w', 'log_lum_dust_w']:
+            input_par_list = [input_par_list + [logw] for logw in self.init_log_wave_w]
+        return self.interp_func_R[ret_name](np.array(input_par_list))
+
+    ##########################################################################
+
+    # def mask_lite_allowed(self, i_comp=None):
+
+    #     i_par_voff = self.cframe.par_index_cP[i_comp]['voff']
+    #     voff_min = self.cframe.par_min_cp[i_comp][i_par_voff]
+
+
+    #     log_age_min, log_age_max = self.cframe.comp_info_cI[i_comp]['log_ssp_age_min'], self.cframe.comp_info_cI[i_comp]['log_ssp_age_max']
+    #     age_min = self.age_e.min() if log_age_min is None else 10.0**log_age_min
+    #     age_max = cosmo.age(self.v0_redshift).value if log_age_max in ['universe', 'Universe'] else 10.0**log_age_max
+    #     mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
+    #     met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
+    #     if met_sel != 'all':
+    #         if met_sel in ['solar', 'Solar']:
+    #             mask_lite_ssp_e &= self.met_e == 0.02
+    #         else:
+    #             mask_lite_ssp_e &= np.isin(self.met_e, met_sel)
+    #     return mask_lite_ssp_e
+
+    # def mask_lite_with_num_mods(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
+    #     if self.sfh_name_c[0] == 'nonparametric':
+    #         # only used in nonparametic, single component
+    #         mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
+
+    #         ages_full, num_ages_full = np.unique(self.age_e), len(np.unique(self.age_e))
+    #         ages_allowed = np.unique(self.age_e[ mask_lite_allowed_e ])
+    #         ages_lite = np.logspace(np.log10(ages_allowed.min()), np.log10(ages_allowed.max()), num=num_ages_lite)
+    #         ages_lite *= 10.0**((np.random.rand(num_ages_lite)-0.5)*np.log10(ages_lite[1]/ages_lite[0]))
+    #         # request log-even ages with random shift
+    #         ind_ages_lite = [np.where(np.abs(ages_full-a)==np.min(np.abs(ages_full-a)))[0][0] for a in ages_lite]
+    #         # np.round(np.linspace(0, num_ages_full-1, num_ages_lite)).astype(int)
+    #         ind_mets_lite = [2,1,3,0][:num_mets_lite] # Z = 0.02 (solar), 0.008, 0.05, 0.004, select with this order
+    #         ind_ssp_lite = np.array([ind_met*num_ages_full+np.arange(num_ages_full)[ind_age] 
+    #                                  for ind_met in ind_mets_lite for ind_age in ind_ages_lite])
+    #         mask_lite_ssp_e = np.zeros_like(self.age_e, dtype='bool')
+    #         mask_lite_ssp_e[ind_ssp_lite] = True
+    #         mask_lite_ssp_e &= mask_lite_allowed_e
+    #         if verbose: print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
+    #         return mask_lite_ssp_e
+
+    #     else:
+    #         mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
+    #         if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message) 
+    #         return mask_lite_csp_e
+
+    # def mask_lite_with_coeffs(self, coeffs=None, mask=None, num_mods_min=32, verbose=True):
+    #     if self.sfh_name_c[0] == 'nonparametric':
+    #         # only used in nonparametic, single component
+    #         mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
+
+    #         coeffs_full = np.zeros(self.num_templates)
+    #         coeffs_full[mask if mask is not None else mask_lite_allowed_e] = coeffs
+    #         coeffs_sort = np.sort(coeffs_full)
+    #         # coeffs_min = coeffs_sort[np.cumsum(coeffs_sort)/np.sum(coeffs_sort) < 0.01].max() 
+    #         # # i.e., keep coeffs with sum > 99%
+    #         # mask_ssp_lite = coeffs_full >= np.minimum(coeffs_min, coeffs_sort[-num_mods_min]) 
+    #         # # keep minimum num of models
+    #         # mask_ssp_lite &= mask_lite_allowed_e
+    #         # print('Number of used SSP models:', mask_ssp_lite.sum()) #, np.unique(self.age_e[mask_ssp_lite]))
+    #         # print('Ages with coeffs.sum > 99%:', np.unique(self.age_e[coeffs_full >= coeffs_min]))
+    #         mask_lite_ssp_e = coeffs_full >= coeffs_sort[-num_mods_min]
+    #         mask_lite_ssp_e &= mask_lite_allowed_e
+    #         if verbose: 
+    #             print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
+    #             print_log(f'Coeffs.sum of used SSP models: {1-np.cumsum(coeffs_sort)[-num_mods_min]/np.sum(coeffs_sort)}', self.log_message) 
+    #             print_log(f'Ages of dominant SSP models: {np.unique(self.age_e[coeffs_full >= coeffs_sort[-5]])}', self.log_message) 
+    #         return mask_lite_ssp_e
+
+    #     else:
+    #         mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
+    #         if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message)             
+    #         return mask_lite_csp_e
 
     ##########################################################################
 
@@ -234,70 +362,53 @@ class TorusFrame(object):
                       if_redshift=True, if_convolve=False, conv_nbin=None, if_full_range=False): 
 
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
-        # par: voff (to adjust redshift), tau, oa, rratio, incl
-        # comps: 'disc', 'torus'
+        # par: voff (to adjust redshift), tau_si, h_open, r_ratio, incl
+        # comps: 'disc', 'dust'
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
         if isinstance(components, str): components = [components]
 
+        orig_log_wave_w = copy(self.init_log_wave_w)
         obs_flux_mcomp_ew = None
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             if components is not None:
                 if comp_name not in components: continue
 
-            tau    = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['opt_depth_9.7']]
-            rratio = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['radii_ratio']]
-            oa     = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['half_open_angle']]
-            incl   = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['inclination']]
-            
             # interpolate model for given pars in initial wavelength (rest)
-            ini_logwave  = self.skirtor['log_wave'].copy()
-            fun_logdisc  = self.skirtor['fun_logdisc']
-            fun_logtorus = self.skirtor['fun_logtorus']
-            gen_pars = np.array([[tau, oa, rratio, incl, w] for w in ini_logwave]) # gen: generated
-            if 'disc' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                gen_logdisc  = fun_logdisc(gen_pars)
-            if 'dust' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                gen_logtorus = fun_logtorus(gen_pars)    
+            # here uses 'orig_' to express model in rest frame without any extinction, absorption, or convolution
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                orig_log_lum_disc_w = self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name='log_lum_disc_w')
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                orig_log_lum_dust_w = self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name='log_lum_dust_w')
 
             # redshift models
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
             z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
-            ini_logwave += np.log10(z_ratio)
+            orig_log_wave_w += np.log10(z_ratio)
             if if_redshift:
-                if 'disc' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                    gen_logdisc  -= np.log10(z_ratio)
-                if 'dust' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                    gen_logtorus -= np.log10(z_ratio)
+                if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                    orig_log_lum_disc_w -= np.log10(z_ratio)
+                if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                    orig_log_lum_dust_w -= np.log10(z_ratio)
 
             # project to observed wavelength
-            ret_logwave = np.log10(obs_wave_w) # in angstrom
-            if 'disc' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                ret_logdisc  = np.interp(ret_logwave, ini_logwave, gen_logdisc, 
-                                         left=np.minimum(gen_logdisc.min(),-100), right=np.minimum(gen_logdisc.min(),-100))
-            if 'dust' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                ret_logtorus = np.interp(ret_logwave, ini_logwave, gen_logtorus, 
-                                         left=np.minimum(gen_logtorus.min(),-100), right=np.minimum(gen_logtorus.min(),-100))
-
-            # extended to longer wavelength
-            mask_w = ret_logwave > ini_logwave[-1]
-            if np.sum(mask_w) > 0:
-                if 'disc' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                    index = (gen_logdisc[-2]-gen_logdisc[-1]) / (ini_logwave[-2]-ini_logwave[-1])
-                    ret_logdisc[mask_w] = gen_logdisc[-1] + index * (ret_logwave[mask_w]-ini_logwave[-1])
-                if 'dust' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                    index = (gen_logtorus[-2]-gen_logtorus[-1]) / (ini_logwave[-2]-ini_logwave[-1])
-                    ret_logtorus[mask_w] = gen_logtorus[-1] + index * (ret_logwave[mask_w]-ini_logwave[-1])
+            obs_log_wave_w = np.log10(obs_wave_w) # in angstrom
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_log_lum_disc_w = np.interp(obs_log_wave_w, orig_log_wave_w, orig_log_lum_disc_w, 
+                                        left=np.minimum(orig_log_lum_disc_w.min(),-100), right=np.minimum(orig_log_lum_disc_w.min(),-100))
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_log_lum_dust_w = np.interp(obs_log_wave_w, orig_log_wave_w, orig_log_lum_dust_w, 
+                                        left=np.minimum(orig_log_lum_dust_w.min(),-100), right=np.minimum(orig_log_lum_dust_w.min(),-100))
                     
-            if 'disc' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                ret_disc = 10.0**ret_logdisc
-                ret_disc[ret_logdisc <= -100] = 0
-            if 'dust' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']):
-                ret_torus = 10.0**ret_logtorus
-                ret_torus[ret_logtorus <= -100] = 0
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_lum_disc_w = 10.0**obs_log_lum_disc_w
+                obs_lum_disc_w[obs_log_lum_disc_w <= -100] = 0
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_lum_dust_w = 10.0**obs_log_lum_dust_w
+                obs_lum_dust_w[obs_log_lum_dust_w <= -100] = 0
                 
-            obs_flux_scomp_ew = np.zeros_like(ret_logwave)
-            if 'disc' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']): obs_flux_scomp_ew += ret_disc
-            if 'dust' in casefold(self.cframe.comp_info_cI[i_comp]['mod_used']): obs_flux_scomp_ew += ret_torus
+            obs_flux_scomp_ew = np.zeros_like(obs_log_wave_w)
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']: obs_flux_scomp_ew += obs_lum_disc_w
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']: obs_flux_scomp_ew += obs_lum_dust_w
                 
             obs_flux_scomp_ew = np.vstack((obs_flux_scomp_ew))
             obs_flux_scomp_ew = obs_flux_scomp_ew.T # add .T for a uniform format with other models with n_coeffs > 1
@@ -343,7 +454,7 @@ class TorusFrame(object):
         par_name_cp = self.cframe.par_name_cp
 
         # list the properties to be output; the print will follow this order
-        value_names_additive = ['Lumfrac_dust', 'log_Mass_dust', 'log_intLum_dust_bol', 'log_intLum_agn_bol']
+        value_names_additive = ['frac_abs_dust', 'log_Mass_dust', 'log_intLum_dust_bol', 'log_intLum_agn_bol']
         ret_names_additive = None
         value_names_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
@@ -398,24 +509,21 @@ class TorusFrame(object):
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
                 lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
- 
-                lum_torus = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.init_norm_e * u.Unit(self.init_norm_unit)).to('L_sun').value
-                # coeff_e[0]*self.lum_norm # default unit is Lsun
-                output_C[comp_name]['value_Vl']['log_intLum_dust_bol'][i_loop] = np.log10(lum_torus)
-                output_C['sum']['value_Vl']['log_intLum_dust_bol'][i_loop] += lum_torus
 
-                tau    = par_p[self.cframe.par_index_cP[i_comp]['opt_depth_9.7']]
-                rratio = par_p[self.cframe.par_index_cP[i_comp]['radii_ratio']]
-                oa     = par_p[self.cframe.par_index_cP[i_comp]['half_open_angle']]
-                mass, eb = self.get_info(tau, oa, rratio)
-                mass_torus = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * mass * u.Unit(self.init_mass_unit)).to('M_sun').value
-                lum_agn = lum_torus / eb
-                output_C[comp_name]['value_Vl']['Lumfrac_dust'][i_loop] = eb
-                output_C[comp_name]['value_Vl']['log_Mass_dust'][i_loop] = np.log10(mass_torus)
+                log_mass_dust  = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name='log_mass_dust' )[0] # this is normalized mass for a given template
+                frac_abs       = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name='frac_abs'      )[0]
+                log_intLum_agn = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name='log_intLum_agn')[0] # this is normalized lum_agn for a given template
+                mass_dust = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 10.0**log_mass_dust  * u.Unit(self.init_mass_unit  )).to('M_sun').value
+                lum_agn   = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 10.0**log_intLum_agn * u.Unit(self.init_intLum_unit)).to('L_sun').value
+                lum_dust = lum_agn * frac_abs
+                output_C[comp_name]['value_Vl']['log_Mass_dust'][i_loop] = np.log10(mass_dust)
+                output_C[comp_name]['value_Vl']['frac_abs_dust'][i_loop] = frac_abs
                 output_C[comp_name]['value_Vl']['log_intLum_agn_bol'][i_loop] = np.log10(lum_agn)
-                output_C['sum']['value_Vl']['Lumfrac_dust'][i_loop] += eb
-                output_C['sum']['value_Vl']['log_Mass_dust'][i_loop] += mass_torus
+                output_C[comp_name]['value_Vl']['log_intLum_dust_bol'][i_loop] = np.log10(lum_dust)
+                output_C['sum']['value_Vl']['log_Mass_dust'][i_loop] += mass_dust
+                output_C['sum']['value_Vl']['frac_abs_dust'][i_loop] += frac_abs
                 output_C['sum']['value_Vl']['log_intLum_agn_bol'][i_loop] += lum_agn
+                output_C['sum']['value_Vl']['log_intLum_dust_bol'][i_loop] += lum_dust
 
                 tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                 # calculate requested flux/Lum in given wavelength ranges
@@ -498,7 +606,7 @@ class TorusFrame(object):
             print_name_CV[comp_name]['radii_ratio'] = 'Outer/inner radii ratio'
             print_name_CV[comp_name]['half_open_angle'] = 'Half opening angle (degree)'
             print_name_CV[comp_name]['inclination'] = 'Inclination (degree)'
-            print_name_CV[comp_name]['Lumfrac_dust'] = f"Torus dust radiation absorption fraction"
+            print_name_CV[comp_name]['frac_abs_dust'] = f"Torus dust absorption fraction"
             print_name_CV[comp_name]['log_Mass_dust'] = f"Torus dust mass (log M☉)"
             print_name_CV[comp_name]['log_intLum_dust_bol'] = f"Torus dust bolometric lum. (log L☉)"
             print_name_CV[comp_name]['log_intLum_agn_bol'] = f"AGN disc bolometric lum. (log L☉)"
