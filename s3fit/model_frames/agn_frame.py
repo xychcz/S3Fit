@@ -79,7 +79,7 @@ class AGNFrame(object):
 
         # set plot styles
         self.plot_style_C = {}
-        self.plot_style_C['sum'] = {'color': 'C3', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
+        self.plot_style_C['tot'] = {'color': 'C3', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
         i_red, i_yellow, i_green, i_purple = 0, 0, 0, 0
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             if self.cframe.comp_info_cI[i_comp]['mod_used'] in ['powerlaw', 'bending-powerlaw']:
@@ -507,7 +507,7 @@ class AGNFrame(object):
 
     def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
                       if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, 
-                      if_redshift=True, if_convolve=True, conv_nbin=None, if_full_range=False): 
+                      if_z_decline=True, if_convolve=True, conv_nbin=None, if_full_range=False): 
 
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
         if isinstance(components, str): components = [components]
@@ -568,7 +568,7 @@ class AGNFrame(object):
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
             z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             orig_wave_z_w = orig_wave_w * z_ratio
-            if if_redshift:
+            if if_z_decline:
                 orig_flux_dz_ew = orig_flux_d_ew / z_ratio
             else:
                 orig_flux_dz_ew = orig_flux_d_ew
@@ -603,9 +603,9 @@ class AGNFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if 'print_results'  in kwargs: if_print_results = kwargs['print_results']
+        if 'print_results'  in kwargs: if_print_results  = kwargs['print_results']
         if 'return_results' in kwargs: if_return_results = kwargs['return_results']
-        if 'show_average'   in kwargs: if_show_average = kwargs['show_average']
+        if 'show_average'   in kwargs: if_show_average   = kwargs['show_average']
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
@@ -672,27 +672,27 @@ class AGNFrame(object):
             output_C[comp_name]['value_Vl'] = {}
             for value_name in par_name_cp[i_comp] + value_names_C[comp_name]:
                 output_C[comp_name]['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
-        output_C['sum'] = {}
-        output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
+        output_C['tot'] = {}
+        output_C['tot']['value_Vl'] = {} # only init values for sum of all comp
         for value_name in value_names_additive:
-            output_C['sum']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
+            output_C['tot']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
 
         # locate the results of the model in the full fitting results
         i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_mod_type)
         for (i_comp, comp_name) in enumerate(comp_name_c):
             i_pars_0_of_comp_in_mod, i_pars_1_of_comp_in_mod, i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.fframe.search_comp_index(comp_name, self.mod_name)
 
-            output_C[comp_name]['par_lp']   = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod][:, i_pars_0_of_comp_in_mod:i_pars_1_of_comp_in_mod]
+            output_C[comp_name]['par_lp'  ] = best_par_lp  [:, i_pars_0_of_mod  :i_pars_1_of_mod  ][:, i_pars_0_of_comp_in_mod  :i_pars_1_of_comp_in_mod  ]
             output_C[comp_name]['coeff_le'] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod][:, i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
 
             for i_par in range(self.cframe.num_pars_c[i_comp]): 
                 output_C[comp_name]['value_Vl'][par_name_cp[i_comp][i_par]] = output_C[comp_name]['par_lp'][:, i_par]
             for i_loop in range(self.num_loops):
-                par_p   = output_C[comp_name]['par_lp'][i_loop]
+                par_p   = output_C[comp_name]['par_lp'  ][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
-                rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
+                rev_redshift = (1 + self.v0_redshift) * (1 + voff/299792.458) - 1
                 lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
 
                 tmp_flux_unit = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1 cm-2 angstrom-1')]
@@ -741,11 +741,11 @@ class AGNFrame(object):
 
                         if ret_emi_F['value_state'] in ['intrinsic','absorbed']:
                             tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=False, if_redshift=True, if_full_range=True) # flux in obs frame
+                                                             if_dust_ext=False, if_z_decline=True, if_full_range=True) # flux in obs frame
                             intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
                         if ret_emi_F['value_state'] in ['observed','absorbed']:
                             tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=True,  if_redshift=True, if_full_range=True) # flux in obs frame
+                                                             if_dust_ext=True,  if_z_decline=True, if_full_range=True) # flux in obs frame
                             observed_flux_w = tmp_coeff_e @ tmp_flux_ew
                         if ret_emi_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
                         if ret_emi_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
@@ -771,17 +771,17 @@ class AGNFrame(object):
                         ret_value = ret_value.to(ret_emi_F['value_unit']).value
                         ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
                         output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
-                        if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
+                        if ret_name in output_C['tot']['value_Vl']: output_C['tot']['value_Vl'][ret_name][i_loop] += ret_value
 
-        for value_name in output_C['sum']['value_Vl']:
+        for value_name in output_C['tot']['value_Vl']:
             if (value_name[:8] in ['log_Flam', 'log_Fnu ']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum ']): 
-                output_C['sum']['value_Vl'][value_name] = np.log10(output_C['sum']['value_Vl'][value_name])
+                output_C['tot']['value_Vl'][value_name] = np.log10(output_C['tot']['value_Vl'][value_name])
 
         ############################################################
         # keep aliases for output in old version <= 2.2.4
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[comp_name]['values'] = output_C[comp_name]['value_Vl']
-        output_C['sum']['values'] = output_C['sum']['value_Vl']
+        output_C['tot']['values'] = output_C['tot']['value_Vl']
         ############################################################
 
         self.output_C = output_C # save to model frame
@@ -855,9 +855,9 @@ class AGNFrame(object):
                     else:
                         print_name_CV[comp_name][ret_name] += f" at {tmp_wave_frame} {ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} {tmp_wave_unit}"
 
-        print_name_CV['sum'] = {}
-        for value_name in self.output_C['sum']['value_Vl']:
-            print_name_CV['sum'][value_name] = copy(print_name_CV[self.comp_name_c[0]][value_name])
+        print_name_CV['tot'] = {}
+        for value_name in self.output_C['tot']['value_Vl']:
+            print_name_CV['tot'][value_name] = copy(print_name_CV[self.comp_name_c[0]][value_name])
 
         print_length = max([len(print_name_CV[comp_name][value_name]) for comp_name in print_name_CV for value_name in print_name_CV[comp_name]] + [40]) # set min length
         for comp_name in print_name_CV:

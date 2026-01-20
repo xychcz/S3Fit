@@ -75,7 +75,7 @@ class FitFrame(object):
                  # mock setup
                  num_mocks=0, if_use_multi_thread=False, num_multi_thread=-1, 
                  # basic fitting control
-                 fit_grid='linear', if_examine_result=True, 
+                 fit_space='linear', if_examine_result=True, 
                  # detailed fitting quality control
                  accept_chi_sq=3, nlfit_ntry_max=3, nllsq_ftol_ratio=0.01, nllsq_max_nfev=10000, conv_nbin_max=5, 
                  if_run_init_annealing=True, da_niter_max=10, perturb_scale=0.02, 
@@ -94,6 +94,7 @@ class FitFrame(object):
         if 'keep_invalid'         in kwargs: if_keep_invalid         = kwargs['keep_invalid']
         #if 'model_config'         in kwargs: model_config            = kwargs['model_config']
         if 'use_multi_thread'     in kwargs: if_use_multi_thread     = kwargs['use_multi_thread']
+        if 'fit_grid'             in kwargs: fit_space               = kwargs['fit_grid']
         if 'examine_result'       in kwargs: if_examine_result       = kwargs['examine_result']
         if 'accept_model_SN'      in kwargs: accept_fmod_SN          = kwargs['accept_model_SN']
         if 'init_annealing'       in kwargs: if_run_init_annealing   = kwargs['init_annealing']
@@ -263,9 +264,9 @@ class FitFrame(object):
 
         # basic fitting control
         # fitting grid in linear process
-        self.fit_grid = casefold(fit_grid)
-        print_log(f"Perform fitting in {self.fit_grid} space.", self.log_message)
-        if self.fit_grid == 'log':
+        self.fit_space = casefold(fit_space)
+        print_log(f"Perform fitting in {self.fit_space} space.", self.log_message)
+        if self.fit_space == 'log':
             print_log(f"[Note] Pure line fitting (i.e., after subtracting continuum), if enabled, is always in linear space.", self.log_message)
         # fitting steps
         self.if_examine_result = if_examine_result 
@@ -1062,10 +1063,10 @@ class FitFrame(object):
 
         return J_wm, k_w
 
-    def linear_lsq_solver(self, flux_w, fmod_ew, weight_w, fit_grid='linear', verbose=False):
+    def linear_lsq_solver(self, flux_w, fmod_ew, weight_w, fit_space='linear', verbose=False):
         # Solve linear least-square functions to obtain the normlization values (i.e., coeffs) of each models
 
-        mask_valid_w = weight_w > 0 # i.e., ferr_w > 0; if fit_grid='log' also with flux_w > 0
+        mask_valid_w = weight_w > 0 # i.e., ferr_w > 0; if fit_space='log' also with flux_w > 0
         # define Jacobian matrix and constants in the linear equations: A_wm @ x_m = b_w
         # only use data and model in valid wavelengths. 
         A_wm = (fmod_ew.T * weight_w[:,None])[mask_valid_w,:]
@@ -1074,7 +1075,7 @@ class FitFrame(object):
         solution = lsq_linear(A_wm, b_w, bounds=(0., np.inf), verbose=verbose) 
         # max_iter=200, lsmr_tol='auto', tol=1e-12, 
 
-        if fit_grid == 'log':
+        if fit_space == 'log':
             # try to solve A_wm @ x_m = b_w by minimizing |ln(A_wm @ x_m) - ln(b_w)|^2
             # use the first-order Taylor expansion surrounding linear lsq x0_m = solution.x: 
             # ln(A_wm @ x_m) ~= ln(A_wm @ x0_m) + A_wm @ (x_m - x0_m) / (A_wm @ x0_m) = (A_wm @ x_m) / Ax0_w + ln(Ax0_w) - 1
@@ -1093,23 +1094,23 @@ class FitFrame(object):
         ret_fmod_w = coeff_e @ fmod_ew # Returns best model in the full wavelength (not limited by mask_valid_w)
         chi_w = np.zeros_like(ret_fmod_w)
         # linear: (model/flux-1)*(flux*weight), log: ln(model/flux)*(flux*weight)
-        if fit_grid == 'linear': 
+        if fit_space == 'linear': 
             chi_w[mask_valid_w] = (ret_fmod_w - flux_w)[mask_valid_w] * weight_w[mask_valid_w] # reduced with weight_w
-        if fit_grid == 'log':
+        if fit_space == 'log':
             ret_fmod_w[ret_fmod_w <= 0] = flux_w[mask_valid_w].min() * 0.01 # force positive model values
             chi_w[mask_valid_w] = np.log(ret_fmod_w[mask_valid_w] / flux_w[mask_valid_w]) * (flux_w * weight_w)[mask_valid_w]
 
         if (coeff_e < 0).any(): 
             self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w, 'b_w':b_w}
-            if fit_grid == 'log': self.error['Ax0_w'] = Ax0_w
+            if fit_space == 'log': self.error['Ax0_w'] = Ax0_w
             raise ValueError((f"Negative model coeff: {np.where(coeff_e <0)}-th in {coeff_e}."))
         if (~np.isfinite(coeff_e)).any():
             self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w, 'b_w':b_w}
-            if fit_grid == 'log': self.error['Ax0_w'] = Ax0_w
+            if fit_space == 'log': self.error['Ax0_w'] = Ax0_w
             raise ValueError((f"NaN or Inf detected in model coeff: {np.where(~np.isfinite(coeff_e))}-th in {coeff_e}."))
         if (~np.isfinite(chi_w)).any():
             self.error = {'flux_w':flux_w, 'ret_fmod_w':ret_fmod_w, 'coeff_e':coeff_e, 'fmod_ew':fmod_ew, 'weight_w':weight_w, 'mask_valid_w':mask_valid_w, 'b_w':b_w}
-            if fit_grid == 'log': self.error['Ax0_w'] = Ax0_w
+            if fit_space == 'log': self.error['Ax0_w'] = Ax0_w
             print('flux_w at chi_w=nan:', flux_w[~np.isfinite(chi_w)])
             print('fmod_w at chi_w=nan:', ret_fmod_w[~np.isfinite(chi_w)])
             raise ValueError((f"NaN or Inf detected in residuals at chi_w."))
@@ -1117,7 +1118,7 @@ class FitFrame(object):
         return coeff_e, ret_fmod_w, chi_w
 
     def linear_process(self, input_par_p, flux_w, ferr_w, mask_w, mod_type, mask_lite_Me, 
-                       fit_phot=False, fit_grid='linear', conv_nbin=None, ret_par_coeff=False):
+                       fit_phot=False, fit_space='linear', conv_nbin=None, ret_par_coeff=False):
         # for a give set of parameters, return models and residuals
         # the residuals are used to solve non-linear least-square fit
 
@@ -1163,10 +1164,10 @@ class FitFrame(object):
         n_elements = stack_fmod_ew.shape[0]
 
         mask_valid_w = mask_w & (ferr_w > 0)
-        if fit_grid == 'log': 
+        if fit_space == 'log': 
             if (mask_valid_w & (flux_w > 0)).sum() / mask_valid_w.sum() < 0.8:
-                fit_grid = 'linear'
-                print_log(f"[WARNING] Over 20% of the input data has non-positive values, reset fit_grid = {fit_grid}.", self.log_message)
+                fit_space = 'linear'
+                print_log(f"[WARNING] Over 20% of the input data has non-positive values, reset fit_space = {fit_space}.", self.log_message)
             else:
                 mask_valid_w &= flux_w > 0
 
@@ -1181,7 +1182,7 @@ class FitFrame(object):
 
         coeff_e = np.zeros(n_elements, dtype='float')
         mask_valid_e = stack_fmod_ew[:,mask_valid_w].sum(axis=1) != 0
-        coeff_e[mask_valid_e], ret_fmod_w, chi_w = self.linear_lsq_solver(flux_w, stack_fmod_ew[mask_valid_e,:], weight_w, fit_grid, verbose=self.verbose)
+        coeff_e[mask_valid_e], ret_fmod_w, chi_w = self.linear_lsq_solver(flux_w, stack_fmod_ew[mask_valid_e,:], weight_w, fit_space, verbose=self.verbose)
         chi_sq = (chi_w**2).sum() # already reduced
         
         if not ret_par_coeff:
@@ -1249,7 +1250,7 @@ class FitFrame(object):
         return Jac_wx
 
     def nonlinear_process(self, input_par_p, flux_w, ferr_w, mask_w, 
-                          mod_type, mask_lite_Me, fit_phot=False, fit_grid='linear', conv_nbin=None, 
+                          mod_type, mask_lite_Me, fit_phot=False, fit_space='linear', conv_nbin=None, 
                           accept_chi_sq=None, nlfit_ntry_max=None, 
                           annealing=False, da_niter_max=None, perturb_scale=None, 
                           nllsq_ftol_ratio=None, nllsq_max_nfev=None, 
@@ -1268,14 +1269,14 @@ class FitFrame(object):
         if nllsq_max_nfev is None: nllsq_max_nfev = self.nllsq_max_nfev
 
         # for input of called functions:
-        args=(flux_w, ferr_w, mask_w, mod_type, mask_lite_Me, fit_phot, fit_grid, conv_nbin)
+        args=(flux_w, ferr_w, mask_w, mod_type, mask_lite_Me, fit_phot, fit_space, conv_nbin)
         
         # create the dictonary to return; copy all input
         frame = inspect.currentframe()
         arg_list = list(self.nonlinear_process.__code__.co_varnames)
         ret_dict = {arg: copy(frame.f_locals[arg]) for arg in arg_list if arg != 'self' and arg != 'frame' and arg in frame.f_locals}
-        # save fit_grid; the value transfered in arg may be forced to 'linear' by linear_process if with too many non-positive fluxes
-        ret_dict['fit_grid_actual'] = copy(fit_grid)
+        # save fit_space; the value transfered in arg may be forced to 'linear' by linear_process if with too many non-positive fluxes
+        ret_dict['fit_space_actual'] = copy(fit_space)
 
         if self.if_save_test: 
             self.log_test_args = (input_par_p, args)
@@ -1508,14 +1509,14 @@ class FitFrame(object):
         else:
             mask_lite_Me = self.update_mask_lite_Me()
         cont_fit_init = self.nonlinear_process(None, spec_fmock_w, spec_ferr_w, mask_noline_w, 
-                                               cont_type, mask_lite_Me, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=1, 
+                                               cont_type, mask_lite_Me, fit_phot=False, fit_space=self.fit_space, conv_nbin=1, 
                                                annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                fit_message='cont_fit_init: spectral fitting, initialize continuum models', i_loop=i_loop)
         ########################################
         if 'line' in self.get_mod_term(self.full_mod_type.split('+')): 
             # obtain a rough fit of emission lines with continuum of cont_fit_init subtracted
             line_fit_init = self.nonlinear_process(None, (spec_fmock_w - cont_fit_init['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                   self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_grid='linear', conv_nbin=None, 
+                                                   self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_space='linear', conv_nbin=None, 
                                                    annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                    fit_message='line_fit_init: spectral fitting, initialize emission lines', i_loop=i_loop)
         else:
@@ -1534,7 +1535,7 @@ class FitFrame(object):
         else:
             mask_lite_Me = self.update_mask_lite_Me()
         cont_fit_1 = self.nonlinear_process(None, (spec_fmock_w - line_fit_init['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                            cont_type, mask_lite_Me, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
+                                            cont_type, mask_lite_Me, fit_phot=False, fit_space=self.fit_space, conv_nbin=2, 
                                             annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                             fit_message='cont_fit_1: spectral fitting, update continuum models', i_loop=i_loop)
         ########################################
@@ -1555,7 +1556,7 @@ class FitFrame(object):
             # obtain a better fit of emission lines after subtracting continuum models of cont_fit_1
             # here use cont_fit_1['final_par_p'] to transfer the best-fit parameters from cont_fit_1
             line_fit_1 = self.nonlinear_process(cont_fit_1['final_par_p'], (spec_fmock_w - cont_fit_1['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_grid='linear', conv_nbin=None, 
+                                                self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_space='linear', conv_nbin=None, 
                                                 annealing=self.if_run_init_annealing, perturb_scale=self.perturb_scale, 
                                                 fit_message='line_fit_1: spectral fitting, update emission lines', i_loop=i_loop)
         else:
@@ -1566,7 +1567,7 @@ class FitFrame(object):
         # joint fit of continuum models and emission lines with best-fit parameters of cont_fit_1 and line_fit_1
         mod_type = cont_type+'+'+self.mod_name_T['line'] if 'line' in self.get_mod_term(self.full_mod_type.split('+')) else cont_type
         joint_fit_1 = self.nonlinear_process(line_fit_1['final_par_p'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
-                                             mod_type, mask_lite_Me, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
+                                             mod_type, mask_lite_Me, fit_phot=False, fit_space=self.fit_space, conv_nbin=self.conv_nbin_max, 
                                              annealing=False, perturb_scale=self.perturb_scale, accept_chi_sq=max(cont_fit_1['chi_sq'], line_fit_1['chi_sq']),
                                              fit_message='joint_fit_1: spectral fitting, fit with all models', i_loop=i_loop) 
         ################################################################
@@ -1644,7 +1645,7 @@ class FitFrame(object):
             # update continuum models after model examination
             # initialize parameters using best-fit of joint_fit_1
             cont_fit_2a = self.nonlinear_process(joint_fit_1['update_par_p'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                 cont_type, mask_lite_Me, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
+                                                 cont_type, mask_lite_Me, fit_phot=False, fit_space=self.fit_space, conv_nbin=2, 
                                                  annealing=False, perturb_scale=0, 
                                                  fit_message='cont_fit_2a: spectral fitting, update continuum models', i_loop=i_loop) 
             ########################################
@@ -1654,7 +1655,7 @@ class FitFrame(object):
                 mask_lite_stellar_e = self.stellar.mask_lite_allowed(if_csp=(self.stellar.sfh_name_c[0]!='nonparametric'))
                 mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['stellar'], mask_lite_stellar_e, input_mask_lite_Me=mask_lite_Me)
                 cont_fit_2b = self.nonlinear_process(cont_fit_2a['final_par_p'], (spec_fmock_w - joint_fit_1['line_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                     cont_type, mask_lite_Me, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=2, 
+                                                     cont_type, mask_lite_Me, fit_phot=False, fit_space=self.fit_space, conv_nbin=2, 
                                                      annealing=False, perturb_scale=self.perturb_scale, 
                                                      fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
                 # create new mask_lite_stellar_e with new coeffs; do not use full allowed stellar model elements to save time
@@ -1668,7 +1669,7 @@ class FitFrame(object):
                 # update emission line with the latest mask_lite_Me for el
                 # initialize parameters from best-fit of joint_fit_1 and subtract continuum models from cont_fit_2b
                 line_fit_2 = self.nonlinear_process(cont_fit_2b['final_par_p'], (spec_fmock_w - cont_fit_2b['cont_spec_fmod_w']), spec_ferr_w, mask_valid_w, 
-                                                    self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_grid='linear', conv_nbin=None, 
+                                                    self.mod_name_T['line'], mask_lite_Me, fit_phot=False, fit_space='linear', conv_nbin=None, 
                                                     annealing=False, perturb_scale=self.perturb_scale, 
                                                     fit_message='line_fit_2: spectral fitting, update emission lines', i_loop=i_loop)
             else:
@@ -1679,7 +1680,7 @@ class FitFrame(object):
             # joint fit of continuum and emission lines with initial values from best-fit of cont_fit_2b and line_fit_2
             mod_type = cont_type+'+'+self.mod_name_T['line'] if 'line' in self.get_mod_term(self.full_mod_type.split('+')) else cont_type
             joint_fit_2 = self.nonlinear_process(line_fit_2['final_par_p'], spec_fmock_w, spec_ferr_w, mask_valid_w, 
-                                                 mod_type, mask_lite_Me, fit_phot=False, fit_grid=self.fit_grid, conv_nbin=self.conv_nbin_max, 
+                                                 mod_type, mask_lite_Me, fit_phot=False, fit_space=self.fit_space, conv_nbin=self.conv_nbin_max, 
                                                  annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_2b['chi_sq'], line_fit_2['chi_sq']),
                                                  fit_message='joint_fit_2: spectral fitting, update all models', i_loop=i_loop)
             # set perturb_scale=0 since this is the final step for pure-spectral fitting
@@ -1714,7 +1715,7 @@ class FitFrame(object):
             # initialize parameters using best-fit of joint_fit_2; subtract emission lines from joint_fit_2
             cont_fit_3a = self.nonlinear_process(joint_fit_2['final_par_p'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
                                                  specphot_reverr_w, specphot_mask_w, 
-                                                 cont_type, mask_lite_Me, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
+                                                 cont_type, mask_lite_Me, fit_phot=True, fit_space=self.fit_space, conv_nbin=1, 
                                                  annealing=False, perturb_scale=0, 
                                                  fit_message='cont_fit_3a: spectrum+SED fitting, update continuum models', i_loop=i_loop) 
             # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
@@ -1728,7 +1729,7 @@ class FitFrame(object):
             # use initial best-fit values from cont_fit_3a and subtract emission lines from joint_fit_2
             cont_fit_3b = self.nonlinear_process(cont_fit_3a['final_par_p'], specphot_fmock_w - joint_fit_2['line_specphot_fmod_w'],
                                                  specphot_reverr_w, specphot_mask_w, 
-                                                 cont_type, mask_lite_Me, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=1, 
+                                                 cont_type, mask_lite_Me, fit_phot=True, fit_space=self.fit_space, conv_nbin=1, 
                                                  annealing=False, perturb_scale=self.perturb_scale, 
                                                  fit_message='cont_fit_3b: spectrum+SED fitting, update continuum models', i_loop=i_loop)
             # set conv_nbin=1 since this step may not be sensitive to convolved spectral features with scaled errors
@@ -1745,7 +1746,7 @@ class FitFrame(object):
                 specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=cont_fit_3b['chi_sq'])
                 line_fit_3 = self.nonlinear_process(cont_fit_3b['final_par_p'], specphot_fmock_w - cont_fit_3b['cont_specphot_fmod_w'], 
                                                     specphot_reverr_w, specphot_mask_w, 
-                                                    self.mod_name_T['line'], mask_lite_Me, fit_phot=True, fit_grid='linear', conv_nbin=None, 
+                                                    self.mod_name_T['line'], mask_lite_Me, fit_phot=True, fit_space='linear', conv_nbin=None, 
                                                     annealing=False, perturb_scale=0, 
                                                     fit_message='line_fit_3: spectral fitting, update emission lines', i_loop=i_loop)
             else:
@@ -1758,7 +1759,7 @@ class FitFrame(object):
             specphot_fmock_w, specphot_reverr_w = self.create_mock_data(i_loop, ret_phot=True, chi_sq=line_fit_3['chi_sq'])
             mod_type = cont_type+'+'+self.mod_name_T['line'] if 'line' in self.get_mod_term(self.full_mod_type.split('+')) else cont_type
             joint_fit_3 = self.nonlinear_process(line_fit_3['final_par_p'], specphot_fmock_w, specphot_reverr_w, specphot_mask_w, 
-                                                 mod_type, mask_lite_Me, fit_phot=True, fit_grid=self.fit_grid, conv_nbin=2, 
+                                                 mod_type, mask_lite_Me, fit_phot=True, fit_space=self.fit_space, conv_nbin=2, 
                                                  annealing=False, perturb_scale=0, accept_chi_sq=max(cont_fit_3b['chi_sq'], line_fit_3['chi_sq']),
                                                  fit_message='joint_fit_3: spectrum+SED fitting, update all models', i_loop=i_loop)
             # set conv_nbin=2 instead of self.conv_nbin_max since this step may not be sensitive to convolved spectral features with scaled errors
@@ -1935,9 +1936,9 @@ class FitFrame(object):
         # comp: comp0, comp1, ..., sum
         # i_l: results in the i_l-th loop
         # when comp=sum:
-        # output_MC['mod']['sum']['spec_lw'][i_l,i_w]: spectra in observed spectral wavelength
-        # output_MC['mod']['sum']['sed_lw'][i_l,i_w]: spectra in full SED wavelength
-        # output_MC['mod']['sum']['value_Vl']['name_l'][i_l]: calculated values
+        # output_MC['mod']['tot']['spec_lw'][i_l,i_w]: spectra in observed spectral wavelength
+        # output_MC['mod']['tot']['sed_lw'][i_l,i_w]: spectra in full SED wavelength
+        # output_MC['mod']['tot']['value_Vl']['name_l'][i_l]: calculated values
         # when mod_name=tot:
         # output_MC['tot']['comp']['spec_lw'][i_l,i_w]: spectra in observed spectral wavelength
         # output_MC['tot']['comp']['sed_lw'][i_l,i_w]: spectra in full SED wavelength
@@ -1966,10 +1967,10 @@ class FitFrame(object):
                 output_MC[mod_name][comp_name]['spec_lw'] = np.zeros((self.num_loops, len(spec_wave_w)))
                 if self.have_phot:
                     output_MC[mod_name][comp_name]['sed_lw'] = np.zeros((self.num_loops, len(sed_wave_w)))
-            output_MC[mod_name]['sum'] = {} # init results for the comp's sum for each mod_name
-            output_MC[mod_name]['sum']['spec_lw'] = np.zeros((self.num_loops, len(spec_wave_w)))
+            output_MC[mod_name]['tot'] = {} # init results for the comp's sum for each mod_name
+            output_MC[mod_name]['tot']['spec_lw'] = np.zeros((self.num_loops, len(spec_wave_w)))
             if self.have_phot:
-                output_MC[mod_name]['sum']['sed_lw'] = np.zeros((self.num_loops, len(sed_wave_w)))
+                output_MC[mod_name]['tot']['sed_lw'] = np.zeros((self.num_loops, len(sed_wave_w)))
         output_MC['tot']['fmod'] = {} # init results for the total model
         output_MC['tot']['fmod']['spec_lw'] = np.zeros((self.num_loops, len(spec_wave_w)))
         if self.have_phot:
@@ -1989,12 +1990,12 @@ class FitFrame(object):
                     i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.search_comp_index(comp_name, mod_name)[2:4]
                     spec_fmod_w  = coeff_fmod_e[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod] @ spec_fmod_ew[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                     output_MC[mod_name][comp_name]['spec_lw'][i_loop, :] = spec_fmod_w
-                    output_MC[mod_name]['sum']['spec_lw'][i_loop, :] += spec_fmod_w
+                    output_MC[mod_name]['tot']['spec_lw'][i_loop, :] += spec_fmod_w
                     output_MC['tot']['fmod']['spec_lw'][i_loop, :] += spec_fmod_w
                     if self.have_phot:
                         sed_fmod_w  = coeff_fmod_e[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod] @ sed_fmod_ew[i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                         output_MC[mod_name][comp_name]['sed_lw'][i_loop, :] = sed_fmod_w
-                        output_MC[mod_name]['sum']['sed_lw'][i_loop, :] += sed_fmod_w
+                        output_MC[mod_name]['tot']['sed_lw'][i_loop, :] += sed_fmod_w
                         output_MC['tot']['fmod']['sed_lw'][i_loop, :] += sed_fmod_w
         # convert best-fit model SED to phot
         if self.have_phot:
@@ -2044,12 +2045,12 @@ class FitFrame(object):
 
         # calculate average spectra
         for mod_name in rev_mod_type.split('+'): 
-            self.spec['fmod_'+mod_name+'_w'] = np.average(output_MC[mod_name]['sum']['spec_lw'], weights=1/best_chi_sq_l, axis=0)
+            self.spec['fmod_'+mod_name+'_w'] = np.average(output_MC[mod_name]['tot']['spec_lw'], weights=1/best_chi_sq_l, axis=0)
         self.spec['fmod_tot_w'] = np.average(output_MC['tot']['fmod']['spec_lw'], weights=1/best_chi_sq_l, axis=0)
         self.spec['fres_w'] = self.spec['flux_w'] - self.spec['fmod_tot_w']
         if self.have_phot:
             for mod_name in rev_mod_type.split('+'): 
-                self.sed['fmod_'+mod_name+'_w'] = np.average(output_MC[mod_name]['sum']['sed_lw'], weights=1/best_chi_sq_l, axis=0)   
+                self.sed['fmod_'+mod_name+'_w'] = np.average(output_MC[mod_name]['tot']['sed_lw'], weights=1/best_chi_sq_l, axis=0)   
             self.sed['fmod_tot_w'] = np.average(output_MC['tot']['fmod']['sed_lw'], weights=1/best_chi_sq_l, axis=0)
             self.phot['fmod_b'] = spec_to_phot(sed_wave_w, self.sed['fmod_tot_w'], phot_trans_bw)
             self.phot['fres_b'] = self.phot['flux_b'] - self.phot['fmod_b']
@@ -2067,7 +2068,7 @@ class FitFrame(object):
                 output_MC[mod_name][comp_name]['par_lp']   = tmp_output_C[comp_name]['par_lp']
                 output_MC[mod_name][comp_name]['coeff_le'] = tmp_output_C[comp_name]['coeff_le']
                 output_MC[mod_name][comp_name]['value_Vl'] = tmp_output_C[comp_name]['value_Vl']
-            output_MC[mod_name]['sum']['value_Vl'] = tmp_output_C['sum']['value_Vl']
+            output_MC[mod_name]['tot']['value_Vl'] = tmp_output_C['tot']['value_Vl']
 
         self.output_MC = output_MC
 
@@ -2077,7 +2078,7 @@ class FitFrame(object):
             comp_name_c = self.mod_dict_M[mod_name]['cframe'].comp_name_c
             for (i_comp, comp_name) in enumerate(comp_name_c):
                 output_MC[mod_name][comp_name]['values'] = output_MC[mod_name][comp_name]['value_Vl']
-            output_MC[mod_name]['sum']['values'] = output_MC[mod_name]['sum']['value_Vl']
+            output_MC[mod_name]['tot']['values'] = output_MC[mod_name]['tot']['value_Vl']
         self.output_mc = output_MC
         ############################################################
 
@@ -2193,14 +2194,14 @@ class FitFrame(object):
         # plot each model spectra
         for mod_name in self.rev_mod_type.split('+'): 
             comp_name_c = copy([*output_MC[mod_name]])
+            comp_name_c.remove('tot')
             if if_plot_comp:
-                # plot each comp
-                if len(comp_name_c) > 2:
-                    comp_name_c = comp_name_c[-1:]+comp_name_c[:-1] # move 'sum' to the begining
+                if len(comp_name_c) > 1:
+                    comp_name_c = ['tot'] + comp_name_c # move 'tot' to the begining
                 else:
-                    comp_name_c = comp_name_c[:-1] # hide 'sum' if only one comp
+                    comp_name_c = comp_name_c # hide 'tot' if only one comp
             else:
-                comp_name_c = comp_name_c[-1:] # only plot 'sum'
+                comp_name_c = 'tot' # only plot 'tot'
             for comp_name in comp_name_c:
                 for i_loop in range(self.num_loops): 
                     line, = ax0.plot(wave_w, output_MC[mod_name][comp_name][flux_grid][i_loop]*flux_ratio, 
@@ -2265,7 +2266,7 @@ class FitFrame(object):
         if xyscale[1] == 'linear':
             ymin_flux = -0.03 * ymax_flux
             if 'line' in self.mod_name_T:
-                ymin_flux = min(ymin_flux, output_MC[self.mod_name_T['line']]['sum'][flux_grid][0].min() * 1.02) # for absorption lines
+                ymin_flux = min(ymin_flux, output_MC[self.mod_name_T['line']]['tot'][flux_grid][0].min() * 1.02) # for absorption lines
         elif xyscale[1] == 'log':
             ymin_flux = np.median(output_MC['tot']['ferr']['spec_lw'][0])
         ax0.set_ylim(ymin_flux*flux_ratio, ymax_flux*flux_ratio)

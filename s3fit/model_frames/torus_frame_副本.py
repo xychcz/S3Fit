@@ -199,18 +199,9 @@ class TorusFrame(object):
         self.init_wave_unit = 'angstrom'
         if self.init_wave_medium == 'air': self.init_wave_w = wave_air_to_vac(self.init_wave_w)
 
-        ###############################
-
-        # add spec_name of 'tot' if it does not exist
-        if 'tot' not in self.init_spec_S.keys():
-            tot_value_ew = np.zeros((self.num_templates, len(self.init_wave_w)))
-            for spec_dict in self.init_spec_S.values():
-                tot_value_ew += spec_dict['value_ew']
-            self.init_spec_S['tot'] = {'value_ew': tot_value_ew, 'unit': spec_dict['unit']}
-
         # update normalization to avoid outlier values
-        scale_lum_e    =      self.init_spec_S['tot']['value_ew'].max(axis=1) * 1e-2
-        scale_lum_unit = copy(self.init_spec_S['tot']['unit'    ])
+        scale_lum_e    =      list(self.init_spec_S.values())[0]['value_ew'].max(axis=1) * 1e-2
+        scale_lum_unit = copy(list(self.init_spec_S.values())[0]['unit'    ])
         # scale models by scale_lum_e * scale_lum_unit
         for spec_name, spec_dict in self.init_spec_S.items():
             spec_dict['value_ew'] =            spec_dict['value_ew']  /        scale_lum_e[:, None]
@@ -615,7 +606,7 @@ class TorusFrame(object):
 
         for value_name in output_C['tot']['value_Vl']:
             # if (value_name[:8] in ['log_Flam', 'log_Fnu ', 'log_mass']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum ']): 
-            if (value_name in (value_names_additive + ret_names_tot)) & value_name[:4] == 'log_':
+            if value_name in (value_names_additive + ret_names_tot):
                 output_C['tot']['value_Vl'][value_name] = np.log10(output_C['tot']['value_Vl'][value_name])
             elif value_name in value_names_weighted:
                 output_C['tot']['value_Vl'][value_name] = output_C['tot']['value_Vl'][value_name] / output_C['tot']['value_Vl']['coeff']
@@ -708,7 +699,6 @@ class TorusFrame(object):
                 print_log(f"# Best-fit properties of the sum of all torus components.", log)
             else: 
                 continue
-            value_names.remove('coeff')
             for value_name in value_names:
                 msg += '| ' + print_name_CV[comp_name][value_name] + f" = {value_Vl[value_name][mask_l].mean():10.4f}" + f" +/- {value_Vl[value_name].std():<10.4f}|\n"
             msg = msg[:-1] # remove the last \n

@@ -19,7 +19,6 @@ class TorusFrame(object):
     def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, 
                  wave_min=None, wave_max=None, 
-                 interp_space='log', 
                  verbose=True, log_message=[]): 
 
         self.mod_name = mod_name
@@ -28,7 +27,6 @@ class TorusFrame(object):
         self.v0_redshift = v0_redshift        
         self.wave_min = wave_min
         self.wave_max = wave_max
-        self.interp_space = interp_space
         self.verbose = verbose
         self.log_message = log_message
 
@@ -58,7 +56,7 @@ class TorusFrame(object):
 
         # set plot styles
         self.plot_style_C = {}
-        self.plot_style_C['tot'] = {'color': 'C8', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
+        self.plot_style_C['sum'] = {'color': 'C8', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
         i_yellow = 0
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.5, 'linestyle': '--', 'linewidth': 1}
@@ -156,9 +154,9 @@ class TorusFrame(object):
         template['pars'] = {'opt_depth_9.7': skirtor_disc[1:, 0], 'radii_ratio': skirtor_disc[1:, 2], 'half_open_angle': skirtor_disc[1:, 1], 'inclination': skirtor_disc[1:, 3]}
         template['spec'] = {'disc': skirtor_disc[1:, 6:], 'dust': skirtor_dust[1:, 6:], 'unit': 'erg s-1 micron-1'}
         # attributes
-        template['mass_dust' ] = {'value': skirtor_disc[1:, 4]              , 'unit': 'M_sun', 'additive': True } 
-        template['frac_abs'  ] = {'value': skirtor_disc[1:, 5]              , 'unit': ''     , 'additive': False}
-        template['intLum_agn'] = {'value': np.ones(len(skirtor_disc[1:, 5])), 'unit': 'L_sun', 'additive': True }
+        template['mass_dust' ] = {'value': skirtor_disc[1:, 4]              , 'unit': 'M_sun'}
+        template['frac_abs'  ] = {'value': skirtor_disc[1:, 5]              , 'unit': ''     }
+        template['intLum_agn'] = {'value': np.ones(len(skirtor_disc[1:, 5])), 'unit': 'L_sun'}
         # in the original library the sed and mass_dust is normalized to Lum_AGN of 1 Lsun; Lum_dust = frac_abs * Lum_AGN
 
         ###############################
@@ -171,26 +169,25 @@ class TorusFrame(object):
         self.init_par_Pe       = template['pars']
         self.num_templates     = len(list(self.init_par_Pe.values())[0])
 
-        # self.init_lum_disc_ew  = template['spec']['disc']
-        # self.init_lum_dust_ew  = template['spec']['dust']
-        # self.init_lum_unit     = template['spec']['unit']
+        self.init_lum_disc_ew  = template['spec']['disc']
+        self.init_lum_dust_ew  = template['spec']['dust']
+        self.init_lum_unit     = template['spec']['unit']
 
-        # self.init_mass_dust_e  = template['mass_dust']['value']
-        # self.init_mass_unit    = template['mass_dust']['unit' ]
+        self.init_mass_dust_e  = template['mass_dust']['value']
+        self.init_mass_unit    = template['mass_dust']['unit' ]
 
-        # self.init_frac_abs_e   = template['frac_abs' ]['value']
+        self.init_frac_abs_e   = template['frac_abs' ]['value']
 
-        # self.init_intLum_agn_e = template['intLum_agn']['value'] # i.e., self.init_norm_e
-        # self.init_intLum_unit  = template['intLum_agn']['unit' ] # i.e., self.init_norm_unit
+        self.init_intLum_agn_e = template['intLum_agn']['value'] # i.e., self.init_norm_e
+        self.init_intLum_unit  = template['intLum_agn']['unit' ] # i.e., self.init_norm_unit
 
-        self.init_spec_S = {key: {'value_ew': value,          'unit': template['spec']['unit']}                     for key, value in template['spec'].items() if key not in ['unit']}
-        self.init_attr_A = {key: {'value_e' : value['value'], 'unit': value['unit'], 'additive': value['additive']} for key, value in template.items()         if key not in ['wave', 'spec', 'pars']}
+        self.init_spec_S = {key: {'spec_ew': value, 'unit': template['spec']['unit']} for key, value in template['spec'].items() if key not in ['unit']}
+        self.init_attr_A = {key: value for key, value in template.items() if key not in ['wave', 'spec', 'pars']}
 
         # self.init_wave_w
         # self.init_wave_unit
-        # self.init_spec_S[spec_name]['value_ew'] / ['unit']
-        # self.init_attr_A[attr_name]['value_e' ] / ['unit'] / ['additive']
-        # 'additive' is short for 'if_is_additive'
+        # self.init_spec_S[spec_name]['spec_ew'] / ['unit']
+        # self.init_attr_A[attr_name]['attr_e' ] / ['unit']
 
         ###############################
 
@@ -199,118 +196,89 @@ class TorusFrame(object):
         self.init_wave_unit = 'angstrom'
         if self.init_wave_medium == 'air': self.init_wave_w = wave_air_to_vac(self.init_wave_w)
 
-        ###############################
-
-        # add spec_name of 'tot' if it does not exist
-        if 'tot' not in self.init_spec_S.keys():
-            tot_value_ew = np.zeros((self.num_templates, len(self.init_wave_w)))
-            for spec_dict in self.init_spec_S.values():
-                tot_value_ew += spec_dict['value_ew']
-            self.init_spec_S['tot'] = {'value_ew': tot_value_ew, 'unit': spec_dict['unit']}
-
         # update normalization to avoid outlier values
-        scale_lum_e    =      self.init_spec_S['tot']['value_ew'].max(axis=1) * 1e-2
-        scale_lum_unit = copy(self.init_spec_S['tot']['unit'    ])
+        scale_lum_e    = self.init_lum_dust_ew.max(axis=1) * 1e-2
+        scale_lum_unit = copy(self.init_lum_unit)
         # scale models by scale_lum_e * scale_lum_unit
-        for spec_name, spec_dict in self.init_spec_S.items():
-            spec_dict['value_ew'] =            spec_dict['value_ew']  /        scale_lum_e[:, None]
-            spec_dict['unit'    ] = str(u.Unit(spec_dict['unit'    ]) / u.Unit(scale_lum_unit)) # dimensionless unscaled
-            self.init_spec_S[spec_name] = spec_dict
-        for attr_name, attr_dict in self.init_attr_A.items():
-            attr_dict['init_unit'] = copy(attr_dict['unit']) # for the output
-            if not attr_dict['additive']: continue # skip if the attribute is not additive
-            attr_dict['value_e' ] =            attr_dict['value_e' ]  /        scale_lum_e
-            attr_dict['unit'    ] = str(u.Unit(attr_dict['unit'    ]) / u.Unit(scale_lum_unit))
-            self.init_attr_A[attr_name] = attr_dict
+        self.init_lum_disc_ew   /= scale_lum_e[:, None]
+        self.init_lum_dust_ew   /= scale_lum_e[:, None]
+        self.init_lum_unit       = str(u.Unit(self.init_lum_unit) / u.Unit(scale_lum_unit)) # dimensionless unscaled
+        self.init_mass_dust_e   /= scale_lum_e
+        self.init_mass_unit      = str(u.Unit(self.init_mass_unit) / u.Unit(scale_lum_unit))
+        self.init_intLum_agn_e  /= scale_lum_e
+        self.init_intLum_unit    = str(u.Unit(self.init_intLum_unit) / u.Unit(scale_lum_unit))
+        # self.init_frac_abs_e is not affected 
 
         ###############################
 
-        # special treatment for this torus model
         # extended to longer wavelength
         if self.wave_max > self.init_wave_w[-1]:
             ext_wave_logbin = np.log10(self.init_wave_w[-1] / self.init_wave_w[-2])
             ext_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_wave_w[-1]) / ext_wave_logbin))
             ext_wave_w = np.logspace(np.log10(self.init_wave_w[-1]), np.log10(self.wave_max), ext_wave_num)[1:]
-
-            for spec_name, spec_dict in self.init_spec_S.items():
-                i_w = -2 # avoid zero values at the end
-                index_e = np.log10(spec_dict['value_ew'][:,i_w-1] / spec_dict['value_ew'][:,i_w]) / np.log10(self.init_wave_w[None,i_w-1] / self.init_wave_w[None,i_w])
-                ext_lum_ew  = (ext_wave_w / self.init_wave_w[i_w])[None,:] ** index_e[:,None] * spec_dict['value_ew'][:,i_w][:,None]
-                spec_dict['value_ew'] = np.hstack((spec_dict['value_ew'], ext_lum_ew))
-                self.init_spec_S[spec_name] = spec_dict
-
+            i_w = -2 # avoid zero values at the end
+            index_e = np.log10(self.init_lum_disc_ew[:,i_w-1] / self.init_lum_disc_ew[:,i_w]) / np.log10(self.init_wave_w[None,i_w-1] / self.init_wave_w[None,i_w])
+            ext_lum_ew  = (ext_wave_w / self.init_wave_w[i_w])[None,:] ** index_e[:,None] * self.init_lum_disc_ew[:,i_w][:,None]
+            self.init_lum_disc_ew = np.hstack((self.init_lum_disc_ew, ext_lum_ew))
+            i_w = -1
+            index_e = np.log10(self.init_lum_dust_ew[:,i_w-1] / self.init_lum_dust_ew[:,i_w]) / np.log10(self.init_wave_w[None,i_w-1] / self.init_wave_w[None,i_w])
+            ext_lum_ew  = (ext_wave_w / self.init_wave_w[i_w])[None,:] ** index_e[:,None] * self.init_lum_dust_ew[:,i_w][:,None]
+            self.init_lum_dust_ew = np.hstack((self.init_lum_dust_ew, ext_lum_ew))
             self.init_wave_w = np.hstack((self.init_wave_w, ext_wave_w))
 
         # avoid non-positive values
-        self.spec_min = 0
-        if self.interp_space == 'log':
-            for spec_name, spec_dict in self.init_spec_S.items():
-                tmp_min = spec_dict['value_ew'][spec_dict['value_ew'] > 0].min() * 1e-4
-                self.spec_min = min(self.spec_min, tmp_min) if self.spec_min > 0 else tmp_min
-                spec_dict['value_ew'][spec_dict['value_ew'] <= 0] = self.spec_min
-                self.init_spec_S[spec_name] = spec_dict
-            self.log_spec_min = np.log10(self.spec_min)
+        self.init_lum_disc_ew[self.init_lum_disc_ew <= 0] = self.init_lum_disc_ew[self.init_lum_disc_ew > 0].min() * 1e-4
+        self.init_lum_dust_ew[self.init_lum_dust_ew <= 0] = self.init_lum_dust_ew[self.init_lum_dust_ew > 0].min() * 1e-4
         
         ###############################
 
         # sort each par
         index_e = np.lexsort(tuple([par_e for par_e in self.init_par_Pe.values()]))
         self.init_par_Pe = {par_name: par_e[index_e] for par_name, par_e in self.init_par_Pe.items()}
-        for spec_name, spec_dict in self.init_spec_S.items():
-            spec_dict['value_ew'] = spec_dict['value_ew'][index_e, :]
-            self.init_spec_S[spec_name] = spec_dict
-        for attr_name, attr_dict in self.init_attr_A.items():
-            attr_dict['value_e' ] = attr_dict['value_e' ][index_e]
-            self.init_attr_A[attr_name] = attr_dict
+        self.init_lum_disc_ew  = self.init_lum_disc_ew [index_e, :]
+        self.init_lum_dust_ew  = self.init_lum_dust_ew [index_e, :]
+        self.init_mass_dust_e  = self.init_mass_dust_e [index_e]
+        self.init_frac_abs_e   = self.init_frac_abs_e  [index_e]
+        self.init_intLum_agn_e = self.init_intLum_agn_e[index_e]
 
         # transfer to multi-dimontional par-grid
         self.init_par_uniq_Pu = {par_name: np.unique(par_e) for par_name, par_e in self.init_par_Pe.items()}
-        for spec_name, spec_dict in self.init_spec_S.items():
-            spec_dict['value_gw'] = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()] + [len(self.init_wave_w)]) 
-            self.init_spec_S[spec_name] = spec_dict
-        for attr_name, attr_dict in self.init_attr_A.items():
-            attr_dict['value_g' ] = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
-            self.init_attr_A[attr_name] = attr_dict
+        self.init_lum_disc_gw  = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()] + [len(self.init_wave_w)]) 
+        self.init_lum_dust_gw  = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()] + [len(self.init_wave_w)]) 
+        self.init_mass_dust_g  = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
+        self.init_frac_abs_g   = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
+        self.init_intLum_agn_g = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
 
         for i_e in range(self.num_templates):
             i_uniq_list = []
             for par_uniq, par_e in zip(self.init_par_uniq_Pu.values(), self.init_par_Pe.values()):
                 i_uniq_list.append(np.where(par_uniq == par_e[i_e])[0][0])
             i_uniq_tuple = tuple(i_uniq_list)  
-            for spec_name, spec_dict in self.init_spec_S.items():
-                spec_dict['value_gw'][i_uniq_tuple] = spec_dict['value_ew'][i_e, :]
-                self.init_spec_S[spec_name] = spec_dict
-            for attr_name, attr_dict in self.init_attr_A.items():
-                attr_dict['value_g' ][i_uniq_tuple] = attr_dict['value_e' ][i_e]
-                self.init_attr_A[attr_name] = attr_dict
+            self.init_lum_disc_gw [i_uniq_tuple] = self.init_lum_disc_ew [i_e, :]
+            self.init_lum_dust_gw [i_uniq_tuple] = self.init_lum_dust_ew [i_e, :]
+            self.init_mass_dust_g [i_uniq_tuple] = self.init_mass_dust_e [i_e]
+            self.init_frac_abs_g  [i_uniq_tuple] = self.init_frac_abs_e  [i_e]
+            self.init_intLum_agn_g[i_uniq_tuple] = self.init_intLum_agn_e[i_e]
 
         ###############################
 
         # build interpolation function
+        self.init_log_wave_w = np.log10(self.init_wave_w)
         init_par_uniq_tuple = tuple(self.init_par_uniq_Pu.values())
-        if self.interp_space == 'linear':
-            init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_wave_w])
-            def tmp_func(x): return x
-        elif self.interp_space == 'log':
-            self.init_log_wave_w = np.log10(self.init_wave_w)
-            init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_log_wave_w])
-            def tmp_func(x): return np.log10(x)
+        init_par_uniq_log_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_log_wave_w])
         self.interp_func_R = {}
-        for spec_name, spec_dict in self.init_spec_S.items():
-            self.interp_func_R[('spec', spec_name)] = RegularGridInterpolator(init_par_uniq_wave_tuple, tmp_func(spec_dict['value_gw']), method='linear', bounds_error=False)
-        for attr_name, attr_dict in self.init_attr_A.items():
-            self.interp_func_R[('attr', attr_name)] = RegularGridInterpolator(init_par_uniq_tuple,      tmp_func(attr_dict['value_g' ]), method='linear', bounds_error=False)
-        # self.interp_func_R['frac_abs'      ] = RegularGridInterpolator(init_par_uniq_tuple,          self.init_frac_abs_g,             method='linear', bounds_error=False)
+        self.interp_func_R['log_lum_disc_w'] = RegularGridInterpolator(init_par_uniq_log_wave_tuple, np.log10(self.init_lum_disc_gw),  method='linear', bounds_error=False)
+        self.interp_func_R['log_lum_dust_w'] = RegularGridInterpolator(init_par_uniq_log_wave_tuple, np.log10(self.init_lum_dust_gw),  method='linear', bounds_error=False)
+        self.interp_func_R['log_mass_dust' ] = RegularGridInterpolator(init_par_uniq_tuple,          np.log10(self.init_mass_dust_g),  method='linear', bounds_error=False)
+        self.interp_func_R['frac_abs'      ] = RegularGridInterpolator(init_par_uniq_tuple,          self.init_frac_abs_g,             method='linear', bounds_error=False)
+        self.interp_func_R['log_intLum_agn'] = RegularGridInterpolator(init_par_uniq_tuple,          np.log10(self.init_intLum_agn_g), method='linear', bounds_error=False)
         # set bounds_error=False to avoid error by slight exceeding of x-val generated by least_square function
         # but should avoid using pars outside of initial range manually
 
     def interp_model(self, input_par_p, input_par_index_P, ret_name=None):
         input_par_list = [input_par_p[input_par_index_P[par_name]] for par_name in self.init_par_uniq_Pu.keys()]
-        if ret_name[0] == 'spec':
-            if self.interp_space == 'linear':
-                input_par_list = [input_par_list + [w] for w in self.init_wave_w]
-            elif self.interp_space == 'log':
-                input_par_list = [input_par_list + [logw] for logw in self.init_log_wave_w]
+        if ret_name in ['log_lum_disc_w', 'log_lum_dust_w']:
+            input_par_list = [input_par_list + [logw] for logw in self.init_log_wave_w]
         return self.interp_func_R[ret_name](np.array(input_par_list))
 
     ##########################################################################
@@ -391,18 +359,13 @@ class TorusFrame(object):
 
     def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
                       if_dust_ext=False, if_ism_abs=False, if_igm_abs=False, 
-                      if_z_decline=True, if_convolve=False, conv_nbin=None, if_full_range=False): 
+                      if_redshift=True, if_convolve=False, conv_nbin=None, if_full_range=False): 
 
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         # par: voff (to adjust redshift), tau_si, h_open, r_ratio, incl
         # comps: 'disc', 'dust'
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
         if isinstance(components, str): components = [components]
-
-
-        # log or linear interp
-        # add dust and conv
-
 
         orig_log_wave_w = copy(self.init_log_wave_w)
         obs_flux_mcomp_ew = None
@@ -412,27 +375,44 @@ class TorusFrame(object):
 
             # interpolate model for given pars in initial wavelength (rest)
             # here uses 'orig_' to express model in rest frame without any extinction, absorption, or convolution
-            orig_log_spec_w = np.zeros_like(orig_log_wave_w)
-            for spec_name in self.init_spec_S.keys():
-                if spec_name in self.cframe.comp_info_cI[i_comp]['mod_used']:
-                    orig_log_spec_w += self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name=('spec', spec_name))
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                orig_log_lum_disc_w = self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name='log_lum_disc_w')
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                orig_log_lum_dust_w = self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name='log_lum_dust_w')
 
             # redshift models
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
             z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             orig_log_wave_w += np.log10(z_ratio)
-            if if_z_decline:
-                orig_log_spec_w -= np.log10(z_ratio)
+            if if_redshift:
+                if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                    orig_log_lum_disc_w -= np.log10(z_ratio)
+                if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                    orig_log_lum_dust_w -= np.log10(z_ratio)
 
             # project to observed wavelength
             obs_log_wave_w = np.log10(obs_wave_w) # in angstrom
-            obs_log_spec_w = np.interp(obs_log_wave_w, orig_log_wave_w, orig_log_spec_w, left=self.log_spec_min, right=self.log_spec_min)
-
-            obs_spec_w = 10.0**obs_log_spec_w
-            obs_spec_w[obs_log_spec_w <= self.log_spec_min] = 0
-
-            obs_flux_scomp_ew = obs_spec_w[None,:] # convert to (1,w) format
-
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_log_lum_disc_w = np.interp(obs_log_wave_w, orig_log_wave_w, orig_log_lum_disc_w, 
+                                        left=np.minimum(orig_log_lum_disc_w.min(),-100), right=np.minimum(orig_log_lum_disc_w.min(),-100))
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_log_lum_dust_w = np.interp(obs_log_wave_w, orig_log_wave_w, orig_log_lum_dust_w, 
+                                        left=np.minimum(orig_log_lum_dust_w.min(),-100), right=np.minimum(orig_log_lum_dust_w.min(),-100))
+                    
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_lum_disc_w = 10.0**obs_log_lum_disc_w
+                obs_lum_disc_w[obs_log_lum_disc_w <= -100] = 0
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                obs_lum_dust_w = 10.0**obs_log_lum_dust_w
+                obs_lum_dust_w[obs_log_lum_dust_w <= -100] = 0
+                
+            obs_flux_scomp_ew = np.zeros_like(obs_log_wave_w)
+            if 'disc' in self.cframe.comp_info_cI[i_comp]['mod_used']: obs_flux_scomp_ew += obs_lum_disc_w
+            if 'dust' in self.cframe.comp_info_cI[i_comp]['mod_used']: obs_flux_scomp_ew += obs_lum_dust_w
+                
+            obs_flux_scomp_ew = np.vstack((obs_flux_scomp_ew))
+            obs_flux_scomp_ew = obs_flux_scomp_ew.T # add .T for a uniform format with other models with n_coeffs > 1
+            
             if obs_flux_mcomp_ew is None: 
                 obs_flux_mcomp_ew = obs_flux_scomp_ew
             else:
@@ -450,9 +430,9 @@ class TorusFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if 'print_results'  in kwargs: if_print_results  = kwargs['print_results']
+        if 'print_results'  in kwargs: if_print_results = kwargs['print_results']
         if 'return_results' in kwargs: if_return_results = kwargs['return_results']
-        if 'show_average'   in kwargs: if_show_average   = kwargs['show_average']
+        if 'show_average'   in kwargs: if_show_average = kwargs['show_average']
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
@@ -474,26 +454,12 @@ class TorusFrame(object):
         par_name_cp = self.cframe.par_name_cp
 
         # list the properties to be output; the print will follow this order
-        value_names_additive, value_names_weighted = [], []
-        for attr_name, attr_dict in self.init_attr_A.items():
-            if attr_dict['additive']: 
-                value_names_additive.append('log_'+attr_name) # output log value for additive attributes
-            else:
-                value_names_weighted.append(attr_name)
-        if len(value_names_weighted) > 0: value_names_additive.append('coeff') # use coeff as the weight
-
-        ####################
-        # custom additional
-        value_names_additive += ['log_intLum_dust']
-        ####################
-
+        value_names_additive = ['frac_abs_dust', 'log_Mass_dust', 'log_intLum_dust_bol', 'log_intLum_agn_bol']
+        ret_names_additive = None
         value_names_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            value_names_C[comp_name] = value_names_weighted + value_names_additive + [] # add to [] if there is specific value for each comp
-        value_names_tot = value_names_weighted + value_names_additive
+            value_names_C[comp_name] = value_names_additive + [] # just copy
 
-        ret_names_tot = None
-        for (i_comp, comp_name) in enumerate(comp_name_c):
             ret_names = []
             if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None:
                 for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
@@ -505,11 +471,11 @@ class TorusFrame(object):
                     ret_names.append(ret_name)
 
             value_names_C[comp_name] += ret_names
-            if ret_names_tot is None: 
-                ret_names_tot = ret_names
+            if ret_names_additive is None: 
+                ret_names_additive = ret_names
             else:
-                ret_names_tot = [ret_name for ret_name in ret_names_tot if ret_name in value_names_C[comp_name]]
-        value_names_tot += ret_names_tot
+                ret_names_additive = [ret_name for ret_name in ret_names_additive if ret_name in value_names_C[comp_name]]
+        value_names_additive += ret_names_additive
 
         # format of results
         # output_C['comp']['par_lp'][i_l,i_p]: parameters
@@ -521,49 +487,43 @@ class TorusFrame(object):
             output_C[comp_name]['value_Vl'] = {}
             for value_name in par_name_cp[i_comp] + value_names_C[comp_name]:
                 output_C[comp_name]['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
-        output_C['tot'] = {}
-        output_C['tot']['value_Vl'] = {}
-        for value_name in value_names_tot:
-            output_C['tot']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
+        output_C['sum'] = {}
+        output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
+        for value_name in value_names_additive:
+            output_C['sum']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
 
         # locate the results of the model in the full fitting results
         i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_mod_type)
         for (i_comp, comp_name) in enumerate(comp_name_c):
             i_pars_0_of_comp_in_mod, i_pars_1_of_comp_in_mod, i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.fframe.search_comp_index(comp_name, self.mod_name)
-            output_C[comp_name]['par_lp'  ] = best_par_lp  [:, i_pars_0_of_mod  :i_pars_1_of_mod  ][:, i_pars_0_of_comp_in_mod  :i_pars_1_of_comp_in_mod  ]
+            output_C[comp_name]['par_lp']   = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod][:, i_pars_0_of_comp_in_mod:i_pars_1_of_comp_in_mod]
             output_C[comp_name]['coeff_le'] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod][:, i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
 
             for i_par in range(self.cframe.num_pars_c[i_comp]): 
                 output_C[comp_name]['value_Vl'][par_name_cp[i_comp][i_par]] = output_C[comp_name]['par_lp'][:, i_par]
 
             for i_loop in range(self.num_loops):
-                par_p   = output_C[comp_name]['par_lp'  ][i_loop]
+                par_p   = output_C[comp_name]['par_lp'][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
-                rev_redshift = (1 + self.v0_redshift) * (1 + voff/299792.458) - 1
+                rev_redshift = (1+voff/299792.458)*(1+self.v0_redshift)-1
                 lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
 
-                for attr_name, attr_dict in self.init_attr_A.items():
-                    attr_value_e = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name=('attr', attr_name))
-
-                    if self.interp_space == 'log': attr_value_e = 10.0**attr_value_e
-                    if attr_dict['additive']: 
-                        attr_value_e *= (u.Unit(self.fframe.spec_flux_unit) * lum_area * u.Unit(attr_dict['unit'])).to(attr_dict['init_unit']).value
-                        output_C[comp_name]['value_Vl']['log_'+attr_name][i_loop]  = np.log10((attr_value_e * coeff_e).sum())
-                        output_C['tot'    ]['value_Vl']['log_'+attr_name][i_loop] += (attr_value_e * coeff_e).sum() # keep in linear for total sum
-                    else:
-                        output_C[comp_name]['value_Vl'][       attr_name][i_loop]  = (attr_value_e * coeff_e).sum() / coeff_e.sum()
-                        output_C['tot'    ]['value_Vl'][       attr_name][i_loop] += (attr_value_e * coeff_e).sum() # keep un-weighted for total average
-
-                output_C[comp_name]['value_Vl']['coeff'][i_loop]  = coeff_e.sum()
-                output_C['tot'    ]['value_Vl']['coeff'][i_loop] += coeff_e.sum()
-
-                ####################
-                # custom additional
-                output_C[comp_name]['value_Vl']['log_intLum_dust'][i_loop]  = output_C[comp_name]['value_Vl']['log_intLum_agn'][i_loop] + np.log10(output_C[comp_name]['value_Vl']['frac_abs'][i_loop])
-                output_C['tot'    ]['value_Vl']['log_intLum_dust'][i_loop] += 10.0**output_C[comp_name]['value_Vl']['log_intLum_dust'][i_loop] # keep in linear for total sum
-                ####################
+                log_mass_dust  = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name='log_mass_dust' )[0] # this is normalized mass for a given template
+                frac_abs       = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name='frac_abs'      )[0]
+                log_intLum_agn = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name='log_intLum_agn')[0] # this is normalized lum_agn for a given template
+                mass_dust = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 10.0**log_mass_dust  * u.Unit(self.init_mass_unit  )).to('M_sun').value
+                lum_agn   = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 10.0**log_intLum_agn * u.Unit(self.init_intLum_unit)).to('L_sun').value
+                lum_dust = lum_agn * frac_abs
+                output_C[comp_name]['value_Vl']['log_Mass_dust'][i_loop] = np.log10(mass_dust)
+                output_C[comp_name]['value_Vl']['frac_abs_dust'][i_loop] = frac_abs
+                output_C[comp_name]['value_Vl']['log_intLum_agn_bol'][i_loop] = np.log10(lum_agn)
+                output_C[comp_name]['value_Vl']['log_intLum_dust_bol'][i_loop] = np.log10(lum_dust)
+                output_C['sum']['value_Vl']['log_Mass_dust'][i_loop] += mass_dust
+                output_C['sum']['value_Vl']['frac_abs_dust'][i_loop] += frac_abs
+                output_C['sum']['value_Vl']['log_intLum_agn_bol'][i_loop] += lum_agn
+                output_C['sum']['value_Vl']['log_intLum_dust_bol'][i_loop] += lum_dust
 
                 tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                 # calculate requested flux/Lum in given wavelength ranges
@@ -581,11 +541,11 @@ class TorusFrame(object):
 
                         if ret_emi_F['value_state'] in ['intrinsic','absorbed']:
                             tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=False, if_z_decline=True, if_full_range=True) # flux in obs frame
+                                                             if_dust_ext=False, if_redshift=True, if_full_range=True) # flux in obs frame
                             intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
                         if ret_emi_F['value_state'] in ['observed','absorbed']:
                             tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=True,  if_z_decline=True, if_full_range=True) # flux in obs frame
+                                                             if_dust_ext=True,  if_redshift=True, if_full_range=True) # flux in obs frame
                             observed_flux_w = tmp_coeff_e @ tmp_flux_ew
                         if ret_emi_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
                         if ret_emi_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
@@ -611,20 +571,17 @@ class TorusFrame(object):
                         ret_value = ret_value.to(ret_emi_F['value_unit']).value
                         ret_name = f"log_{ret_emi_F['value_form']} ({ret_emi_F['value_state']}, {ret_emi_F['value_unit']}) at {wave_name}"
                         output_C[comp_name]['value_Vl'][ret_name][i_loop] = np.log10(ret_value)
-                        if ret_name in output_C['tot']['value_Vl']: output_C['tot']['value_Vl'][ret_name][i_loop] += ret_value
+                        if ret_name in output_C['sum']['value_Vl']: output_C['sum']['value_Vl'][ret_name][i_loop] += ret_value
 
-        for value_name in output_C['tot']['value_Vl']:
-            # if (value_name[:8] in ['log_Flam', 'log_Fnu ', 'log_mass']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum ']): 
-            if (value_name in (value_names_additive + ret_names_tot)) & value_name[:4] == 'log_':
-                output_C['tot']['value_Vl'][value_name] = np.log10(output_C['tot']['value_Vl'][value_name])
-            elif value_name in value_names_weighted:
-                output_C['tot']['value_Vl'][value_name] = output_C['tot']['value_Vl'][value_name] / output_C['tot']['value_Vl']['coeff']
+        for value_name in output_C['sum']['value_Vl']:
+            if (value_name[:8] in ['log_Flam', 'log_Fnu ', 'log_Mass']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum ']): 
+                output_C['sum']['value_Vl'][value_name] = np.log10(output_C['sum']['value_Vl'][value_name])
 
         ############################################################
         # keep aliases for output in old version <= 2.2.4
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[comp_name]['values'] = output_C[comp_name]['value_Vl']
-        output_C['tot']['values'] = output_C['tot']['value_Vl']
+        output_C['sum']['values'] = output_C['sum']['value_Vl']
         ############################################################
 
         self.output_C = output_C # save to model frame
@@ -649,10 +606,10 @@ class TorusFrame(object):
             print_name_CV[comp_name]['radii_ratio'] = 'Outer/inner radii ratio'
             print_name_CV[comp_name]['half_open_angle'] = 'Half opening angle (degree)'
             print_name_CV[comp_name]['inclination'] = 'Inclination (degree)'
-            print_name_CV[comp_name]['frac_abs'] = f"Torus dust absorption fraction"
-            print_name_CV[comp_name]['log_mass_dust'] = f"Torus dust mass (log {self.init_attr_A['mass_dust']['init_unit']})".replace('M_sun', 'M☉')
-            print_name_CV[comp_name]['log_intLum_dust'] = f"Torus dust bolometric lum. (log {self.init_attr_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
-            print_name_CV[comp_name]['log_intLum_agn'] = f"AGN disc bolometric lum. (log {self.init_attr_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
+            print_name_CV[comp_name]['frac_abs_dust'] = f"Torus dust absorption fraction"
+            print_name_CV[comp_name]['log_Mass_dust'] = f"Torus dust mass (log M☉)"
+            print_name_CV[comp_name]['log_intLum_dust_bol'] = f"Torus dust bolometric lum. (log L☉)"
+            print_name_CV[comp_name]['log_intLum_agn_bol'] = f"AGN disc bolometric lum. (log L☉)"
 
             if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
                 for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
@@ -686,9 +643,9 @@ class TorusFrame(object):
                     else:
                         print_name_CV[comp_name][ret_name] += f" at {tmp_wave_frame} {ret_emi_F['wave_min']}-{ret_emi_F['wave_max']} {tmp_wave_unit}"
 
-        print_name_CV['tot'] = {}
-        for value_name in self.output_C['tot']['value_Vl']:
-            print_name_CV['tot'][value_name] = copy(print_name_CV[self.comp_name_c[0]][value_name])
+        print_name_CV['sum'] = {}
+        for value_name in self.output_C['sum']['value_Vl']:
+            print_name_CV['sum'][value_name] = copy(print_name_CV[self.comp_name_c[0]][value_name])
 
         print_length = max([len(print_name_CV[comp_name][value_name]) for comp_name in print_name_CV for value_name in print_name_CV[comp_name]] + [40]) # set min length
         for comp_name in print_name_CV:
@@ -708,7 +665,6 @@ class TorusFrame(object):
                 print_log(f"# Best-fit properties of the sum of all torus components.", log)
             else: 
                 continue
-            value_names.remove('coeff')
             for value_name in value_names:
                 msg += '| ' + print_name_CV[comp_name][value_name] + f" = {value_Vl[value_name][mask_l].mean():10.4f}" + f" +/- {value_Vl[value_name].std():<10.4f}|\n"
             msg = msg[:-1] # remove the last \n
@@ -717,4 +673,3 @@ class TorusFrame(object):
             print_log(msg, log)
             print_log(bar, log)
             print_log('', log)
-

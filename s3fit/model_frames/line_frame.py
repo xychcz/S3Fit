@@ -48,7 +48,7 @@ class LineFrame(object):
 
         # set plot styles
         self.plot_style_C = {}
-        self.plot_style_C['sum'] = {'color': 'C2', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
+        self.plot_style_C['tot'] = {'color': 'C2', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 1.5}
         i_red, i_green, i_purple = 0, 0, 0
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             self.plot_style_C[comp_name] = {'color': 'None', 'alpha': 0.75, 'linestyle': '-', 'linewidth': 0.75}
@@ -1050,9 +1050,9 @@ class LineFrame(object):
 
         ############################################################
         # check and replace the args to be compatible with old version <= 2.2.4
-        if 'print_results'  in kwargs: if_print_results = kwargs['print_results']
+        if 'print_results'  in kwargs: if_print_results  = kwargs['print_results']
         if 'return_results' in kwargs: if_return_results = kwargs['return_results']
-        if 'show_average'   in kwargs: if_show_average = kwargs['show_average']
+        if 'show_average'   in kwargs: if_show_average   = kwargs['show_average']
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
@@ -1089,10 +1089,10 @@ class LineFrame(object):
             output_C[comp_name]['value_Vl'] = {}
             for value_name in par_name_cp[i_comp] + value_names_C[comp_name]:
                 output_C[comp_name]['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
-        output_C['sum'] = {}
-        output_C['sum']['value_Vl'] = {} # only init values for sum of all comp
+        output_C['tot'] = {}
+        output_C['tot']['value_Vl'] = {} # only init values for sum of all comp
         for value_name in value_names_additive:
-            output_C['sum']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
+            output_C['tot']['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
 
         # locate the results of the model in the full fitting results
         i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_mod_type)
@@ -1124,15 +1124,15 @@ class LineFrame(object):
             for (i_line, line_name) in enumerate(self.linename_n.tolist()):
                 flux_sign = -1.0 if self.cframe.comp_info_cI[i_comp]['sign'] == 'absorption' else 1.0
                 output_C[comp_name]['value_Vl'][line_name] = coeff_lcn[:, i_comp, i_line] * flux_sign
-                output_C['sum']['value_Vl'][line_name] += coeff_lcn[:, i_comp, i_line] * flux_sign
+                output_C['tot']['value_Vl'][line_name] += coeff_lcn[:, i_comp, i_line] * flux_sign
 
-        # output_C['sum'] = output_C.pop('sum') # move sum to the end
+        # output_C['tot'] = output_C.pop('tot') # move sum to the end
 
         ############################################################
         # keep aliases for output in old version <= 2.2.4
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[comp_name]['values'] = output_C[comp_name]['value_Vl']
-        output_C['sum']['values'] = output_C['sum']['value_Vl']
+        output_C['tot']['values'] = output_C['tot']['value_Vl']
         ############################################################
         
         self.output_C = output_C # save to model frame
@@ -1175,7 +1175,7 @@ class LineFrame(object):
         for (i_value, value_name) in enumerate(value_names):
             tbl_row = []
             tbl_row.append(print_names[value_name])
-            for (i_comp, comp_name) in enumerate(self.comp_name_c): # skip 'sum'
+            for (i_comp, comp_name) in enumerate(self.comp_name_c): # skip 'tot'
                 value_l = self.output_C[comp_name]['value_Vl'][value_name]
                 tbl_row.append(value_l[mask_l].mean())
                 tbl_row.append(value_l.std())
