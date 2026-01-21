@@ -6,7 +6,7 @@
 from copy import deepcopy as copy
 import numpy as np
 np.set_printoptions(linewidth=10000)
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator, interp1d
 from astropy.io import fits
 from astropy.cosmology import Planck18 as cosmo
 import astropy.units as u
@@ -16,19 +16,21 @@ from ..auxiliaries.auxiliary_frames import ConfigFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict
 
 class TorusFrame(object): 
-    def __init__(self, mod_name=None, fframe=None, config=None, 
-                 v0_redshift=None, 
+    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None, interp_space='log', 
+                 v0_redshift=None, R_inst_rw=None, 
                  wave_min=None, wave_max=None, 
-                 interp_space='log', 
                  verbose=True, log_message=[]): 
 
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config 
-        self.v0_redshift = v0_redshift        
+        self.num_coeffs_max = num_coeffs_max
+        self.interp_space = interp_space
+
+        self.v0_redshift = v0_redshift 
+        self.R_inst_rw = R_inst_rw        
         self.wave_min = wave_min
         self.wave_max = wave_max
-        self.interp_space = interp_space
         self.verbose = verbose
         self.log_message = log_message
 
@@ -44,14 +46,18 @@ class TorusFrame(object):
             self.wave_min_def, self.wave_max_def = 1e4, 1e7 # angstrom
         self.enable = (self.wave_max > self.wave_min_def) & (self.wave_min < self.wave_max_def)
 
+        # load template library
+        self.read_torus_library()
+
         # one independent element per component, since disc and dust spectra are tied for a single component
         self.num_coeffs_c = np.ones(self.num_comps, dtype='int')
         self.num_coeffs = self.num_coeffs_c.sum()
 
+        self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
+
         # currently do not consider negative SED 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
-
-        self.read_torus_library()
 
         if self.verbose:
             print_log(f"Torus model components: {[self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]}", self.log_message)
@@ -155,6 +161,9 @@ class TorusFrame(object):
         template['wave'] = {'value': skirtor_disc[0, 6:], 'unit': 'micron', 'medium': None} # 1e-3 to 1e3 micron
         template['pars'] = {'opt_depth_9.7': skirtor_disc[1:, 0], 'radii_ratio': skirtor_disc[1:, 2], 'half_open_angle': skirtor_disc[1:, 1], 'inclination': skirtor_disc[1:, 3]}
         template['spec'] = {'disc': skirtor_disc[1:, 6:], 'dust': skirtor_dust[1:, 6:], 'unit': 'erg s-1 micron-1'}
+        # here 'spec' is short for spectral density
+        ######### convert if spec given in fnu
+
         # attributes
         template['mass_dust' ] = {'value': skirtor_disc[1:, 4]              , 'unit': 'M_sun', 'additive': True } 
         template['frac_abs'  ] = {'value': skirtor_disc[1:, 5]              , 'unit': ''     , 'additive': False}
@@ -164,153 +173,140 @@ class TorusFrame(object):
         ###############################
 
         # internal recording
-        self.init_wave_w       = template['wave']['value']
-        self.init_wave_unit    = template['wave']['unit']
-        self.init_wave_medium  = template['wave']['medium']
+        self.init_spec_wave_w       = template['wave']['value']
+        self.init_spec_wave_unit    = template['wave']['unit']
+        self.init_spec_wave_medium  = template['wave']['medium']
 
         self.init_par_Pe       = template['pars']
         self.num_templates     = len(list(self.init_par_Pe.values())[0])
 
-        # self.init_lum_disc_ew  = template['spec']['disc']
-        # self.init_lum_dust_ew  = template['spec']['dust']
-        # self.init_lum_unit     = template['spec']['unit']
+        self.init_spec_dens_B = {key: {'value_ew': value,          'unit': template['spec']['unit']}                     for key, value in template['spec'].items() if key not in ['unit']}
+        self.init_attribute_A = {key: {'value_e' : value['value'], 'unit': value['unit'], 'additive': value['additive']} for key, value in template.items()         if key not in ['wave', 'spec', 'pars']}
 
-        # self.init_mass_dust_e  = template['mass_dust']['value']
-        # self.init_mass_unit    = template['mass_dust']['unit' ]
-
-        # self.init_frac_abs_e   = template['frac_abs' ]['value']
-
-        # self.init_intLum_agn_e = template['intLum_agn']['value'] # i.e., self.init_norm_e
-        # self.init_intLum_unit  = template['intLum_agn']['unit' ] # i.e., self.init_norm_unit
-
-        self.init_spec_S = {key: {'value_ew': value,          'unit': template['spec']['unit']}                     for key, value in template['spec'].items() if key not in ['unit']}
-        self.init_attr_A = {key: {'value_e' : value['value'], 'unit': value['unit'], 'additive': value['additive']} for key, value in template.items()         if key not in ['wave', 'spec', 'pars']}
-
-        # self.init_wave_w
-        # self.init_wave_unit
-        # self.init_spec_S[spec_name]['value_ew'] / ['unit']
-        # self.init_attr_A[attr_name]['value_e' ] / ['unit'] / ['additive']
+        # self.init_spec_wave_w
+        # self.init_spec_wave_unit
+        # self.init_spec_dens_B[bloc_name]['value_ew'] / ['unit']
+        # self.init_attribute_A[attr_name]['value_e' ] / ['unit'] / ['additive']
         # 'additive' is short for 'if_is_additive'
 
         ###############################
 
         # convert wave unit to angstrom in vacuum
-        self.init_wave_w *= u.Unit(self.init_wave_unit).to('angstrom')
-        self.init_wave_unit = 'angstrom'
-        if self.init_wave_medium == 'air': self.init_wave_w = wave_air_to_vac(self.init_wave_w)
+        self.init_spec_wave_w *= u.Unit(self.init_spec_wave_unit).to('angstrom')
+        self.init_spec_wave_unit = 'angstrom'
+        if self.init_spec_wave_medium == 'air': self.init_spec_wave_w = wave_air_to_vac(self.init_spec_wave_w)
 
         ###############################
 
-        # add spec_name of 'tot' if it does not exist
-        if 'tot' not in self.init_spec_S.keys():
-            tot_value_ew = np.zeros((self.num_templates, len(self.init_wave_w)))
-            for spec_dict in self.init_spec_S.values():
-                tot_value_ew += spec_dict['value_ew']
-            self.init_spec_S['tot'] = {'value_ew': tot_value_ew, 'unit': spec_dict['unit']}
+        # add bloc_name of 'tot' if it does not exist
+        if 'tot' not in self.init_spec_dens_B.keys():
+            tot_value_ew = np.zeros((self.num_templates, len(self.init_spec_wave_w)))
+            for bloc_dict in self.init_spec_dens_B.values():
+                tot_value_ew += bloc_dict['value_ew']
+            self.init_spec_dens_B['tot'] = {'value_ew': tot_value_ew, 'unit': bloc_dict['unit']}
 
         # update normalization to avoid outlier values
-        scale_lum_e    =      self.init_spec_S['tot']['value_ew'].max(axis=1) * 1e-2
-        scale_lum_unit = copy(self.init_spec_S['tot']['unit'    ])
-        # scale models by scale_lum_e * scale_lum_unit
-        for spec_name, spec_dict in self.init_spec_S.items():
-            spec_dict['value_ew'] =            spec_dict['value_ew']  /        scale_lum_e[:, None]
-            spec_dict['unit'    ] = str(u.Unit(spec_dict['unit'    ]) / u.Unit(scale_lum_unit)) # dimensionless unscaled
-            self.init_spec_S[spec_name] = spec_dict
-        for attr_name, attr_dict in self.init_attr_A.items():
+        scale_spec_dens_e    =      self.init_spec_dens_B['tot']['value_ew'].max(axis=1) * 1e-2
+        scale_spec_dens_unit = copy(self.init_spec_dens_B['tot']['unit'    ])
+        # scale models by scale_spec_dens_e * scale_spec_dens_unit
+        for bloc_name, bloc_dict in self.init_spec_dens_B.items():
+            bloc_dict['value_ew'] =            bloc_dict['value_ew']  /        scale_spec_dens_e[:, None]
+            bloc_dict['unit'    ] = str(u.Unit(bloc_dict['unit'    ]) / u.Unit(scale_spec_dens_unit)) # dimensionless unscaled
+            self.init_spec_dens_B[bloc_name] = bloc_dict
+        for attr_name, attr_dict in self.init_attribute_A.items():
             attr_dict['init_unit'] = copy(attr_dict['unit']) # for the output
             if not attr_dict['additive']: continue # skip if the attribute is not additive
-            attr_dict['value_e' ] =            attr_dict['value_e' ]  /        scale_lum_e
-            attr_dict['unit'    ] = str(u.Unit(attr_dict['unit'    ]) / u.Unit(scale_lum_unit))
-            self.init_attr_A[attr_name] = attr_dict
+            attr_dict['value_e' ] =            attr_dict['value_e' ]  /        scale_spec_dens_e
+            attr_dict['unit'    ] = str(u.Unit(attr_dict['unit'    ]) / u.Unit(scale_spec_dens_unit))
+            self.init_attribute_A[attr_name] = attr_dict
 
         ###############################
 
         # special treatment for this torus model
         # extended to longer wavelength
-        if self.wave_max > self.init_wave_w[-1]:
-            ext_wave_logbin = np.log10(self.init_wave_w[-1] / self.init_wave_w[-2])
-            ext_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_wave_w[-1]) / ext_wave_logbin))
-            ext_wave_w = np.logspace(np.log10(self.init_wave_w[-1]), np.log10(self.wave_max), ext_wave_num)[1:]
+        if self.wave_max > self.init_spec_wave_w[-1]:
+            ext_spec_wave_logbin = np.log10(self.init_spec_wave_w[-1] / self.init_spec_wave_w[-2])
+            ext_spec_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_spec_wave_w[-1]) / ext_spec_wave_logbin))
+            ext_spec_wave_w = np.logspace(np.log10(self.init_spec_wave_w[-1]), np.log10(self.wave_max), ext_spec_wave_num)[1:]
 
-            for spec_name, spec_dict in self.init_spec_S.items():
+            for bloc_name, bloc_dict in self.init_spec_dens_B.items():
                 i_w = -2 # avoid zero values at the end
-                index_e = np.log10(spec_dict['value_ew'][:,i_w-1] / spec_dict['value_ew'][:,i_w]) / np.log10(self.init_wave_w[None,i_w-1] / self.init_wave_w[None,i_w])
-                ext_lum_ew  = (ext_wave_w / self.init_wave_w[i_w])[None,:] ** index_e[:,None] * spec_dict['value_ew'][:,i_w][:,None]
-                spec_dict['value_ew'] = np.hstack((spec_dict['value_ew'], ext_lum_ew))
-                self.init_spec_S[spec_name] = spec_dict
+                index_e = np.log10(bloc_dict['value_ew'][:,i_w-1] / bloc_dict['value_ew'][:,i_w]) / np.log10(self.init_spec_wave_w[None,i_w-1] / self.init_spec_wave_w[None,i_w])
+                ext_spec_dens_ew  = (ext_spec_wave_w / self.init_spec_wave_w[i_w])[None,:] ** index_e[:,None] * bloc_dict['value_ew'][:,i_w][:,None]
+                bloc_dict['value_ew'] = np.hstack((bloc_dict['value_ew'], ext_spec_dens_ew))
+                self.init_spec_dens_B[bloc_name] = bloc_dict
 
-            self.init_wave_w = np.hstack((self.init_wave_w, ext_wave_w))
+            self.init_spec_wave_w = np.hstack((self.init_spec_wave_w, ext_spec_wave_w))
 
         # avoid non-positive values
-        self.spec_min = 0
+        self.spec_dens_min = 0
         if self.interp_space == 'log':
-            for spec_name, spec_dict in self.init_spec_S.items():
-                tmp_min = spec_dict['value_ew'][spec_dict['value_ew'] > 0].min() * 1e-4
-                self.spec_min = min(self.spec_min, tmp_min) if self.spec_min > 0 else tmp_min
-                spec_dict['value_ew'][spec_dict['value_ew'] <= 0] = self.spec_min
-                self.init_spec_S[spec_name] = spec_dict
-            self.log_spec_min = np.log10(self.spec_min)
+            for bloc_name, bloc_dict in self.init_spec_dens_B.items():
+                tmp_min = bloc_dict['value_ew'][bloc_dict['value_ew'] > 0].min() * 1e-4
+                self.spec_dens_min = min(self.spec_dens_min, tmp_min) if self.spec_dens_min > 0 else tmp_min
+                bloc_dict['value_ew'][bloc_dict['value_ew'] <= 0] = self.spec_dens_min
+                self.init_spec_dens_B[bloc_name] = bloc_dict
+            self.log_spec_dens_min = np.log10(self.spec_dens_min)
         
         ###############################
 
         # sort each par
         index_e = np.lexsort(tuple([par_e for par_e in self.init_par_Pe.values()]))
         self.init_par_Pe = {par_name: par_e[index_e] for par_name, par_e in self.init_par_Pe.items()}
-        for spec_name, spec_dict in self.init_spec_S.items():
-            spec_dict['value_ew'] = spec_dict['value_ew'][index_e, :]
-            self.init_spec_S[spec_name] = spec_dict
-        for attr_name, attr_dict in self.init_attr_A.items():
+        for bloc_name, bloc_dict in self.init_spec_dens_B.items():
+            bloc_dict['value_ew'] = bloc_dict['value_ew'][index_e, :]
+            self.init_spec_dens_B[bloc_name] = bloc_dict
+        for attr_name, attr_dict in self.init_attribute_A.items():
             attr_dict['value_e' ] = attr_dict['value_e' ][index_e]
-            self.init_attr_A[attr_name] = attr_dict
+            self.init_attribute_A[attr_name] = attr_dict
 
         # transfer to multi-dimontional par-grid
         self.init_par_uniq_Pu = {par_name: np.unique(par_e) for par_name, par_e in self.init_par_Pe.items()}
-        for spec_name, spec_dict in self.init_spec_S.items():
-            spec_dict['value_gw'] = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()] + [len(self.init_wave_w)]) 
-            self.init_spec_S[spec_name] = spec_dict
-        for attr_name, attr_dict in self.init_attr_A.items():
+        for bloc_name, bloc_dict in self.init_spec_dens_B.items():
+            bloc_dict['value_gw'] = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()] + [len(self.init_spec_wave_w)]) 
+            self.init_spec_dens_B[bloc_name] = bloc_dict
+        for attr_name, attr_dict in self.init_attribute_A.items():
             attr_dict['value_g' ] = np.zeros([len(par_uniq) for par_uniq in self.init_par_uniq_Pu.values()]) 
-            self.init_attr_A[attr_name] = attr_dict
+            self.init_attribute_A[attr_name] = attr_dict
 
         for i_e in range(self.num_templates):
             i_uniq_list = []
             for par_uniq, par_e in zip(self.init_par_uniq_Pu.values(), self.init_par_Pe.values()):
                 i_uniq_list.append(np.where(par_uniq == par_e[i_e])[0][0])
             i_uniq_tuple = tuple(i_uniq_list)  
-            for spec_name, spec_dict in self.init_spec_S.items():
-                spec_dict['value_gw'][i_uniq_tuple] = spec_dict['value_ew'][i_e, :]
-                self.init_spec_S[spec_name] = spec_dict
-            for attr_name, attr_dict in self.init_attr_A.items():
+            for bloc_name, bloc_dict in self.init_spec_dens_B.items():
+                bloc_dict['value_gw'][i_uniq_tuple] = bloc_dict['value_ew'][i_e, :]
+                self.init_spec_dens_B[bloc_name] = bloc_dict
+            for attr_name, attr_dict in self.init_attribute_A.items():
                 attr_dict['value_g' ][i_uniq_tuple] = attr_dict['value_e' ][i_e]
-                self.init_attr_A[attr_name] = attr_dict
+                self.init_attribute_A[attr_name] = attr_dict
 
         ###############################
 
         # build interpolation function
         init_par_uniq_tuple = tuple(self.init_par_uniq_Pu.values())
         if self.interp_space == 'linear':
-            init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_wave_w])
+            init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_spec_wave_w])
             def tmp_func(x): return x
         elif self.interp_space == 'log':
-            self.init_log_wave_w = np.log10(self.init_wave_w)
-            init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_log_wave_w])
+            self.init_log_spec_wave_w = np.log10(self.init_spec_wave_w)
+            init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_log_spec_wave_w])
             def tmp_func(x): return np.log10(x)
         self.interp_func_R = {}
-        for spec_name, spec_dict in self.init_spec_S.items():
-            self.interp_func_R[('spec', spec_name)] = RegularGridInterpolator(init_par_uniq_wave_tuple, tmp_func(spec_dict['value_gw']), method='linear', bounds_error=False)
-        for attr_name, attr_dict in self.init_attr_A.items():
+        for bloc_name, bloc_dict in self.init_spec_dens_B.items():
+            self.interp_func_R[('bloc', bloc_name)] = RegularGridInterpolator(init_par_uniq_wave_tuple, tmp_func(bloc_dict['value_gw']), method='linear', bounds_error=False)
+        for attr_name, attr_dict in self.init_attribute_A.items():
             self.interp_func_R[('attr', attr_name)] = RegularGridInterpolator(init_par_uniq_tuple,      tmp_func(attr_dict['value_g' ]), method='linear', bounds_error=False)
-        # self.interp_func_R['frac_abs'      ] = RegularGridInterpolator(init_par_uniq_tuple,          self.init_frac_abs_g,             method='linear', bounds_error=False)
         # set bounds_error=False to avoid error by slight exceeding of x-val generated by least_square function
         # but should avoid using pars outside of initial range manually
 
     def interp_model(self, input_par_p, input_par_index_P, ret_name=None):
         input_par_list = [input_par_p[input_par_index_P[par_name]] for par_name in self.init_par_uniq_Pu.keys()]
-        if ret_name[0] == 'spec':
+        if ret_name[0] == 'bloc':
             if self.interp_space == 'linear':
-                input_par_list = [input_par_list + [w] for w in self.init_wave_w]
+                input_par_list = [input_par_list + [w] for w in self.init_spec_wave_w]
             elif self.interp_space == 'log':
-                input_par_list = [input_par_list + [logw] for logw in self.init_log_wave_w]
+                input_par_list = [input_par_list + [logw] for logw in self.init_log_spec_wave_w]
         return self.interp_func_R[ret_name](np.array(input_par_list))
 
     ##########################################################################
@@ -389,7 +385,7 @@ class TorusFrame(object):
 
     ##########################################################################
 
-    def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
+    def create_models(self, obs_spec_wave_w, par_p, mask_lite_e=None, components=None, 
                       if_dust_ext=False, if_ism_abs=False, if_igm_abs=False, 
                       if_z_decline=True, if_convolve=False, conv_nbin=None, if_full_range=False): 
 
@@ -397,51 +393,87 @@ class TorusFrame(object):
         # par: voff (to adjust redshift), tau_si, h_open, r_ratio, incl
         # comps: 'disc', 'dust'
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
+        if mask_lite_e is not None: mask_lite_ce = self.cframe.reshape_by_comp(mask_lite_e, self.num_coeffs_c) 
         if isinstance(components, str): components = [components]
 
+        prep_spec_wave_w = copy(self.init_spec_wave_w) # avoid changing the initial 
+        if self.interp_space == 'log':
+            prep_log_spec_wave_w = copy(self.init_log_spec_wave_w)
+            obs_log_spec_wave_w  = np.log10(obs_spec_wave_w)
 
-        # log or linear interp
-        # add dust and conv
+        obs_spec_dens_mcomp_ew = None
 
-
-        orig_log_wave_w = copy(self.init_log_wave_w)
-        obs_flux_mcomp_ew = None
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             if components is not None:
                 if comp_name not in components: continue
 
+            # here uses 'prep_' (preprocessed or prepared) to express model in rest frame without any extinction, absorption, or convolution
+            prep_spec_dens_ew = np.zeros_like(prep_spec_wave_w[None,:])
+            # for bloc_name, bloc_dict in self.init_spec_dens_B.items():
+            #     if bloc_name in self.cframe.comp_info_cI[i_comp]['mod_used']:
+            #         if mask_lite_e is not None:
+            #             prep_spec_dens_ew += bloc_dict['value_ew'][mask_lite_ce[i_comp],:] # limit element number for accelarate calculation
+            #         else:
+            #             prep_spec_dens_ew += bloc_dict['value_ew']
+            # if self.interp_space == 'log': prep_log_spec_dens_ew = np.log10(prep_log_spec_dens_ew)
             # interpolate model for given pars in initial wavelength (rest)
-            # here uses 'orig_' to express model in rest frame without any extinction, absorption, or convolution
-            orig_log_spec_w = np.zeros_like(orig_log_wave_w)
-            for spec_name in self.init_spec_S.keys():
-                if spec_name in self.cframe.comp_info_cI[i_comp]['mod_used']:
-                    orig_log_spec_w += self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name=('spec', spec_name))
+            for bloc_name in self.init_spec_dens_B.keys():
+                if bloc_name in self.cframe.comp_info_cI[i_comp]['mod_used']:
+                    prep_spec_dens_ew += self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name=('bloc', bloc_name))[None,:] # convert to (1,w) format
+            if self.interp_space == 'log': prep_log_spec_dens_ew = prep_spec_dens_ew # already log in interp_model
+
+            # dust extinction
+            if if_dust_ext & ('Av' in self.cframe.par_index_cP[i_comp]):
+                Av = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['Av']]
+                dust_ext_factor_w = 10.0**(-0.4 * Av * ExtLaw(prep_spec_wave_w))
+            else:
+                dust_ext_factor_w = 1
 
             # redshift models
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
-            z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
-            orig_log_wave_w += np.log10(z_ratio)
+            z_factor = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
+            z_spec_wave_w  = prep_spec_wave_w * z_factor
+            if self.interp_space == 'log': z_log_spec_wave_w = prep_log_spec_wave_w + np.log10(z_factor)
             if if_z_decline:
-                orig_log_spec_w -= np.log10(z_ratio)
+                z_decline_factor = 1 / z_factor
+            else:
+                z_decline_factor = 1
+
+            if self.interp_space == 'linear':
+                dz_spec_dens_ew = prep_spec_dens_ew * dust_ext_factor_w * z_decline_factor
+            elif self.interp_space == 'log':
+                dz_log_spec_dens_ew = prep_log_spec_dens_ew + np.log10(dust_ext_factor_w * z_decline_factor)
+
+            # convolve with intrinsic and instrumental dispersion
+            if if_convolve & ('fwhm' in self.cframe.par_index_cP[i_comp]) & (self.R_inst_rw is not None) & (conv_nbin is not None):
+                fwhm = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
+                R_inst_w = np.interp(z_spec_wave_w, self.R_inst_rw[0], self.R_inst_rw[1])
+                if self.interp_space == 'log': dz_spec_dens_ew = 10.0**dz_log_spec_dens_ew # convolve in linear space
+                dzc_spec_dens_ew = convolve_var_width_fft(z_spec_wave_w, dz_spec_dens_ew, dv_fwhm_obj=fwhm, 
+                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_factor, R_inst_w=R_inst_w, num_bins=conv_nbin)
+                if self.interp_space == 'log': dzc_log_spec_dens_ew = np.log10(dzc_spec_dens_ew)
+            else:
+                if self.interp_space == 'linear':
+                    dzc_spec_dens_ew = dz_spec_dens_ew # just copy if convlution not required, e.g., for broad-band sed fitting
+                elif self.interp_space == 'log': 
+                    dzc_log_spec_dens_ew = dz_log_spec_dens_ew
 
             # project to observed wavelength
-            obs_log_wave_w = np.log10(obs_wave_w) # in angstrom
-            obs_log_spec_w = np.interp(obs_log_wave_w, orig_log_wave_w, orig_log_spec_w, left=self.log_spec_min, right=self.log_spec_min)
+            if self.interp_space == 'linear':
+                interp_func = interp1d(z_spec_wave_w, dzc_spec_dens_ew, axis=1, kind='linear', fill_value=(0,0), bounds_error=False)
+                obs_spec_dens_ew = interp_func(obs_spec_wave_w)
+            elif self.interp_space == 'log': 
+                interp_func = interp1d(z_log_spec_wave_w, dzc_log_spec_dens_ew, axis=1, kind='linear', fill_value=(self.log_spec_dens_min,self.log_spec_dens_min), bounds_error=False)
+                obs_log_spec_dens_ew = interp_func(obs_log_spec_wave_w)
+                obs_spec_dens_ew = 10.0**obs_log_spec_dens_ew
+                obs_spec_dens_ew[obs_log_spec_dens_ew <= self.log_spec_dens_min] = 0
 
-            obs_spec_w = 10.0**obs_log_spec_w
-            obs_spec_w[obs_log_spec_w <= self.log_spec_min] = 0
-
-            obs_flux_scomp_ew = obs_spec_w[None,:] # convert to (1,w) format
-
-            if obs_flux_mcomp_ew is None: 
-                obs_flux_mcomp_ew = obs_flux_scomp_ew
+            if obs_spec_dens_mcomp_ew is None: 
+                obs_spec_dens_mcomp_ew = obs_spec_dens_ew
             else:
-                obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+                obs_spec_dens_mcomp_ew = np.vstack((obs_spec_dens_mcomp_ew, obs_spec_dens_ew))
 
-        if mask_lite_e is not None:
-            obs_flux_mcomp_ew = obs_flux_mcomp_ew[mask_lite_e,:]
-
-        return obs_flux_mcomp_ew
+        return obs_spec_dens_mcomp_ew
 
     ##########################################################################
     ########################### Output functions #############################
@@ -475,7 +507,7 @@ class TorusFrame(object):
 
         # list the properties to be output; the print will follow this order
         value_names_additive, value_names_weighted = [], []
-        for attr_name, attr_dict in self.init_attr_A.items():
+        for attr_name, attr_dict in self.init_attribute_A.items():
             if attr_dict['additive']: 
                 value_names_additive.append('log_'+attr_name) # output log value for additive attributes
             else:
@@ -544,7 +576,7 @@ class TorusFrame(object):
                 rev_redshift = (1 + self.v0_redshift) * (1 + voff/299792.458) - 1
                 lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
 
-                for attr_name, attr_dict in self.init_attr_A.items():
+                for attr_name, attr_dict in self.init_attribute_A.items():
                     attr_value_e = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name=('attr', attr_name))
 
                     if self.interp_space == 'log': attr_value_e = 10.0**attr_value_e
@@ -615,7 +647,7 @@ class TorusFrame(object):
 
         for value_name in output_C['tot']['value_Vl']:
             # if (value_name[:8] in ['log_Flam', 'log_Fnu ', 'log_mass']) | (value_name[:11] in ['log_lamFlam', 'log_intFlux', 'log_lamLlam', 'log_intLum ']): 
-            if (value_name in (value_names_additive + ret_names_tot)) & value_name[:4] == 'log_':
+            if (value_name in (value_names_additive + ret_names_tot)) & (value_name[:4] == 'log_'):
                 output_C['tot']['value_Vl'][value_name] = np.log10(output_C['tot']['value_Vl'][value_name])
             elif value_name in value_names_weighted:
                 output_C['tot']['value_Vl'][value_name] = output_C['tot']['value_Vl'][value_name] / output_C['tot']['value_Vl']['coeff']
@@ -650,9 +682,9 @@ class TorusFrame(object):
             print_name_CV[comp_name]['half_open_angle'] = 'Half opening angle (degree)'
             print_name_CV[comp_name]['inclination'] = 'Inclination (degree)'
             print_name_CV[comp_name]['frac_abs'] = f"Torus dust absorption fraction"
-            print_name_CV[comp_name]['log_mass_dust'] = f"Torus dust mass (log {self.init_attr_A['mass_dust']['init_unit']})".replace('M_sun', 'M☉')
-            print_name_CV[comp_name]['log_intLum_dust'] = f"Torus dust bolometric lum. (log {self.init_attr_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
-            print_name_CV[comp_name]['log_intLum_agn'] = f"AGN disc bolometric lum. (log {self.init_attr_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
+            print_name_CV[comp_name]['log_mass_dust'] = f"Torus dust mass (log {self.init_attribute_A['mass_dust']['init_unit']})".replace('M_sun', 'M☉')
+            print_name_CV[comp_name]['log_intLum_dust'] = f"Torus dust bolometric lum. (log {self.init_attribute_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
+            print_name_CV[comp_name]['log_intLum_agn'] = f"AGN disc bolometric lum. (log {self.init_attribute_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
 
             if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
                 for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:

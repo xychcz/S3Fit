@@ -293,17 +293,17 @@ class ConfigFrame(object):
 
 class PhotFrame(object):
     def __init__(self, 
-                 name_b=None, flux_b=None, ferr_b=None, # on input data
-                 input_flux_unit='mJy', output_flux_unit='erg s-1 cm-2 angstrom-1', 
+                 name_b=None, fden_b=None, ferr_b=None, # on input data
+                 input_fden_unit='mJy', output_fden_unit='erg s-1 cm-2 angstrom-1', 
                  trans_dir=None, trans_rsmp=None, # on transmission curves; old default trans_rsmp=10
                  wave_w=None, wave_unit='angstrom', wave_num=None): # on corresonding SED range
         # add file_bac, file_iron later
         
         self.name_b = copy(name_b)
-        self.flux_b = copy(flux_b)
+        self.fden_b = copy(fden_b)
         self.ferr_b = copy(ferr_b) 
-        self.input_flux_unit  = input_flux_unit
-        self.output_flux_unit = output_flux_unit
+        self.input_fden_unit  = input_fden_unit
+        self.output_fden_unit = output_fden_unit
 
         self.trans_dir = copy(trans_dir)
         self.trans_rsmp = trans_rsmp
@@ -319,17 +319,17 @@ class PhotFrame(object):
                                                                              wave_w=self.wave_w, wave_num=self.wave_num)
         self.wave_b = spec_to_phot(self.wave_w, self.wave_w, self.trans_bw)
 
-        # convert flux unit
-        if u.Unit(self.input_flux_unit).is_equivalent(self.output_flux_unit):
-            flux_ratio_b = u.Unit(self.input_flux_unit).to(self.output_flux_unit)
-        elif u.Unit(self.input_flux_unit).is_equivalent('mJy'):
-            flux_ratio_b = 1 / fnu_over_flam(self.wave_w, trans_bw=self.trans_bw, flam_unit=self.output_flux_unit, fnu_unit=self.input_flux_unit)
-        elif u.Unit(self.input_flux_unit).is_equivalent('erg s-1 cm-2 angstrom-1'):
-            flux_ratio_b = fnu_over_flam(self.wave_w, trans_bw=self.trans_bw, flam_unit=self.input_flux_unit, fnu_unit=self.output_flux_unit)
+        # convert fden unit
+        if u.Unit(self.input_fden_unit).is_equivalent(self.output_fden_unit):
+            fden_ratio_b = u.Unit(self.input_fden_unit).to(self.output_fden_unit)
+        elif u.Unit(self.input_fden_unit).is_equivalent('mJy'):
+            fden_ratio_b = 1 / fnu_over_flam(self.wave_w, trans_bw=self.trans_bw, flam_unit=self.output_fden_unit, fnu_unit=self.input_fden_unit)
+        elif u.Unit(self.input_fden_unit).is_equivalent('erg s-1 cm-2 angstrom-1'):
+            fden_ratio_b = fnu_over_flam(self.wave_w, trans_bw=self.trans_bw, flam_unit=self.input_fden_unit, fnu_unit=self.output_fden_unit)
         else:
-            raise ValueError((f"The input_flux_unit, {self.input_flux_unit}, is not a valid flux unit."))
-        self.flux_b *= flux_ratio_b 
-        self.ferr_b *= flux_ratio_b 
+            raise ValueError((f"The input_fden_unit, {self.input_fden_unit}, is not a valid flux density unit."))
+        self.fden_b *= fden_ratio_b 
+        self.ferr_b *= fden_ratio_b 
         
     def read_transmission(self, name_b=None, trans_dir=None, trans_rsmp=None, wave_w=None, wave_num=None):        
         if trans_dir[-1] != '/': trans_dir += '/'

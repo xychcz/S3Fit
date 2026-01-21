@@ -18,7 +18,7 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
-    def __init__(self, mod_name=None, fframe=None, config=None, 
+    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None,
                  v0_redshift=None, R_inst_rw=None, 
                  wave_min=None, wave_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
@@ -27,6 +27,8 @@ class StellarFrame(object):
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
+        self.num_coeffs_max = num_coeffs_max
+
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.wave_min = wave_min
@@ -51,7 +53,7 @@ class StellarFrame(object):
             if np.sum(self.sfh_name_c == 'nonparametric') >= 1:
                 raise ValueError((f"Nonparametric SFH can only be used with a single component."))
 
-        # load ssp library
+        # load template library
         self.read_ssp_library()
 
         # count the number of independent model elements
@@ -62,6 +64,9 @@ class StellarFrame(object):
             else:
                 self.num_coeffs_c[i_comp] = self.num_mets 
         self.num_coeffs = self.num_coeffs_c.sum()
+
+        self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        self.num_coeffs_max = max(self.num_coeffs_max, 16 * 2) # set min num for each template par
 
         # currently do not consider negative spectra 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
@@ -261,8 +266,8 @@ class StellarFrame(object):
 
         self.header = ssp_lib[0].header
         # load models
-        self.init_lum_ew = ssp_lib[0].data
-        self.init_lum_unit = 'L_sun angstrom-1'
+        self.init_llam_ew = ssp_lib[0].data
+        self.init_llam_unit = 'L_sun angstrom-1'
         # wave_axis = 1
         # crval = self.header[f'CRVAL{wave_axis}']
         # cdelt = self.header[f'CDELT{wave_axis}']
@@ -277,7 +282,7 @@ class StellarFrame(object):
         # template resolution step of 0.1 angstrom, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
         self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
-        self.num_templates = self.init_lum_ew.shape[0]
+        self.num_templates = self.init_llam_ew.shape[0]
         self.mass_e = np.ones(self.num_templates, dtype='float') # i.e., self.init_norm_e, initially normalized by mass
         self.mass_unit = 'M_sun' # i.e., self.init_norm_unit
         self.remain_massfrac_e = ssp_lib[2].data # leave remain_massfrac_e = 1 if not provided. 
@@ -303,13 +308,13 @@ class StellarFrame(object):
         # convert the normalization from per unit mass to per unit L5500
         self.wave_norm, self.dw_norm = 5500, 10
         mask_5500_w = np.abs(self.init_wave_w - self.wave_norm) < self.dw_norm
-        scale_lum_e = np.mean(self.init_lum_ew[:, mask_5500_w], axis=1)
-        scale_lum_unit = copy(self.init_lum_unit)
-        # scale models by scale_lum_e * scale_lum_unit
-        self.init_lum_ew /= scale_lum_e[:, None]
-        self.init_lum_unit = str(u.Unit(self.init_lum_unit) / u.Unit(scale_lum_unit)) # dimensionless unscaled
-        self.mass_e /= scale_lum_e
-        self.mass_unit = str(u.Unit(self.mass_unit) / u.Unit(scale_lum_unit))
+        scale_llam_e = np.mean(self.init_llam_ew[:, mask_5500_w], axis=1)
+        scale_llam_unit = copy(self.init_llam_unit)
+        # scale models by scale_llam_e * scale_llam_unit
+        self.init_llam_ew /= scale_llam_e[:, None]
+        self.init_llam_unit = str(u.Unit(self.init_llam_unit) / u.Unit(scale_llam_unit)) # dimensionless unscaled
+        self.mass_e /= scale_llam_e # mass_e is now converted to mass-to-L5500 ratio:
+        self.mass_unit = str(u.Unit(self.mass_unit) / u.Unit(scale_llam_unit))
 
         ##############################################################
 
@@ -321,7 +326,7 @@ class StellarFrame(object):
         duration_a = np.gradient(self.age_a)
         self.duration_e = duration_a[index_ua_a] # np.tile(duration_a, (self.num_mets,1)).flatten()
 
-        # assume constant SFH across adjacent age bins, then mtol can be converted to sfr-to-lum (L5500) ratio:
+        # assume constant SFH across adjacent age bins
         self.sfr_e = self.mass_e / (self.duration_e * u.Unit(self.age_unit).to('yr'))
         self.sfr_unit = str(u.Unit(self.mass_unit) / u.Unit('yr')) 
 
@@ -330,7 +335,7 @@ class StellarFrame(object):
         # select model spectra in given wavelength range
         mask_select_w = (self.init_wave_w >= self.wave_min) & (self.init_wave_w <= self.wave_max)
         orig_wave_w = self.init_wave_w[   mask_select_w]
-        orig_lum_ew = self.init_lum_ew[:, mask_select_w]
+        orig_llam_ew = self.init_llam_ew[:, mask_select_w]
 
         # determine the required model resolution and bin size (in angstrom) to downsample the model
         if self.Rratio_mod is not None:
@@ -357,16 +362,16 @@ class StellarFrame(object):
                         print_log(f'Downsample preconvolved SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # here assume the internal dispersion in the original model (e.g., in stellar atmosphere) is indepent from the measured dispersion (i.e., stellar motion) in the fitting
-                    orig_lum_ew = convolve_fix_width_fft(orig_wave_w, orig_lum_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
+                    orig_llam_ew = convolve_fix_width_fft(orig_wave_w, orig_llam_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
                 else:
                     if self.verbose: 
                         print_log(f'Downsample original SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', self.log_message)  
                 orig_wave_w = orig_wave_w[  ::self.dpix_dsp]
-                orig_lum_ew = orig_lum_ew[:,::self.dpix_dsp]
+                orig_llam_ew = orig_llam_ew[:,::self.dpix_dsp]
                 self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[::self.dpix_dsp]
         # save the smoothed models
         self.orig_wave_w = orig_wave_w
-        self.orig_lum_ew = orig_lum_ew
+        self.orig_llam_ew = orig_llam_ew
 
         ##############################################################
 
@@ -378,7 +383,7 @@ class StellarFrame(object):
         # the longer wavelength end is not a single-temperature blackbody with index_e = -4 (weaker absorption allows radiation from deeper, hotter layer)
         # run linear fit in log-log grid
         logw_w  = np.log10(self.init_wave_w[  mask_ref_w])
-        logf_ew = np.log10(self.init_lum_ew[:,mask_ref_w])
+        logf_ew = np.log10(self.init_llam_ew[:,mask_ref_w])
         mn_logw   = logw_w.mean()
         mn_logf_e = logf_ew.mean(axis=1)
         d_logw_w  = logw_w  - mn_logw
@@ -390,9 +395,9 @@ class StellarFrame(object):
             ext_wave_logbin = 0.02
             ext_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_wave_max) / ext_wave_logbin))
             ext_wave_w = np.logspace(np.log10(self.init_wave_max), np.log10(self.wave_max), ext_wave_num)[1:]
-            ext_lum_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
+            ext_llam_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
             self.orig_wave_w = np.hstack((self.orig_wave_w, ext_wave_w))
-            self.orig_lum_ew = np.hstack((self.orig_lum_ew, ext_lum_ew))
+            self.orig_llam_ew = np.hstack((self.orig_llam_ew, ext_llam_ew))
 
     ##########################################################################
 
@@ -483,7 +488,7 @@ class StellarFrame(object):
 
     ##########################################################################
 
-    def lum_weight_from_sfh(self, i_comp, par_p):
+    def llam_weight_from_sfh(self, i_comp, par_p):
 
         csp_age = 10.0**par_p[self.cframe.par_index_cP[i_comp]['log_csp_age']]
         ssp_age_e = self.age_e
@@ -518,24 +523,17 @@ class StellarFrame(object):
         sfh_func_e[~self.mask_lite_allowed(if_ssp=True, i_comp=i_comp)] = 0 # do not use ssp out of allowed range
         sfh_func_e[evo_time_e < 0] = 0 # do not use ssp older than csp_age 
 
-        lum_weight_e = sfh_func_e / self.sfr_e # convert SFH (in unit of Msun/yr) to L5500 (sfr_e is normalzied by L5500)
-        if any(lum_weight_e > 0): lum_weight_e /= lum_weight_e.sum() # convert to dimensionless lum-weight
-        # therefore the csp spectrum, (init_lum_ew * lum_weight_e).sum(axis=0), is still normalized at unit L5500
-        # ssp_coeff_e = (csp_coeff * lum_weight_e) for direct usage of init_lum_ew (i.e., nonparametic SFH).
+        llam_weight_e = sfh_func_e / self.sfr_e # convert SFH_e (in unit of Msun/yr) to L5500_e (sfr_e is normalzied by L5500)
+        if any(llam_weight_e > 0): llam_weight_e /= llam_weight_e.sum() # convert to dimensionless llam-weight
+        # therefore the csp spectrum, (init_llam_ew * llam_weight_e).sum(axis=0), is still normalized at unit L5500
+        # ssp_coeff_e = (csp_coeff * llam_weight_e) for direct usage of init_llam_ew (i.e., nonparametic SFH).
 
-        return lum_weight_e
+        return llam_weight_e
 
     def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
                       if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, 
                       if_z_decline=True, if_convolve=True, conv_nbin=None, if_full_range=False, dpix_resample=300):
-        # The input model is spectra per unit Lsun/A at rest 5500 angstrom before dust reddening and redshift, 
-        # corresponds to mass of 1/L5500 Msun (L5500 is the lum-value in unit of Lsun/A from original models normalized per unit Msun).
-        # In the fitting for the observed spectra in unit of in erg/s/angstrom/cm2, 
-        # the output model can be considered to be re-normlized to 1 erg/s/angstrom/cm2 at rest 5500 angstrom before dust reddening and redshift.
-        # The corresponding lum is (1/3.826e33*Area) Lsun/A, where Area is the lum-area in unit of cm2, 
-        # and the corresponding mass is (1/3.826e33*Area) * (1/L5500) Msun, 
-        # i.e., the real mtol is (1/3.826e33*Area) * (1/L5500) = (1/3.826e33*Area) * self.mtol
-        # The values will be used to calculate the stellar mass from the best-fit results. 
+
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
         if mask_lite_e is not None: mask_lite_ce = self.cframe.reshape_by_comp(mask_lite_e, self.num_coeffs_c) 
         if isinstance(components, str): components = [components]
@@ -544,9 +542,9 @@ class StellarFrame(object):
         # here use the term _flux_ to keep the same format with other models, therefore the treatment only changes the scaling of best-fit coeffs
         # the returned model is dimensionless unscaled, the conversion of flux and lum values is handled in extract_results()
         if if_full_range:
-            orig_flux_lib_ew = self.init_lum_ew[:,::dpix_resample]
+            orig_flux_lib_ew = self.init_llam_ew[:,::dpix_resample]
             orig_wave_lib_w  = self.init_wave_w[  ::dpix_resample]
-            orig_flux_lib_ew = np.hstack((orig_flux_lib_ew[:,orig_wave_lib_w <= self.init_wave_max], self.init_lum_ew[:,self.init_wave_w > self.init_wave_max]))
+            orig_flux_lib_ew = np.hstack((orig_flux_lib_ew[:,orig_wave_lib_w <= self.init_wave_max], self.init_llam_ew[:,self.init_wave_w > self.init_wave_max]))
             orig_wave_lib_w  = np.hstack((orig_wave_lib_w [  orig_wave_lib_w <= self.init_wave_max], self.init_wave_w[  self.init_wave_w > self.init_wave_max]))
             # extrapolate at longer wavelength end
             if max(obs_wave_w)/(1+self.v0_redshift) > max(orig_wave_lib_w):
@@ -558,7 +556,7 @@ class StellarFrame(object):
             if_convolve = False 
         else:
             orig_wave_lib_w  = self.orig_wave_w
-            orig_flux_lib_ew = self.orig_lum_ew
+            orig_flux_lib_ew = self.orig_llam_ew
 
         obs_flux_mcomp_ew = None
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
@@ -572,10 +570,10 @@ class StellarFrame(object):
                 else:
                     orig_flux_int_ew = orig_flux_lib_ew
             else:
-                lum_weight_e = self.lum_weight_from_sfh(i_comp, par_cp[i_comp])
-                tmp_mask_e = lum_weight_e > 0
+                llam_weight_e = self.llam_weight_from_sfh(i_comp, par_cp[i_comp])
+                tmp_mask_e = llam_weight_e > 0
                 tmp_ew = np.zeros_like(orig_flux_lib_ew)
-                tmp_ew[tmp_mask_e,:] = orig_flux_lib_ew[tmp_mask_e,:] * lum_weight_e[tmp_mask_e,None] # weight with lum_weight_e
+                tmp_ew[tmp_mask_e,:] = orig_flux_lib_ew[tmp_mask_e,:] * llam_weight_e[tmp_mask_e,None] # weight with llam_weight_e
                 orig_flux_int_ew = tmp_ew.reshape(self.num_mets, self.num_ages, len(orig_wave_lib_w)).sum(axis=1)
                 # sum in ages to create csp 
                 if mask_lite_e is not None:
@@ -590,10 +588,10 @@ class StellarFrame(object):
 
             # redshift models
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
-            z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
-            orig_wave_z_w = orig_wave_lib_w * z_ratio
+            z_factor = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
+            orig_wave_z_w = orig_wave_lib_w * z_factor
             if if_z_decline:
-                orig_flux_dz_ew = orig_flux_d_ew / z_ratio
+                orig_flux_dz_ew = orig_flux_d_ew / z_factor
             else:
                 orig_flux_dz_ew = orig_flux_d_ew
 
@@ -602,7 +600,7 @@ class StellarFrame(object):
                 fwhm = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
                 orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=fwhm, 
-                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_ratio, R_inst_w=R_inst_w, num_bins=conv_nbin)
+                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_factor, R_inst_w=R_inst_w, num_bins=conv_nbin)
             else:
                 orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
 
@@ -715,7 +713,7 @@ class StellarFrame(object):
                 par_p   = output_C[comp_name]['par_lp'  ][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
                 if self.sfh_name_c[i_comp] != 'nonparametric':
-                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * self.lum_weight_from_sfh(i_comp, par_p) 
+                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * self.llam_weight_from_sfh(i_comp, par_p) 
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1 + self.v0_redshift) * (1 + voff/299792.458) - 1
@@ -1052,7 +1050,7 @@ class StellarFrame(object):
                 par_p   = output_C[comp_name]['par_lp'][i_loop]
                 coeff_e = output_C[comp_name]['coeff_le'][i_loop]
                 if self.sfh_name_c[i_comp] != 'nonparametric':
-                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * self.lum_weight_from_sfh(i_comp, par_p) 
+                    coeff_e = np.tile(coeff_e, (self.num_ages,1)).T.flatten() * self.llam_weight_from_sfh(i_comp, par_p) 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1 + self.v0_redshift) * (1 + voff/299792.458) - 1
 

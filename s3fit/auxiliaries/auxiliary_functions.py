@@ -138,32 +138,32 @@ def fnu_over_flam(input_wave_w, trans_bw=None, wave_unit='angstrom', flam_unit='
         width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
         return (unitFint / width_nu).to(fnu_unit).value
     
-def spec_to_phot(wave_w, spec_mw, trans_bw):
+def spec_to_phot(wave_w, spec_flam_mw, trans_bw):
     # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)
-    if (spec_mw.ndim == 1) & (trans_bw.ndim == 1):
-        return np.trapezoid(trans_bw * spec_mw, x=wave_w, axis=0) # return flux, 1-model, 1-band
-    if (spec_mw.ndim == 1) & (trans_bw.ndim == 2):
-        return np.trapezoid(trans_bw * spec_mw[None,:], x=wave_w, axis=1) # return flux_b, 1-model, multi-band
-    if (spec_mw.ndim == 2) & (trans_bw.ndim == 1):
-        return np.trapezoid(trans_bw[None,:] * spec_mw, x=wave_w, axis=1) # return flux_m, multi-model, 1-band
-    if (spec_mw.ndim == 2) & (trans_bw.ndim == 2):
-        return np.trapezoid(trans_bw[None,:,:] * spec_mw[:,None,:], x=wave_w, axis=2) # return flux_mb
+    if (spec_flam_mw.ndim == 1) & (trans_bw.ndim == 1):
+        return np.trapezoid(trans_bw * spec_flam_mw, x=wave_w, axis=0) # return phot_flam, 1-model, 1-band
+    if (spec_flam_mw.ndim == 1) & (trans_bw.ndim == 2):
+        return np.trapezoid(trans_bw * spec_flam_mw[None,:], x=wave_w, axis=1) # return phot_flam_b, 1-model, multi-band
+    if (spec_flam_mw.ndim == 2) & (trans_bw.ndim == 1):
+        return np.trapezoid(trans_bw[None,:] * spec_flam_mw, x=wave_w, axis=1) # return phot_flam_m, multi-model, 1-band
+    if (spec_flam_mw.ndim == 2) & (trans_bw.ndim == 2):
+        return np.trapezoid(trans_bw[None,:,:] * spec_flam_mw[:,None,:], x=wave_w, axis=2) # return phot_flam_mb
     # short for np.trapezoid(trans * spec, x=wave, axis=axis) / np.trapezoid(trans, x=wave, axis=axis), trans is normalized to int=1
 
 #####################################################################
 ##################### convolution functions #########################
-def convert_linw_to_logw(linw_wave, linw_flux, linw_error=None, resolution=None):
+def convert_linw_to_logw(linw_wave_w, linw_flam_w, linw_ferr_w=None, resolution=None):
     # adopt grid resampling to keep (1/0.8) times original density at the long wavelength end
-    if resolution is None: resolution = linw_wave.max()/(0.8*(linw_wave[1]-linw_wave[0]))
+    if resolution is None: resolution = linw_wave_w.max()/(0.8*(linw_wave_w[1]-linw_wave_w[0]))
     logw_logwidth = np.log(1/resolution + 1)
-    logw_wave = np.logspace(np.log(linw_wave.min()), np.log(linw_wave.max()), base=np.e, 
-                            num=int(np.log(linw_wave.max()/linw_wave.min()) / logw_logwidth))
-    logw_flux = np.interp(logw_wave, linw_wave, linw_flux)
-    if linw_error is not None: 
-        logw_error = np.interp(logw_wave, linw_wave, linw_error)
-        return logw_wave, logw_flux, logw_error
+    logw_wave_w = np.logspace(np.log(linw_wave_w.min()), np.log(linw_wave_w.max()), base=np.e, 
+                            num=int(np.log(linw_wave_w.max()/linw_wave_w.min()) / logw_logwidth))
+    logw_flam_w = np.interp(logw_wave_w, linw_wave_w, linw_flam_w)
+    if linw_ferr_w is not None: 
+        logw_ferr_w = np.interp(logw_wave_w, linw_wave_w, linw_ferr_w)
+        return logw_wave_w, logw_flam_w, logw_ferr_w
     else:
-        return logw_wave, logw_flux
+        return logw_wave_w, logw_flam_w
 
 def gaussian_kernel_1d(dpix_sigma, truncate=4.0):
     # 1D Gaussian kernel equivalent to astropy.convolution.Gaussian1DKernel
@@ -173,19 +173,19 @@ def gaussian_kernel_1d(dpix_sigma, truncate=4.0):
     kernel /= kernel.sum()
     return kernel
 
-def convolve_spec_logw(logw_wave, logw_flux, conv_sigma, axis=0):
-    # logw_wave, logw_flux need to be uniform with log_e wavelength
-    logw_width = np.log(logw_wave[1])-np.log(logw_wave[0])
+def convolve_spec_logw(logw_wave_w, logw_flam_w, conv_sigma, axis=0):
+    # logw_wave_w, logw_flam_w need to be uniform with log_e wavelength
+    logw_width = np.log(logw_wave_w[1])-np.log(logw_wave_w[0])
     # kernel = Gaussian1DKernel(stddev=conv_sigma/299792.458/logw_width).array
     # kernel /= kernel.sum()
     kernel = gaussian_kernel_1d(conv_sigma/299792.458/logw_width)
-    if len(logw_flux.shape) == 2:
+    if len(logw_flam_w.shape) == 2:
         if axis == 0: kernel = kernel[:, None]
         if axis == 1: kernel = kernel[None, :]
-    logw_fcon = fftconvolve(logw_flux, kernel, mode='same', axes=axis)
-    return logw_fcon
+    logw_fcon_w = fftconvolve(logw_flam_w, kernel, mode='same', axes=axis)
+    return logw_fcon_w
 
-def convolve_fix_width_fft(wave_w, flux_mw, dw_fwhm=None, dpix_sigma=None, reset_edge=True):
+def convolve_fix_width_fft(wave_w, flam_mw, dw_fwhm=None, dpix_sigma=None, reset_edge=True):
     
     if dw_fwhm is not None:
         dw_sigma   = dw_fwhm  / np.sqrt(np.log(256))
@@ -193,15 +193,15 @@ def convolve_fix_width_fft(wave_w, flux_mw, dw_fwhm=None, dpix_sigma=None, reset
     
     kernel = gaussian_kernel_1d(dpix_sigma)
 
-    if len(flux_mw.shape) == 1: 
-        conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
-    if len(flux_mw.shape) == 2: 
-        conv_flux_mw = fftconvolve(flux_mw, kernel[None, :], mode='same', axes=1)
+    if len(flam_mw.shape) == 1: 
+        conv_flam_mw = fftconvolve(flam_mw, kernel, mode='same', axes=0)
+    if len(flam_mw.shape) == 2: 
+        conv_flam_mw = fftconvolve(flam_mw, kernel[None, :], mode='same', axes=1)
         
     # correct the artifact negative values
-    if ~(flux_mw < 0).any() & (conv_flux_mw < 0).any():
-        # conv_flux_mw[conv_flux_mw < 0] = 0
-        conv_flux_mw[conv_flux_mw <= 0] = flux_mw[flux_mw > 0].min()
+    if ~(flam_mw < 0).any() & (conv_flam_mw < 0).any():
+        # conv_flam_mw[conv_flam_mw < 0] = 0
+        conv_flam_mw[conv_flam_mw <= 0] = flam_mw[flam_mw > 0].min()
 
     if reset_edge:
         pad_total = len(kernel) - 1
@@ -209,16 +209,16 @@ def convolve_fix_width_fft(wave_w, flux_mw, dw_fwhm=None, dpix_sigma=None, reset
         pad_right = pad_total - pad_left
         start = pad_left
         end = len(wave_w) - pad_right
-        if len(flux_mw.shape) == 1: 
-            conv_flux_mw[:start] = flux_mw[:start]
-            conv_flux_mw[end:] = flux_mw[end:]
-        if len(flux_mw.shape) == 2: 
-            conv_flux_mw[:,:start] = flux_mw[:,:start]
-            conv_flux_mw[:,end:] = flux_mw[:,end:]
+        if len(flam_mw.shape) == 1: 
+            conv_flam_mw[:start] = flam_mw[:start]
+            conv_flam_mw[end:] = flam_mw[end:]
+        if len(flam_mw.shape) == 2: 
+            conv_flam_mw[:,:start] = flam_mw[:,:start]
+            conv_flam_mw[:,end:] = flam_mw[:,end:]
 
-    return conv_flux_mw 
+    return conv_flam_mw 
 
-def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=None, 
+def convolve_var_width_fft(wave_w, flam_mw, R_inst_w=None, 
                            dw_fwhm_obj=None, dv_fwhm_obj=None, 
                            dw_fwhm_ref=None, dv_fwhm_ref=None, R_ref=None, 
                            dw_fwhm_func=None, 
@@ -250,44 +250,44 @@ def convolve_var_width_fft(wave_w, flux_mw, R_inst_w=None,
     dpix_sigma_w = dw_sigma_w / np.gradient(wave_w)
 
     if num_bins == 1:
-        return convolve_fix_width_fft(wave_w, flux_mw, dpix_sigma=np.median(dpix_sigma_w), reset_edge=reset_edge)
+        return convolve_fix_width_fft(wave_w, flam_mw, dpix_sigma=np.median(dpix_sigma_w), reset_edge=reset_edge)
     else:
-        ret_flux_mw = np.zeros_like(flux_mw)
+        ret_flam_mw = np.zeros_like(flam_mw)
         select_wave_w = np.linspace(min(wave_w), max(wave_w), num_bins)
         for wave_0 in select_wave_w:
             dpix_sigma_0 = np.interp(wave_0, wave_w, dpix_sigma_w)
             kernel = gaussian_kernel_1d(dpix_sigma_0)
-            if len(flux_mw.shape) == 1: 
-                conv_flux_mw = fftconvolve(flux_mw, kernel, mode='same', axes=0)
-            if len(flux_mw.shape) == 2: 
-                conv_flux_mw = fftconvolve(flux_mw, kernel[None, :], mode='same', axes=1)
+            if len(flam_mw.shape) == 1: 
+                conv_flam_mw = fftconvolve(flam_mw, kernel, mode='same', axes=0)
+            if len(flam_mw.shape) == 2: 
+                conv_flam_mw = fftconvolve(flam_mw, kernel[None, :], mode='same', axes=1)
 
             # correct the artifact negative values
-            if ~(flux_mw < 0).any() & (conv_flux_mw < 0).any():
-                conv_flux_mw[conv_flux_mw <= 0] = flux_mw[flux_mw > 0].min()
+            if ~(flam_mw < 0).any() & (conv_flam_mw < 0).any():
+                conv_flam_mw[conv_flam_mw <= 0] = flam_mw[flam_mw > 0].min()
 
             factor_w = 1 - np.abs(wave_w-wave_0) / (select_wave_w[1]-select_wave_w[0])
             mask_w = factor_w >= 0
-            if len(flux_mw.shape) == 1: 
-                ret_flux_mw[mask_w] += conv_flux_mw[mask_w] * factor_w[mask_w]
-            if len(flux_mw.shape) == 2: 
-                ret_flux_mw[:, mask_w] += conv_flux_mw[:, mask_w] * factor_w[None, mask_w]
+            if len(flam_mw.shape) == 1: 
+                ret_flam_mw[mask_w] += conv_flam_mw[mask_w] * factor_w[mask_w]
+            if len(flam_mw.shape) == 2: 
+                ret_flam_mw[:, mask_w] += conv_flam_mw[:, mask_w] * factor_w[None, mask_w]
 
         if reset_edge:
             pad_left  = len(gaussian_kernel_1d(dpix_sigma_w[0])) // 2
             pad_right = len(gaussian_kernel_1d(dpix_sigma_w[-1])) // 2
             start = pad_left
             end = len(wave_w) - pad_right
-            if len(flux_mw.shape) == 1: 
-                ret_flux_mw[:start] = flux_mw[:start]
-                ret_flux_mw[end:] = flux_mw[end:]
-            if len(flux_mw.shape) == 2: 
-                ret_flux_mw[:,:start] = flux_mw[:,:start]
-                ret_flux_mw[:,end:] = flux_mw[:,end:]
+            if len(flam_mw.shape) == 1: 
+                ret_flam_mw[:start] = flam_mw[:start]
+                ret_flam_mw[end:] = flam_mw[end:]
+            if len(flam_mw.shape) == 2: 
+                ret_flam_mw[:,:start] = flam_mw[:,:start]
+                ret_flam_mw[:,end:] = flam_mw[:,end:]
 
-        return ret_flux_mw
+        return ret_flam_mw
 
-def convolve_var_width_csr(wave_w, flux_mw, R_inst_w=None, 
+def convolve_var_width_csr(wave_w, flam_mw, R_inst_w=None, 
                            dw_fwhm_obj=None, dv_fwhm_obj=None, 
                            dw_fwhm_ref=None, dv_fwhm_ref=None, R_ref=None, 
                            dw_fwhm_func=None, 
@@ -339,8 +339,8 @@ def convolve_var_width_csr(wave_w, flux_mw, R_inst_w=None,
     # interpolate to the full wave grid and convert back to Compressed Sparse Row
     conv_matrix_ww = sparse.csr_matrix(interp_func(wave_w)) 
     # perform sparse matrix multiplication
-    conv_flux_mw = conv_matrix_ww.dot(flux_mw.T).T
+    conv_flam_mw = conv_matrix_ww.dot(flam_mw.T).T
 
-    return conv_flux_mw
+    return conv_flam_mw
 #####################################################################
 #####################################################################

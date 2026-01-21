@@ -41,7 +41,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 ##################################
 # import internal modules
 from .auxiliaries.auxiliary_frames import PhotFrame
-from .auxiliaries.auxiliary_functions import print_log, center_string, casefold, fnu_over_flam, spec_to_phot, convolve_var_width_fft
+from .auxiliaries.auxiliary_functions import print_log, center_string, casefold, wave_air_to_vac, fnu_over_flam, spec_to_phot, convolve_var_width_fft
 ##################################
 # version identification
 # check if the fit_frame.py file is in the pip installed directory
@@ -62,7 +62,7 @@ class FitFrame(object):
                  # spectral data
                  spec_wave_w=None, spec_flux_w=None, spec_ferr_w=None, 
                  spec_R_inst_w=None, spec_valid_range=None, spec_invalid_range=None, 
-                 spec_wave_unit='angstrom', spec_flux_unit='erg s-1 cm-2 angstrom-1', 
+                 spec_wave_unit='angstrom', spec_wave_medium='air', spec_flux_unit='erg s-1 cm-2 angstrom-1', 
                  # photometirc data
                  phot_name_b=None, phot_flux_b=None, phot_ferr_b=None, phot_flux_unit='mJy', phot_trans_dir=None, 
                  sed_wave_w=None, sed_wave_unit='angstrom', sed_wave_num=None, phot_trans_rsmp=None, 
@@ -174,6 +174,7 @@ class FitFrame(object):
         self.spec_valid_range = copy(spec_valid_range)
         self.spec_invalid_range = copy(spec_invalid_range)
         self.spec_wave_unit = spec_wave_unit
+        self.spec_wave_medium = spec_wave_medium
         self.spec_flux_unit = spec_flux_unit
 
         if self.have_phot:
@@ -394,6 +395,7 @@ class FitFrame(object):
         spec_wave_ratio = u.Unit(self.input_args['spec_wave_unit']).to('angstrom')
         self.spec_wave_w = self.input_args['spec_wave_w'] * spec_wave_ratio
         self.spec_wave_unit = 'angstrom'
+        if self.spec_wave_medium == 'air': self.spec_wave_w = wave_air_to_vac(self.spec_wave_w)
 
         # convert flux unit to erg/s/cm2/A, use input_args to avoid iterative changing of values
         if u.Unit(self.input_args['spec_flux_unit']).is_equivalent('erg s-1 cm-2 angstrom-1'):
@@ -450,8 +452,8 @@ class FitFrame(object):
             print_log(center_string('Read photometric data', 80), self.log_message, verbose)
             print_log(f"Data available in bands: {self.phot_name_b}", self.log_message, verbose)
             # convert input photometric data to the spec_flux_unit
-            self.pframe = PhotFrame(name_b=self.phot_name_b, flux_b=self.phot_flux_b, ferr_b=self.phot_ferr_b, 
-                                    input_flux_unit=self.phot_flux_unit, output_flux_unit=self.spec_flux_unit, 
+            self.pframe = PhotFrame(name_b=self.phot_name_b, fden_b=self.phot_flux_b, ferr_b=self.phot_ferr_b, 
+                                    input_fden_unit=self.phot_flux_unit, output_fden_unit=self.spec_flux_unit, 
                                     trans_dir=self.phot_trans_dir, trans_rsmp=self.phot_trans_rsmp, 
                                     wave_w=self.sed_wave_w, wave_unit=self.sed_wave_unit, wave_num=self.sed_wave_num)
 
@@ -463,7 +465,7 @@ class FitFrame(object):
             # create a dictionary for converted photometric data
             self.phot = {}
             self.phot['wave_b'] = self.pframe.wave_b[mask_keep_b]
-            self.phot['flux_b'] = self.pframe.flux_b[mask_keep_b]
+            self.phot['flux_b'] = self.pframe.fden_b[mask_keep_b]
             self.phot['ferr_b'] = self.pframe.ferr_b[mask_keep_b]
             self.phot['trans_bw'] = self.pframe.trans_bw[mask_keep_b,:] # transmission curve matrix
             self.phot['mask_valid_b'] = self.mask_valid_b[mask_keep_b]
@@ -1047,21 +1049,21 @@ class FitFrame(object):
     ###############################################################################
     ############################## Fitting Functions ##############################
 
-    def log_to_linear_lsq(self, A_wm, b_w, x0_m, alpha=1e-3):
-        # try to solve A_wm @ x_m = b_w by minimizing |ln(A_wm @ x_m) - ln(b_w)|^2
-        # use the first-order Taylor expansion surrounding linear lsq x0_m = solution.x: 
-        # ln(A_wm @ x_m) ~= ln(A_wm @ x0_m) + A_wm @ (x_m - x0_m) / (A_wm @ x0_m) = (A_wm @ x_m) / Ax0_w + ln(Ax0_w) - 1, Ax0_w = A_wm @ x0_m
-        # and then non-linear ln(A_wm @ x_m) = ln(b_w)
-        # is converted to linear (A_wm @ x_m) / Ax0_w = ln(b_w) - ln(Ax0_w) + 1
-        # or A_wm @ x_m = Ax0_w * (ln(b_w) - ln(Ax0_w) + 1)
+    # def log_to_linear_lsq(self, A_wm, b_w, x0_m, alpha=1e-3):
+    #     # try to solve A_wm @ x_m = b_w by minimizing |ln(A_wm @ x_m) - ln(b_w)|^2
+    #     # use the first-order Taylor expansion surrounding linear lsq x0_m = solution.x: 
+    #     # ln(A_wm @ x_m) ~= ln(A_wm @ x0_m) + A_wm @ (x_m - x0_m) / (A_wm @ x0_m) = (A_wm @ x_m) / Ax0_w + ln(Ax0_w) - 1, Ax0_w = A_wm @ x0_m
+    #     # and then non-linear ln(A_wm @ x_m) = ln(b_w)
+    #     # is converted to linear (A_wm @ x_m) / Ax0_w = ln(b_w) - ln(Ax0_w) + 1
+    #     # or A_wm @ x_m = Ax0_w * (ln(b_w) - ln(Ax0_w) + 1)
 
-        Ax0_w = A_wm @ x0_m # = np.dot(A_wm, x0_m)
-        Ax0_w[Ax0_w <= 0] = b_w.min() * alpha 
-        # force positive model values; the transfered b_w (flux) only contains positive values
-        J_wm = A_wm / Ax0_w[:, None]
-        k_w = np.log(b_w) - np.log(Ax0_w) + 1
+    #     Ax0_w = A_wm @ x0_m # = np.dot(A_wm, x0_m)
+    #     Ax0_w[Ax0_w <= 0] = b_w.min() * alpha 
+    #     # force positive model values; the transfered b_w (flux) only contains positive values
+    #     J_wm = A_wm / Ax0_w[:, None]
+    #     k_w = np.log(b_w) - np.log(Ax0_w) + 1
 
-        return J_wm, k_w
+    #     return J_wm, k_w
 
     def linear_lsq_solver(self, flux_w, fmod_ew, weight_w, fit_space='linear', verbose=False):
         # Solve linear least-square functions to obtain the normlization values (i.e., coeffs) of each models
@@ -1447,7 +1449,7 @@ class FitFrame(object):
                 for mod_name in mod_type.split('+'):
                     i_pars_0_in_allmods, i_pars_1_in_allmods, i_coeffs_0_in_allmods, i_coeffs_1_in_allmods = self.search_mod_index(mod_name, self.full_mod_type)
                     i_pars_0_in_selmods, i_pars_1_in_selmods, i_coeffs_0_in_selmods, i_coeffs_1_in_selmods = self.search_mod_index(mod_name, mod_type, mask_lite_Me)
-                    self.output_S[step_id]['par_lp'  ][i_loop, i_pars_0_in_allmods:i_pars_1_in_allmods]                             = par_p[i_pars_0_in_selmods:i_pars_1_in_selmods]
+                    self.output_S[step_id]['par_lp'  ][i_loop, i_pars_0_in_allmods  :i_pars_1_in_allmods  ]                         = par_p  [i_pars_0_in_selmods  :i_pars_1_in_selmods  ]
                     self.output_S[step_id]['coeff_le'][i_loop, i_coeffs_0_in_allmods:i_coeffs_1_in_allmods][mask_lite_Me[mod_name]] = coeff_e[i_coeffs_0_in_selmods:i_coeffs_1_in_selmods]
                 self.output_S[step_id]['ret_dict_l'][i_loop] = ret_dict
         ##############################################################

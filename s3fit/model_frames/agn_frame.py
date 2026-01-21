@@ -17,7 +17,7 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class AGNFrame(object):
-    def __init__(self, mod_name=None, fframe=None, config=None, 
+    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None,
                  v0_redshift=None, R_inst_rw=None, 
                  wave_min=None, wave_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
@@ -26,6 +26,8 @@ class AGNFrame(object):
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
+        self.num_coeffs_max = num_coeffs_max
+
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw        
         self.wave_min = wave_min
@@ -64,6 +66,9 @@ class AGNFrame(object):
                 else:
                     self.num_coeffs_c[i_comp] = 1
         self.num_coeffs = self.num_coeffs_c.sum()
+
+        self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        # self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
 
         # currently do not consider negative spectra 
         self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
@@ -566,10 +571,10 @@ class AGNFrame(object):
 
             # redshift models
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
-            z_ratio = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
-            orig_wave_z_w = orig_wave_w * z_ratio
+            z_factor = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
+            orig_wave_z_w = orig_wave_w * z_factor
             if if_z_decline:
-                orig_flux_dz_ew = orig_flux_d_ew / z_ratio
+                orig_flux_dz_ew = orig_flux_d_ew / z_factor
             else:
                 orig_flux_dz_ew = orig_flux_d_ew
 
@@ -578,7 +583,7 @@ class AGNFrame(object):
                 fwhm = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
                 R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
                 orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=fwhm, 
-                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_ratio, R_inst_w=R_inst_w, num_bins=conv_nbin)
+                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_factor, R_inst_w=R_inst_w, num_bins=conv_nbin)
             else:
                 orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
 
@@ -697,8 +702,8 @@ class AGNFrame(object):
 
                 tmp_flux_unit = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1 cm-2 angstrom-1')]
                 self.default_Flam_unit = tmp_flux_unit[0] if len(tmp_flux_unit) > 0 else 'erg s-1 cm-2 angstrom-1' # save to use in print_results
-                tmp_lum_unit  = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1')]
-                self.default_intLum_unit  = tmp_lum_unit [0] if len(tmp_lum_unit)  > 0 else 'erg s-1' # save to use in print_results
+                tmp_intLum_unit  = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1')]
+                self.default_intLum_unit  = tmp_intLum_unit [0] if len(tmp_intLum_unit)  > 0 else 'erg s-1' # save to use in print_results
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                     output_C[comp_name]['value_Vl']['log_Flam_waveturn'][i_loop] = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit)).to(self.default_Flam_unit).value
@@ -707,23 +712,23 @@ class AGNFrame(object):
                     log_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_tem']]
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
                     tmp_bb_w = coeff_e[0] * self.blackbody_func(tmp_wave_w, log_tem=log_tem)
-                    tmp_lum = np.trapezoid(tmp_bb_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
-                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_lum)
+                    tmp_intLum = np.trapezoid(tmp_bb_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
+                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_intLum)
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     log_e_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_e_tem']]
                     log_tau_be = par_p[self.cframe.par_index_cP[i_comp]['log_tau_be']]
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
                     tmp_rec_w = coeff_e[0] * self.recombination_func(tmp_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
-                    tmp_lum = np.trapezoid(tmp_rec_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
-                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_lum)
+                    tmp_intLum = np.trapezoid(tmp_rec_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
+                    output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_intLum)
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                     if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None:
-                        tmp_lum_uv  = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 1                                   * u.angstrom).to(self.default_intLum_unit).value
-                        tmp_lum_opt = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.iron_dict['flux_opt_uv_ratio'] * u.angstrom).to(self.default_intLum_unit).value
-                        output_C[comp_name]['value_Vl']['log_intLum_uv' ][i_loop] = np.log10(tmp_lum_uv)
-                        output_C[comp_name]['value_Vl']['log_intLum_opt'][i_loop] = np.log10(tmp_lum_opt)
+                        tmp_intLum_uv  = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 1                                   * u.angstrom).to(self.default_intLum_unit).value
+                        tmp_intLum_opt = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.iron_dict['flux_opt_uv_ratio'] * u.angstrom).to(self.default_intLum_unit).value
+                        output_C[comp_name]['value_Vl']['log_intLum_uv' ][i_loop] = np.log10(tmp_intLum_uv)
+                        output_C[comp_name]['value_Vl']['log_intLum_opt'][i_loop] = np.log10(tmp_intLum_opt)
 
                 tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                 # calculate requested flux/Lum in given wavelength ranges

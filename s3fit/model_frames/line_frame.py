@@ -13,8 +13,7 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
-    def __init__(self, mod_name=None, fframe=None, 
-                 config=None, use_pyneb=False, 
+    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None,
                  v0_redshift=0, R_inst_rw=None, 
                  wave_min=None, wave_max=None, mask_valid_rw=None, 
                  verbose=True, log_message=[]):
@@ -22,6 +21,8 @@ class LineFrame(object):
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
+        self.num_coeffs_max = num_coeffs_max # not used
+
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
         self.wave_min = wave_min
@@ -42,7 +43,7 @@ class LineFrame(object):
         for item in ['use_pyneb', 'if_use_pyneb']:
             if item in self.cframe.mod_info_I: self.use_pyneb = self.cframe.mod_info_I[item]
 
-        # load line list and count the number of independent model elements
+        # load line list and count num_coeffs (number of independent model elements)
         self.initialize_linelist()
         self.update_linelist()
 
@@ -479,55 +480,55 @@ class LineFrame(object):
         # also add collisionally excited lines manually if not provided by pyneb        
 
         if name in self.H_levels_dict:
-            element = 'H'; notation = 1
-            if element+str(notation) not in self.pyneblib['RecAtom']:
-                atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+            element = 'H'; ionized_state = 1
+            if element+str(ionized_state) not in self.pyneblib['RecAtom']:
+                atomdata = self.pyneb.RecAtom(element, ionized_state) # , extrapolate=False
                 dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                 wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
                 def func_emissivity(den, tem, wave_vac): 
                     lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
                     return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
-                self.pyneblib['RecAtom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
-            atomlib = self.pyneblib['RecAtom'][element+str(notation)]
+                self.pyneblib['RecAtom'][element+str(ionized_state)] = {'notation': element+str(ionized_state), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity}
+            atomlib = self.pyneblib['RecAtom'][element+str(ionized_state)]
             wave_vac = atomlib['wave_vac_ij'][self.H_levels_dict[name]['upper']-1, self.H_levels_dict[name]['lower']-1]
             line_id = name
         else:
             ion, wave = name.split(':')
             if ion[0] == '[': 
-                element, notation = ion[1:-1].split(' ')
+                element, ionized_state = ion[1:-1].split(' ')
             else:
                 if ion[-1] == ']': 
-                    element, notation = ion[:-1].split(' ')
+                    element, ionized_state = ion[:-1].split(' ')
                 else:
-                    element, notation = ion.split(' ')
-            notation = roman_to_int(notation)
-            if element+str(notation) in ['H1', 'He2']:
-                if element+str(notation) not in self.pyneblib['RecAtom']:
-                    atomdata = self.pyneb.RecAtom(element, notation) # , extrapolate=False
+                    element, ionized_state = ion.split(' ')
+            ionized_state = roman_to_int(ionized_state)
+            if element+str(ionized_state) in ['H1', 'He2']:
+                if element+str(ionized_state) not in self.pyneblib['RecAtom']:
+                    atomdata = self.pyneb.RecAtom(element, ionized_state) # , extrapolate=False
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
                     def func_emissivity(den, tem, wave_vac): 
                         lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
                         return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
-                    self.pyneblib['RecAtom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
-                atomlib = self.pyneblib['RecAtom'][element+str(notation)]
+                    self.pyneblib['RecAtom'][element+str(ionized_state)] = {'notation': element+str(ionized_state), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity}
+                atomlib = self.pyneblib['RecAtom'][element+str(ionized_state)]
             else:
-                if element+str(notation) not in self.pyneblib['Atom']['list']:
+                if element+str(ionized_state) not in self.pyneblib['Atom']['list']:
                     if verbose: 
                         print_log(f"[WARNING] {name} not provided in pyneb, please add it manually with FitFrame.line.add_line(use_pyneb=False).", self.log_message)
                     if ret_atomlib: 
                         return None, None, None
                     else:
                         return None, None
-                if element+str(notation) not in self.pyneblib['Atom']:
-                    atomdata = self.pyneb.Atom(element, notation) # , noExtrapol=True
+                if element+str(ionized_state) not in self.pyneblib['Atom']:
+                    atomdata = self.pyneb.Atom(element, ionized_state) # , noExtrapol=True
                     dE_ij = atomdata._Energy[:,None]-atomdata._Energy[None,:]
                     wave_vac_ij = np.divide(1, dE_ij, where=dE_ij>0, out=np.zeros_like(dE_ij, dtype='float'))
                     def func_emissivity(den, tem, wave_vac): 
                         lev_i, lev_j = np.unravel_index(np.argmin(abs(wave_vac_ij - wave_vac)), wave_vac_ij.shape)
                         return atomdata.getEmissivity(den=den, tem=tem, lev_i=lev_i+1, lev_j=lev_j+1)
-                    self.pyneblib['Atom'][element+str(notation)] = {'notation': element+str(notation), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity} 
-                atomlib = self.pyneblib['Atom'][element+str(notation)]
+                    self.pyneblib['Atom'][element+str(ionized_state)] = {'notation': element+str(ionized_state), 'atomdata': atomdata, 'wave_vac_ij': wave_vac_ij, 'func_emissivity': func_emissivity}
+                atomlib = self.pyneblib['Atom'][element+str(ionized_state)]
             wave = float(wave[:-2])*1e4 if wave[-2:] == 'um' else float(wave)
             if wave_medium == 'air': wave = wave_air_to_vac(wave)
             wave_vac = atomlib['wave_vac_ij'].flatten()[np.argmin(np.abs(atomlib['wave_vac_ij'] - wave))]
@@ -629,19 +630,19 @@ class LineFrame(object):
         self.linelist_spectra['H I'] = linelist_H
         for spectrum in spectra_uniq: self.linelist_spectra[str(spectrum)] = linelist_nonH[spectra_full == spectrum]
 
-        notations_full = copy(spectra_full)
-        for i in range(len(notations_full)):
-            if notations_full[i][0]  == '[': notations_full[i] = notations_full[i][1:]
-            if notations_full[i][-1] == ']': notations_full[i] = notations_full[i][:-1]
-        notations_uniq = []
-        for notation in notations_full:
-            if notation not in notations_uniq: notations_uniq.append(str(notation))
-        notations_uniq = np.array(notations_uniq)
-        self.linelist_notations = {}
-        self.linelist_notations['H I'] = linelist_H
-        for notation in notations_uniq: self.linelist_notations[str(notation)] = linelist_nonH[notations_full == notation]
+        species_full = copy(spectra_full)
+        for i in range(len(species_full)):
+            if species_full[i][0]  == '[': species_full[i] = species_full[i][1:]
+            if species_full[i][-1] == ']': species_full[i] = species_full[i][:-1]
+        species_uniq = []
+        for species in species_full:
+            if species not in species_uniq: species_uniq.append(str(species))
+        species_uniq = np.array(species_uniq)
+        self.linelist_species = {}
+        self.linelist_species['H I'] = linelist_H
+        for species in species_uniq: self.linelist_species[str(species)] = linelist_nonH[species_full == species]
 
-        elements_full = copy(notations_full)
+        elements_full = copy(species_full)
         for i in range(len(elements_full)):
             elements_full[i] = elements_full[i].split(' ')[0]
         elements_uniq = []
@@ -924,7 +925,11 @@ class LineFrame(object):
             self.mask_free_cn[i_comp] = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict_cn[i_comp]])
         self.num_coeffs_c = self.mask_free_cn.sum(axis=1)
         self.num_coeffs = self.mask_free_cn.sum()
-        
+
+        self.num_coeffs_max = self.num_coeffs # just copy since all elements are mandotary
+        # self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        # self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
+
         # set component name and enable mask for each free line; _e denotes free or coeffs
         self.comp_name_e = [] # np.zeros((self.num_coeffs), dtype='<U16')
         for i_comp in range(self.num_comps):
@@ -1145,7 +1150,6 @@ class LineFrame(object):
 
         mask_l = np.ones(self.num_loops, dtype='bool')
         if not if_show_average: mask_l[1:] = False
-        # lum_unit_str = '(log Lsun) ' if lum_unit == 'Lsun' else '(log erg/s)'
 
         cols = 'Par/Line Name'
         fmt_cols = '| {:^20} |'
