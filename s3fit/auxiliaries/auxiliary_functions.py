@@ -125,18 +125,16 @@ def wave_air_to_vac(wave_air, extrapolate=True):
 ###################### Photometric conversion #######################
 
 def fnu_over_flam(input_wave_w, trans_bw=None, wave_unit='angstrom', flam_unit='erg s-1 cm-2 angstrom-1', fnu_unit='mJy'):
-    wave_w = copy(input_wave_w) * u.Unit(wave_unit).to('angstrom') # convert wave to angstrom
-    unitFlam = 1.0 * u.Unit(flam_unit)
-    rDnuDlam = const.c / (wave_w * u.angstrom)**2
+    wave_w = copy(input_wave_w) * u.Unit(wave_unit).to('angstrom') # convert wave to angstrom to matcg the unit of trans_bw
+    dnu_over_dlam_w = const.c / (wave_w * u.angstrom)**2
     if trans_bw is None:
+        return (u.Unit(flam_unit) / dnu_over_dlam_w).to(fnu_unit).value
         # return the ratio of spectrum between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
-        return (unitFlam / rDnuDlam).to(fnu_unit).value
     else:
+        intFlux_unit = u.Unit(flam_unit) * u.angstrom
+        width_nu = np.trapezoid(trans_bw * dnu_over_dlam_w, x=wave_w * u.angstrom, axis=trans_bw.ndim-1) # trans_bw is already normalized to int=1
+        return (intFlux_unit / width_nu).to(fnu_unit).value
         # return the ratio of band flux between Fnu (mJy) and Flam (erg/s/cm2/A); wave in angstrom
-        unitFint = unitFlam * (1.0 * u.angstrom)
-        # here (1 * u.angstrom) = np.trapezoid(trans, x=wave * u.angstrom, axis=axis), since trans is normalized to int=1
-        width_nu = np.trapezoid(trans_bw * rDnuDlam, x=wave_w * u.angstrom, axis=trans_bw.ndim-1)
-        return (unitFint / width_nu).to(fnu_unit).value
     
 def spec_to_phot(wave_w, spec_flam_mw, trans_bw):
     # convert spectrum in flam (erg/s/cm2/A) to mean flam in band (erg/s/cm2/A)

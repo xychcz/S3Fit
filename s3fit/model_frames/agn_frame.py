@@ -17,7 +17,7 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class AGNFrame(object):
-    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None,
+    def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, R_inst_rw=None, 
                  wave_min=None, wave_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
@@ -26,7 +26,6 @@ class AGNFrame(object):
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.num_coeffs_max = num_coeffs_max
 
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw        
@@ -65,9 +64,10 @@ class AGNFrame(object):
                     self.num_coeffs_c[i_comp] = len(self.cframe.comp_info_cI[i_comp]['wave_segments'])
                 else:
                     self.num_coeffs_c[i_comp] = 1
-        self.num_coeffs = self.num_coeffs_c.sum()
+        self.num_coeffs_tot = sum(self.num_coeffs_c)
+        self.num_coeffs = self.num_coeffs_tot
 
-        self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        self.num_coeffs_max = self.num_coeffs if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs, self.cframe.mod_info_I['num_coeffs_max'])
         # self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
 
         # currently do not consider negative spectra 
@@ -143,11 +143,10 @@ class AGNFrame(object):
         ############################################################
 
         # set inherited or default info if not specified in config
-        # model-level info
-        # self.cframe.retrieve_inherited_info( 'w_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
-        # self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
+        # model-level info, call as self.cframe.mod_info_I[info_name]
+        self.cframe.retrieve_inherited_info('num_coeffs_max', root_info_I=self.fframe.root_info_I, default=None)
 
-        # component-level info
+        # component-level info, call as self.cframe.comp_info_cI[i_comp][info_name]
         # format of returned flux / Lum density or integrated values
         for i_comp in range(self.num_comps):
             # either 2-unit-nested tuples (for wave and value, respectively) or dictionary as follows are supported
@@ -614,7 +613,7 @@ class AGNFrame(object):
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec+phot', 'spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
 
         best_chi_sq_l = copy(self.fframe.output_S[step]['chi_sq_l'])

@@ -18,7 +18,7 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_di
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class StellarFrame(object):
-    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None,
+    def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, R_inst_rw=None, 
                  wave_min=None, wave_max=None, 
                  Rratio_mod=None, dw_fwhm_dsp=None, dw_pix_inst=None, 
@@ -27,7 +27,6 @@ class StellarFrame(object):
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.num_coeffs_max = num_coeffs_max
 
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
@@ -63,9 +62,10 @@ class StellarFrame(object):
                 self.num_coeffs_c[i_comp] = self.num_mets * self.num_ages
             else:
                 self.num_coeffs_c[i_comp] = self.num_mets 
-        self.num_coeffs = self.num_coeffs_c.sum()
+        self.num_coeffs_tot = sum(self.num_coeffs_c)
+        self.num_coeffs = self.num_coeffs_tot
 
-        self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        self.num_coeffs_max = self.num_coeffs if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs, self.cframe.mod_info_I['num_coeffs_max'])
         self.num_coeffs_max = max(self.num_coeffs_max, 16 * 2) # set min num for each template par
 
         # currently do not consider negative spectra 
@@ -133,11 +133,10 @@ class StellarFrame(object):
         ############################################################
 
         # set inherited or default info if not specified in config
-        # model-level info
-        # self.cframe.retrieve_inherited_info( 'wave_norm', alt_names='norm_wave' , root_info_I=self.fframe.root_info_I, default=5500)
-        # self.cframe.retrieve_inherited_info('dw_norm', alt_names='norm_width', root_info_I=self.fframe.root_info_I, default=25)
+        # model-level info, call as self.cframe.mod_info_I[info_name]
+        self.cframe.retrieve_inherited_info('num_coeffs_max', root_info_I=self.fframe.root_info_I, default=None)
 
-        # component-level info
+        # component-level info, call as self.cframe.comp_info_cI[i_comp][info_name]
         # format of returned flux / Lum density or integrated values
         for i_comp in range(self.num_comps):
             # either 2-unit-nested tuples (for wave and value, respectively) or dictionary as follows are supported
@@ -266,23 +265,23 @@ class StellarFrame(object):
 
         self.header = ssp_lib[0].header
         # load models
-        self.init_llam_ew = ssp_lib[0].data
-        self.init_llam_unit = 'L_sun angstrom-1'
+        self.init_spec_dens_ew = ssp_lib[0].data
+        self.init_spec_dens_unit = 'L_sun angstrom-1'
         # wave_axis = 1
         # crval = self.header[f'CRVAL{wave_axis}']
         # cdelt = self.header[f'CDELT{wave_axis}']
         # naxis = self.header[f'NAXIS{wave_axis}']
         # crpix = self.header[f'CRPIX{wave_axis}']
         # if not cdelt: cdelt = 1
-        # self.init_wave_w = crval + cdelt*(np.arange(naxis) + 1 - crpix)
+        # self.init_spec_wave_w = crval + cdelt*(np.arange(naxis) + 1 - crpix)
         # use wavelength in data instead of one from header
-        self.init_wave_w = ssp_lib[1].data
-        self.init_wave_unit = 'angstrom'
-        self.init_wave_medium = 'air'
+        self.init_spec_wave_w = ssp_lib[1].data
+        self.init_spec_wave_unit = 'angstrom'
+        self.init_spec_wave_medium = 'air'
         # template resolution step of 0.1 angstrom, from https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.4781M/abstract
         self.init_dw_fwhm = 0.1 # assume init_dw_fwhm = init_dw_pix
 
-        self.num_templates = self.init_llam_ew.shape[0]
+        self.num_templates = self.init_spec_dens_ew.shape[0]
         self.mass_e = np.ones(self.num_templates, dtype='float') # i.e., self.init_norm_e, initially normalized by mass
         self.mass_unit = 'M_sun' # i.e., self.init_norm_unit
         self.remain_massfrac_e = ssp_lib[2].data # leave remain_massfrac_e = 1 if not provided. 
@@ -301,20 +300,20 @@ class StellarFrame(object):
         ##############################################################
 
         # convert wave unit to angstrom in vacuum
-        self.init_wave_w *= u.Unit(self.init_wave_unit).to('angstrom')
-        self.init_wave_unit = 'angstrom'
-        if self.init_wave_medium == 'air': self.init_wave_w = wave_air_to_vac(self.init_wave_w)
+        self.init_spec_wave_w *= u.Unit(self.init_spec_wave_unit).to('angstrom')
+        self.init_spec_wave_unit = 'angstrom'
+        if self.init_spec_wave_medium == 'air': self.init_spec_wave_w = wave_air_to_vac(self.init_spec_wave_w)
 
         # convert the normalization from per unit mass to per unit L5500
         self.wave_norm, self.dw_norm = 5500, 10
-        mask_5500_w = np.abs(self.init_wave_w - self.wave_norm) < self.dw_norm
-        scale_llam_e = np.mean(self.init_llam_ew[:, mask_5500_w], axis=1)
-        scale_llam_unit = copy(self.init_llam_unit)
-        # scale models by scale_llam_e * scale_llam_unit
-        self.init_llam_ew /= scale_llam_e[:, None]
-        self.init_llam_unit = str(u.Unit(self.init_llam_unit) / u.Unit(scale_llam_unit)) # dimensionless unscaled
-        self.mass_e /= scale_llam_e # mass_e is now converted to mass-to-L5500 ratio:
-        self.mass_unit = str(u.Unit(self.mass_unit) / u.Unit(scale_llam_unit))
+        mask_5500_w = np.abs(self.init_spec_wave_w - self.wave_norm) < self.dw_norm
+        scale_spec_dens_e = np.mean(self.init_spec_dens_ew[:, mask_5500_w], axis=1)
+        scale_spec_dens_unit = copy(self.init_spec_dens_unit)
+        # scale models by scale_spec_dens_e * scale_spec_dens_unit
+        self.init_spec_dens_ew /= scale_spec_dens_e[:, None]
+        self.init_spec_dens_unit = str(u.Unit(self.init_spec_dens_unit) / u.Unit(scale_spec_dens_unit)) # dimensionless unscaled
+        self.mass_e /= scale_spec_dens_e # mass_e is now converted to mass-to-L5500 ratio:
+        self.mass_unit = str(u.Unit(self.mass_unit) / u.Unit(scale_spec_dens_unit))
 
         ##############################################################
 
@@ -333,16 +332,17 @@ class StellarFrame(object):
         ##############################################################
 
         # select model spectra in given wavelength range
-        mask_select_w = (self.init_wave_w >= self.wave_min) & (self.init_wave_w <= self.wave_max)
-        orig_wave_w = self.init_wave_w[   mask_select_w]
-        orig_llam_ew = self.init_llam_ew[:, mask_select_w]
+        mask_select_w = (self.init_spec_wave_w >= self.wave_min) & (self.init_spec_wave_w <= self.wave_max)
+        prep_spec_wave_w  = self.init_spec_wave_w[   mask_select_w]
+        prep_spec_dens_ew = self.init_spec_dens_ew[:, mask_select_w]
+        # prep_ is short for preprocessed or prepared (e.g., wave-cut, convolved)
 
         # determine the required model resolution and bin size (in angstrom) to downsample the model
         if self.Rratio_mod is not None:
-            ds_R_mod_w = np.interp(orig_wave_w, self.R_inst_rw[0]/(1+self.v0_redshift), self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw[0] is in observed frame
-            self.dw_fwhm_dsp_w = orig_wave_w / ds_R_mod_w # required resolving width in rest frame
+            ds_R_mod_w = np.interp(prep_spec_wave_w, self.R_inst_rw[0]/(1+self.v0_redshift), self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw[0] is in observed frame
+            self.dw_fwhm_dsp_w = prep_spec_wave_w / ds_R_mod_w # required resolving width in rest frame
         elif self.dw_fwhm_dsp is not None:
-            self.dw_fwhm_dsp_w = np.full(len(orig_wave_w), self.dw_fwhm_dsp)
+            self.dw_fwhm_dsp_w = np.full(len(prep_spec_wave_w), self.dw_fwhm_dsp)
         else:
             self.dw_fwhm_dsp_w = None
         if self.dw_fwhm_dsp_w is not None:
@@ -350,40 +350,40 @@ class StellarFrame(object):
                 preconvolving = True
             else:
                 preconvolving = False
-                self.dw_fwhm_dsp_w = np.full(len(orig_wave_w), self.init_dw_fwhm)
+                self.dw_fwhm_dsp_w = np.full(len(prep_spec_wave_w), self.init_dw_fwhm)
             self.dw_dsp = self.dw_fwhm_dsp_w.min() * 0.5 # required min bin wavelength following Nyquist–Shannon sampling
             if self.dw_pix_inst is not None:
                 self.dw_dsp = min(self.dw_dsp, self.dw_pix_inst/(1+self.v0_redshift) * 0.5) # also require model bin wavelength <= 0.5 of data bin width (convert to rest frame)
-            self.dpix_dsp = int(self.dw_dsp / np.median(np.diff(orig_wave_w))) # required min bin number of pixels
-            self.dw_dsp = self.dpix_dsp * np.median(np.diff(orig_wave_w)) # update value
+            self.dpix_dsp = int(self.dw_dsp / np.median(np.diff(prep_spec_wave_w))) # required min bin number of pixels
+            self.dw_dsp = self.dpix_dsp * np.median(np.diff(prep_spec_wave_w)) # update value
             if self.dpix_dsp > 1:
                 if preconvolving:
                     if self.verbose: 
                         print_log(f'Downsample preconvolved SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # here assume the internal dispersion in the original model (e.g., in stellar atmosphere) is indepent from the measured dispersion (i.e., stellar motion) in the fitting
-                    orig_llam_ew = convolve_fix_width_fft(orig_wave_w, orig_llam_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
+                    prep_spec_dens_ew = convolve_fix_width_fft(prep_spec_wave_w, prep_spec_dens_ew, dw_fwhm=self.dw_fwhm_dsp_w.min())
                 else:
                     if self.verbose: 
                         print_log(f'Downsample original SSP models with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', self.log_message)  
-                orig_wave_w = orig_wave_w[  ::self.dpix_dsp]
-                orig_llam_ew = orig_llam_ew[:,::self.dpix_dsp]
+                prep_spec_wave_w  = prep_spec_wave_w [  ::self.dpix_dsp]
+                prep_spec_dens_ew = prep_spec_dens_ew[:,::self.dpix_dsp]
                 self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[::self.dpix_dsp]
         # save the smoothed models
-        self.orig_wave_w = orig_wave_w
-        self.orig_llam_ew = orig_llam_ew
+        self.prep_spec_wave_w  = prep_spec_wave_w
+        self.prep_spec_dens_ew = prep_spec_dens_ew
 
         ##############################################################
 
         # extend to longer wavelength in NIR-MIR (e.g., > 3 micron)
         # note that ext_index_e and ext_ratio_e are always required, i.e., to calculate integrated flux
-        self.init_wave_min = self.init_wave_w.min()
-        self.init_wave_max = self.init_wave_w.max()
-        mask_ref_w = (self.init_wave_w > max(1.6e4, self.init_wave_max-5000)) & (self.init_wave_w <= min(2.3e4, self.init_wave_max-1000)) 
+        self.init_spec_wave_min = self.init_spec_wave_w.min()
+        self.init_spec_wave_max = self.init_spec_wave_w.max()
+        mask_ref_w = (self.init_spec_wave_w > max(1.6e4, self.init_spec_wave_max-5000)) & (self.init_spec_wave_w <= min(2.3e4, self.init_spec_wave_max-1000)) 
         # the longer wavelength end is not a single-temperature blackbody with index_e = -4 (weaker absorption allows radiation from deeper, hotter layer)
         # run linear fit in log-log grid
-        logw_w  = np.log10(self.init_wave_w[  mask_ref_w])
-        logf_ew = np.log10(self.init_llam_ew[:,mask_ref_w])
+        logw_w  = np.log10(self.init_spec_wave_w [  mask_ref_w])
+        logf_ew = np.log10(self.init_spec_dens_ew[:,mask_ref_w])
         mn_logw   = logw_w.mean()
         mn_logf_e = logf_ew.mean(axis=1)
         d_logw_w  = logw_w  - mn_logw
@@ -391,13 +391,13 @@ class StellarFrame(object):
         self.ext_index_e = np.dot(d_logw_w, d_logf_ew.T) / np.dot(d_logw_w, d_logw_w)
         self.ext_ratio_e = 10.0**(mn_logf_e - self.ext_index_e * mn_logw)
 
-        if self.wave_max > self.init_wave_max:
-            ext_wave_logbin = 0.02
-            ext_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_wave_max) / ext_wave_logbin))
-            ext_wave_w = np.logspace(np.log10(self.init_wave_max), np.log10(self.wave_max), ext_wave_num)[1:]
-            ext_llam_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
-            self.orig_wave_w = np.hstack((self.orig_wave_w, ext_wave_w))
-            self.orig_llam_ew = np.hstack((self.orig_llam_ew, ext_llam_ew))
+        if self.wave_max > self.init_spec_wave_max:
+            ext_spec_wave_logbin = 0.02
+            ext_spec_wave_num = max(2, 1+int(np.log10(self.wave_max / self.init_spec_wave_max) / ext_spec_wave_logbin))
+            ext_spec_wave_w = np.logspace(np.log10(self.init_spec_wave_max), np.log10(self.wave_max), ext_spec_wave_num)[1:]
+            ext_spec_dens_ew = ext_spec_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
+            self.prep_spec_wave_w  = np.hstack((self.prep_spec_wave_w , ext_spec_wave_w))
+            self.prep_spec_dens_ew = np.hstack((self.prep_spec_dens_ew, ext_spec_dens_ew))
 
     ##########################################################################
 
@@ -525,12 +525,12 @@ class StellarFrame(object):
 
         llam_weight_e = sfh_func_e / self.sfr_e # convert SFH_e (in unit of Msun/yr) to L5500_e (sfr_e is normalzied by L5500)
         if any(llam_weight_e > 0): llam_weight_e /= llam_weight_e.sum() # convert to dimensionless llam-weight
-        # therefore the csp spectrum, (init_llam_ew * llam_weight_e).sum(axis=0), is still normalized at unit L5500
-        # ssp_coeff_e = (csp_coeff * llam_weight_e) for direct usage of init_llam_ew (i.e., nonparametic SFH).
+        # therefore the csp spectrum, (init_spec_dens_ew * llam_weight_e).sum(axis=0), is still normalized at unit L5500
+        # ssp_coeff_e = (csp_coeff * llam_weight_e) for direct usage of init_spec_dens_ew (i.e., nonparametic SFH).
 
         return llam_weight_e
 
-    def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
+    def create_models(self, obs_spec_wave_w, par_p, mask_lite_e=None, components=None, 
                       if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, 
                       if_z_decline=True, if_convolve=True, conv_nbin=None, if_full_range=False, dpix_resample=300):
 
@@ -539,26 +539,24 @@ class StellarFrame(object):
         if isinstance(components, str): components = [components]
 
         # use sparse init spectra if to calculate integrated flux or lum
-        # here use the term _flux_ to keep the same format with other models, therefore the treatment only changes the scaling of best-fit coeffs
-        # the returned model is dimensionless unscaled, the conversion of flux and lum values is handled in extract_results()
         if if_full_range:
-            orig_flux_lib_ew = self.init_llam_ew[:,::dpix_resample]
-            orig_wave_lib_w  = self.init_wave_w[  ::dpix_resample]
-            orig_flux_lib_ew = np.hstack((orig_flux_lib_ew[:,orig_wave_lib_w <= self.init_wave_max], self.init_llam_ew[:,self.init_wave_w > self.init_wave_max]))
-            orig_wave_lib_w  = np.hstack((orig_wave_lib_w [  orig_wave_lib_w <= self.init_wave_max], self.init_wave_w[  self.init_wave_w > self.init_wave_max]))
+            prep_spec_dens_ew = self.init_spec_dens_ew[:,::dpix_resample]
+            prep_spec_wave_w  = self.init_spec_wave_w [  ::dpix_resample]
+            prep_spec_dens_ew = np.hstack((prep_spec_dens_ew[:, prep_spec_wave_w <= self.init_spec_wave_max], self.init_spec_dens_ew[:, self.init_spec_wave_w > self.init_spec_wave_max]))
+            prep_spec_wave_w  = np.hstack((prep_spec_wave_w [   prep_spec_wave_w <= self.init_spec_wave_max], self.init_spec_wave_w [   self.init_spec_wave_w > self.init_spec_wave_max]))
             # extrapolate at longer wavelength end
-            if max(obs_wave_w)/(1+self.v0_redshift) > max(orig_wave_lib_w):
-                ext_wave_w  = np.logspace(np.log10(max(orig_wave_lib_w)), np.log10(max(obs_wave_w)/(1+self.v0_redshift)+1000), 1+50)[1:]
-                ext_flux_ew = ext_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
-                orig_wave_lib_w  = np.hstack((orig_wave_lib_w,  ext_wave_w ))
-                orig_flux_lib_ew = np.hstack((orig_flux_lib_ew, ext_flux_ew))
+            if max(obs_spec_wave_w)/(1+self.v0_redshift) > max(prep_spec_wave_w):
+                ext_spec_wave_w  = np.logspace(np.log10(max(prep_spec_wave_w)), np.log10(max(obs_spec_wave_w)/(1+self.v0_redshift)+1000), 1+50)[1:]
+                ext_spec_dens_ew = ext_spec_wave_w[None,:]**self.ext_index_e[:,None] * self.ext_ratio_e[:,None]
+                prep_spec_wave_w  = np.hstack((prep_spec_wave_w,  ext_spec_wave_w ))
+                prep_spec_dens_ew = np.hstack((prep_spec_dens_ew, ext_spec_dens_ew))
             # do not convolve in this case
             if_convolve = False 
         else:
-            orig_wave_lib_w  = self.orig_wave_w
-            orig_flux_lib_ew = self.orig_llam_ew
+            prep_spec_wave_w  = self.prep_spec_wave_w
+            prep_spec_dens_ew = self.prep_spec_dens_ew
 
-        obs_flux_mcomp_ew = None
+        mcomp_spec_dens_ew = None
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             if components is not None:
                 if comp_name not in components: continue
@@ -566,54 +564,54 @@ class StellarFrame(object):
             # build models with SFH function
             if self.sfh_name_c[i_comp] == 'nonparametric':
                 if mask_lite_e is not None:
-                    orig_flux_int_ew = orig_flux_lib_ew[mask_lite_ce[i_comp],:] # limit element number for accelarate calculation
+                    intr_spec_dens_ew = prep_spec_dens_ew[mask_lite_ce[i_comp],:] # limit element number for accelarate calculation
                 else:
-                    orig_flux_int_ew = orig_flux_lib_ew
+                    intr_spec_dens_ew = prep_spec_dens_ew
             else:
                 llam_weight_e = self.llam_weight_from_sfh(i_comp, par_cp[i_comp])
                 tmp_mask_e = llam_weight_e > 0
-                tmp_ew = np.zeros_like(orig_flux_lib_ew)
-                tmp_ew[tmp_mask_e,:] = orig_flux_lib_ew[tmp_mask_e,:] * llam_weight_e[tmp_mask_e,None] # weight with llam_weight_e
-                orig_flux_int_ew = tmp_ew.reshape(self.num_mets, self.num_ages, len(orig_wave_lib_w)).sum(axis=1)
+                tmp_ew = np.zeros_like(prep_spec_dens_ew)
+                tmp_ew[tmp_mask_e,:] = prep_spec_dens_ew[tmp_mask_e,:] * llam_weight_e[tmp_mask_e,None] # weight with llam_weight_e
+                intr_spec_dens_ew = tmp_ew.reshape(self.num_mets, self.num_ages, len(prep_spec_wave_w)).sum(axis=1)
                 # sum in ages to create csp 
                 if mask_lite_e is not None:
-                    orig_flux_int_ew = orig_flux_int_ew[mask_lite_ce[i_comp],:]
+                    intr_spec_dens_ew = intr_spec_dens_ew[mask_lite_ce[i_comp],:]
 
             # dust extinction
             if if_dust_ext & ('Av' in self.cframe.par_index_cP[i_comp]):
                 Av = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['Av']]
-                orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * Av * ExtLaw(orig_wave_lib_w))
+                d_spec_dens_ew = intr_spec_dens_ew * 10.0**(-0.4 * Av * ExtLaw(prep_spec_wave_w))
             else:
-                orig_flux_d_ew = orig_flux_int_ew
+                d_spec_dens_ew = intr_spec_dens_ew
 
             # redshift models
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
             z_factor = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
-            orig_wave_z_w = orig_wave_lib_w * z_factor
+            z_spec_wave_w = prep_spec_wave_w * z_factor
             if if_z_decline:
-                orig_flux_dz_ew = orig_flux_d_ew / z_factor
+                zd_spec_dens_ew = d_spec_dens_ew / z_factor
             else:
-                orig_flux_dz_ew = orig_flux_d_ew
+                zd_spec_dens_ew = d_spec_dens_ew
 
             # convolve with intrinsic and instrumental dispersion if self.R_inst_rw is not None
             if if_convolve & ('fwhm' in self.cframe.par_index_cP[i_comp]) & (self.R_inst_rw is not None) & (conv_nbin is not None):
                 fwhm = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
-                R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
-                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=fwhm, 
+                R_inst_w = np.interp(z_spec_wave_w, self.R_inst_rw[0], self.R_inst_rw[1])
+                czd_spec_dens_ew = convolve_var_width_fft(z_spec_wave_w, zd_spec_dens_ew, dv_fwhm_obj=fwhm, 
                                                           dw_fwhm_ref=self.dw_fwhm_dsp_w*z_factor, R_inst_w=R_inst_w, num_bins=conv_nbin)
             else:
-                orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
+                czd_spec_dens_ew = zd_spec_dens_ew # just copy if convlution not required, e.g., for broad-band sed fitting
 
             # project to observed wavelength
-            interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value=(0,0), bounds_error=False)
-            obs_flux_scomp_ew = interp_func(obs_wave_w)
+            interp_func = interp1d(z_spec_wave_w, czd_spec_dens_ew, axis=1, kind='linear', fill_value=(0,0), bounds_error=False)
+            obs_spec_dens_ew = interp_func(obs_spec_wave_w)
 
-            if obs_flux_mcomp_ew is None: 
-                obs_flux_mcomp_ew = obs_flux_scomp_ew
+            if mcomp_spec_dens_ew is None: 
+                mcomp_spec_dens_ew = obs_spec_dens_ew
             else:
-                obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+                mcomp_spec_dens_ew = np.vstack((mcomp_spec_dens_ew, obs_spec_dens_ew))
 
-        return obs_flux_mcomp_ew
+        return mcomp_spec_dens_ew
     
     ##########################################################################
     ########################## Output functions ##############################
@@ -628,7 +626,7 @@ class StellarFrame(object):
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec+phot', 'spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
         
         best_chi_sq_l = copy(self.fframe.output_S[step]['chi_sq_l'])
@@ -758,22 +756,22 @@ class StellarFrame(object):
                         tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
 
                         if ret_emi_F['value_state'] in ['intrinsic','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                            tmp_flam_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=False, if_z_decline=True, if_full_range=True) # flux in obs frame
-                            intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                            intrinsic_flam_w = tmp_coeff_e @ tmp_flam_ew
                         if ret_emi_F['value_state'] in ['observed','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                            tmp_flam_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=True,  if_z_decline=True, if_full_range=True) # flux in obs frame
-                            observed_flux_w = tmp_coeff_e @ tmp_flux_ew
-                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
-                        if ret_emi_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
-                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
+                            observed_flam_w = tmp_coeff_e @ tmp_flam_ew
+                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flam_w = intrinsic_flam_w
+                        if ret_emi_F['value_state'] == 'observed' : tmp_flam_w = observed_flam_w
+                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flam_w = intrinsic_flam_w - observed_flam_w
 
                         tmp_wave_w *= u.angstrom
-                        tmp_flux_w *= u.Unit(self.fframe.spec_flux_unit)
-                        tmp_Flam    = tmp_flux_w.mean()
-                        tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
-                        tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
+                        tmp_flam_w *= u.Unit(self.fframe.spec_flux_unit)
+                        tmp_Flam    = tmp_flam_w.mean()
+                        tmp_lamFlam = tmp_flam_w.mean() * tmp_wave_w.mean()
+                        tmp_intFlux = np.trapezoid(tmp_flam_w, x=tmp_wave_w)
 
                         if ret_emi_F['value_form'] ==     'Flam'          : ret_value = tmp_Flam
                         if ret_emi_F['value_form'] in ['lamFlam', 'nuFnu']: ret_value = tmp_lamFlam
@@ -816,23 +814,23 @@ class StellarFrame(object):
                         tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=100) # obs frame grid
 
                         if ret_sfr_F['value_state'] in ['intrinsic','observed','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                            tmp_flam_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=False, if_z_decline=True, if_full_range=True) # flux in obs frame
-                            intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                            intrinsic_flam_w = tmp_coeff_e @ tmp_flam_ew
                         if ret_sfr_F['value_state'] in ['observed','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                            tmp_flam_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=True,  if_z_decline=True, if_full_range=True) # flux in obs frame
-                            observed_flux_w = tmp_coeff_e @ tmp_flux_ew
-                        if ret_sfr_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
-                        if ret_sfr_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
-                        if ret_sfr_F['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
+                            observed_flam_w = tmp_coeff_e @ tmp_flam_ew
+                        if ret_sfr_F['value_state'] == 'intrinsic': tmp_flam_w = intrinsic_flam_w
+                        if ret_sfr_F['value_state'] == 'observed' : tmp_flam_w = observed_flam_w
+                        if ret_sfr_F['value_state'] == 'absorbed' : tmp_flam_w = intrinsic_flam_w - observed_flam_w
 
-                        tmp_Flam    = tmp_flux_w.mean()
-                        tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
-                        tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
-                        int_Flam    = intrinsic_flux_w.mean()
-                        int_lamFlam = intrinsic_flux_w.mean() * tmp_wave_w.mean()
-                        int_intFlux = np.trapezoid(intrinsic_flux_w, x=tmp_wave_w)
+                        tmp_Flam    = tmp_flam_w.mean()
+                        tmp_lamFlam = tmp_flam_w.mean() * tmp_wave_w.mean()
+                        tmp_intFlux = np.trapezoid(tmp_flam_w, x=tmp_wave_w)
+                        int_Flam    = intrinsic_flam_w.mean()
+                        int_lamFlam = intrinsic_flam_w.mean() * tmp_wave_w.mean()
+                        int_intFlux = np.trapezoid(intrinsic_flam_w, x=tmp_wave_w)
 
                         if ret_sfr_F['flux_form'] ==    'Flam': ret_value *= tmp_Flam    / int_Flam
                         if ret_sfr_F['flux_form'] == 'lamFlam': ret_value *= tmp_lamFlam / int_lamFlam

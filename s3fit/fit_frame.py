@@ -602,11 +602,11 @@ class FitFrame(object):
         # add short aliases to simplify the callback
         for mod_name in self.mod_dict_M:
             setattr(self, self.mod_dict_M[mod_name]['term'], self.mod_dict_M[mod_name]['spec_mod']) 
-            self.mod_dict_M[mod_name]['cframe']      = self.mod_dict_M[mod_name]['spec_mod'].cframe
-            self.mod_dict_M[mod_name]['num_pars']    = self.mod_dict_M[mod_name]['spec_mod'].cframe.num_pars
-            self.mod_dict_M[mod_name]['num_coeffs']  = self.mod_dict_M[mod_name]['spec_mod'].num_coeffs
-            self.mod_dict_M[mod_name]['spec_func']   = self.mod_dict_M[mod_name]['spec_mod'].create_models
-            self.mod_dict_M[mod_name]['spec_enable'] = self.mod_dict_M[mod_name]['spec_mod'].enable
+            self.mod_dict_M[mod_name]['cframe']         = self.mod_dict_M[mod_name]['spec_mod'].cframe
+            self.mod_dict_M[mod_name]['num_pars_tot']   = self.mod_dict_M[mod_name]['spec_mod'].cframe.num_pars_tot
+            self.mod_dict_M[mod_name]['num_coeffs_tot'] = self.mod_dict_M[mod_name]['spec_mod'].num_coeffs_tot
+            self.mod_dict_M[mod_name]['spec_func']      = self.mod_dict_M[mod_name]['spec_mod'].create_models
+            self.mod_dict_M[mod_name]['spec_enable']    = self.mod_dict_M[mod_name]['spec_mod'].enable
             if self.have_phot:
                 self.mod_dict_M[mod_name]['sed_func']   = self.mod_dict_M[mod_name]['sed_mod'].create_models
                 self.mod_dict_M[mod_name]['sed_enable'] = self.mod_dict_M[mod_name]['sed_mod'].enable
@@ -667,15 +667,15 @@ class FitFrame(object):
         self.mod_name_p  = np.array([])
         self.comp_name_p = np.array([])
         self.par_name_p  = np.array([])
-        self.num_tot_pars   = 0
-        self.num_tot_coeffs = 0
+        self.num_pars_tot   = 0
+        self.num_coeffs_tot = 0
         for mod_name in self.full_mod_type.split('+'):
             mod_cframe = self.mod_dict_M[mod_name]['cframe']
-            self.mod_name_p  = np.hstack(( self.mod_name_p , mod_cframe.num_pars * [mod_name] ))
+            self.mod_name_p  = np.hstack(( self.mod_name_p , mod_cframe.num_pars_tot * [mod_name] ))
             self.comp_name_p = np.hstack(( self.comp_name_p, mod_cframe.comp_name_p ))
             self.par_name_p  = np.hstack(( self.par_name_p , mod_cframe.par_name_p ))
-            self.num_tot_pars   += self.mod_dict_M[mod_name]['num_pars']
-            self.num_tot_coeffs += self.mod_dict_M[mod_name]['num_coeffs']
+            self.num_pars_tot   += self.mod_dict_M[mod_name]['num_pars_tot']
+            self.num_coeffs_tot += self.mod_dict_M[mod_name]['num_coeffs_tot']
 
         # update bounds to match requirement of fitting fucntion, to avoid making conflict in non linear process
         self.par_min_p, self.par_max_p, self.par_tie_p = self.update_tied_pars(mod_type=self.full_mod_type)
@@ -686,8 +686,8 @@ class FitFrame(object):
         self.output_S = {}
         self.output_S['empty_step'] = {}
         self.output_S['empty_step']['chi_sq_l']   = np.zeros( self.num_loops, dtype='float')
-        self.output_S['empty_step']['par_lp']     = np.zeros((self.num_loops, self.num_tot_pars  ), dtype='float')
-        self.output_S['empty_step']['coeff_le']   = np.zeros((self.num_loops, self.num_tot_coeffs), dtype='float')
+        self.output_S['empty_step']['par_lp']     = np.zeros((self.num_loops, self.num_pars_tot  ), dtype='float')
+        self.output_S['empty_step']['coeff_le']   = np.zeros((self.num_loops, self.num_coeffs_tot), dtype='float')
         self.output_S['empty_step']['ret_dict_l'] = [{} for i in range(self.num_loops)]
 
     def save_to_file(self, file):
@@ -709,7 +709,7 @@ class FitFrame(object):
         if input_mask_lite_Me is None:
             ret_mask_lite_Me = {} # create a new mask dict
             for mod_name in self.full_mod_type.split('+'):
-                ret_mask_lite_Me[mod_name] = np.ones((self.mod_dict_M[mod_name]['num_coeffs']), dtype='bool')
+                ret_mask_lite_Me[mod_name] = np.ones((self.mod_dict_M[mod_name]['num_coeffs_tot']), dtype='bool')
         else:
             ret_mask_lite_Me = input_mask_lite_Me # update the input_mask_lite_Me
 
@@ -732,31 +732,31 @@ class FitFrame(object):
         i_coeffs_0 = 0
         for mod_name in rev_mod_type.split(input_mods)[0].split('+'):
             if mod_name == '': continue
-            i_pars_0   += self.mod_dict_M[mod_name]['num_pars']
-            i_coeffs_0 += self.mod_dict_M[mod_name]['num_coeffs'] if mask_lite_Me is None else mask_lite_Me[mod_name].sum()
+            i_pars_0   += self.mod_dict_M[mod_name]['num_pars_tot']
+            i_coeffs_0 += self.mod_dict_M[mod_name]['num_coeffs_tot'] if mask_lite_Me is None else mask_lite_Me[mod_name].sum()
 
         # count num of input_mods
         i_pars_1   = i_pars_0   + 0
         i_coeffs_1 = i_coeffs_0 + 0
         for mod_name in input_mods.split('+'): 
             if mod_name == '': continue
-            i_pars_1   += self.mod_dict_M[mod_name]['num_pars']
-            i_coeffs_1 += self.mod_dict_M[mod_name]['num_coeffs'] if mask_lite_Me is None else mask_lite_Me[mod_name].sum()
+            i_pars_1   += self.mod_dict_M[mod_name]['num_pars_tot']
+            i_coeffs_1 += self.mod_dict_M[mod_name]['num_coeffs_tot'] if mask_lite_Me is None else mask_lite_Me[mod_name].sum()
 
         return i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1
 
     def search_comp_index(self, input_comps, mod_name, mask_lite_Ce=None):
         # return the start and end indexes of par and coeff of input_comps among all comps in given mod
 
-        comp_name_c = self.mod_dict_M[mod_name]['cframe'].comp_name_c
-        num_pars_c  = self.mod_dict_M[mod_name]['cframe'].num_pars_c
+        comp_name_c  = self.mod_dict_M[mod_name]['cframe'  ].comp_name_c
+        num_pars_c   = self.mod_dict_M[mod_name]['cframe'  ].num_pars_c
         num_coeffs_c = self.mod_dict_M[mod_name]['spec_mod'].num_coeffs_c
 
-        num_pars_C   = {comp_name:num_pars   for (comp_name,num_pars)   in zip(comp_name_c, num_pars_c)}
+        num_pars_C   = {comp_name:num_pars   for (comp_name,num_pars  ) in zip(comp_name_c, num_pars_c  )}
         num_coeffs_C = {comp_name:num_coeffs for (comp_name,num_coeffs) in zip(comp_name_c, num_coeffs_c)}
 
         input_comps_str = '+'.join(input_comps) if isinstance(input_comps, list) else input_comps
-        all_comps_str = '+'.join(comp_name_c)
+        all_comps_str   = '+'.join(comp_name_c)
         if all_comps_str.split(input_comps_str)[0] == all_comps_str: 
             raise ValueError((f"No such component combination: {input_comps_str} in the components {all_comps_str} of {mod_name}."))
 
@@ -765,7 +765,7 @@ class FitFrame(object):
         i_coeffs_0 = 0
         for comp_name in all_comps_str.split(input_comps_str)[0].split('+'):
             if comp_name == '': continue
-            i_pars_0   += num_pars_C[comp_name]
+            i_pars_0   += num_pars_C  [comp_name]
             i_coeffs_0 += num_coeffs_C[comp_name] if mask_lite_Ce is None else mask_lite_Ce[comp_name].sum()
 
         # count num of input_comps_str
@@ -773,7 +773,7 @@ class FitFrame(object):
         i_coeffs_1 = i_coeffs_0 + 0
         for comp_name in input_comps_str.split('+'): 
             if comp_name == '': continue
-            i_pars_1   += num_pars_C[comp_name]
+            i_pars_1   += num_pars_C  [comp_name]
             i_coeffs_1 += num_coeffs_C[comp_name] if mask_lite_Ce is None else mask_lite_Ce[comp_name].sum()
 
         return i_pars_0, i_pars_1, i_coeffs_0, i_coeffs_1
@@ -1860,7 +1860,7 @@ class FitFrame(object):
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
-        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec+phot', 'spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
 
         best_chi_sq_l   = copy(self.output_S[step]['chi_sq_l'])
@@ -1980,8 +1980,7 @@ class FitFrame(object):
 
         # extract the best-fit models in spec and spec+SED fitting
         for mod_name in rev_mod_type.split('+'): 
-            comp_name_c = self.mod_dict_M[mod_name]['cframe'].comp_name_c
-            num_coeffs_c = self.mod_dict_M[mod_name]['spec_mod'].num_coeffs_c
+            comp_name_c  = self.mod_dict_M[mod_name]['cframe'  ].comp_name_c
             i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.search_mod_index(mod_name, self.full_mod_type)
             for i_loop in range(self.num_loops): 
                 spec_fmod_ew = self.mod_dict_M[mod_name]['spec_func'](spec_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], conv_nbin=self.conv_nbin_max)
@@ -2118,7 +2117,7 @@ class FitFrame(object):
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.have_phot else 'joint_fit_2'
-        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec+phot', 'spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
 
         output_MC, flux_unit = self.extract_results(step=step, flux_form=flux_form, flux_unit=flux_unit, if_return_results=True, if_return_flux_unit=True, verbose=False, **kwargs)

@@ -16,16 +16,14 @@ from ..auxiliaries.auxiliary_frames import ConfigFrame
 from ..auxiliaries.auxiliary_functions import print_log, casefold, color_list_dict
 
 class TorusFrame(object): 
-    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None, interp_space='log', 
+    def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=None, R_inst_rw=None, 
                  wave_min=None, wave_max=None, 
                  verbose=True, log_message=[]): 
 
         self.mod_name = mod_name
         self.fframe = fframe
-        self.config = config 
-        self.num_coeffs_max = num_coeffs_max
-        self.interp_space = interp_space
+        self.config = config
 
         self.v0_redshift = v0_redshift 
         self.R_inst_rw = R_inst_rw        
@@ -51,9 +49,10 @@ class TorusFrame(object):
 
         # one independent element per component, since disc and dust spectra are tied for a single component
         self.num_coeffs_c = np.ones(self.num_comps, dtype='int')
-        self.num_coeffs = self.num_coeffs_c.sum()
+        self.num_coeffs_tot = sum(self.num_coeffs_c)
+        self.num_coeffs = self.num_coeffs_tot
 
-        self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        self.num_coeffs_max = self.num_coeffs if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs, self.cframe.mod_info_I['num_coeffs_max'])
         self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
 
         # currently do not consider negative SED 
@@ -96,7 +95,11 @@ class TorusFrame(object):
         ############################################################
 
         # set inherited or default info if not specified in config
-        # component-level info
+        # model-level info, call as self.cframe.mod_info_I[info_name]
+        self.cframe.retrieve_inherited_info('num_coeffs_max', root_info_I=self.fframe.root_info_I, default=None)
+        self.cframe.retrieve_inherited_info('interp_space'  , root_info_I=self.fframe.root_info_I, default='log')
+
+        # component-level info, call as self.cframe.comp_info_cI[i_comp][info_name]
         # format of returned flux / Lum density or integrated values
         for i_comp in range(self.num_comps):
             # either 2-unit-nested tuples (for wave and value, respectively) or dictionary as follows are supported
@@ -214,7 +217,7 @@ class TorusFrame(object):
             bloc_dict['unit'    ] = str(u.Unit(bloc_dict['unit'    ]) / u.Unit(scale_spec_dens_unit)) # dimensionless unscaled
             self.init_spec_dens_B[bloc_name] = bloc_dict
         for attr_name, attr_dict in self.init_attribute_A.items():
-            attr_dict['init_unit'] = copy(attr_dict['unit']) # for the output
+            attr_dict['orig_unit'] = copy(attr_dict['unit']) # for the output
             if not attr_dict['additive']: continue # skip if the attribute is not additive
             attr_dict['value_e' ] =            attr_dict['value_e' ]  /        scale_spec_dens_e
             attr_dict['unit'    ] = str(u.Unit(attr_dict['unit'    ]) / u.Unit(scale_spec_dens_unit))
@@ -240,7 +243,7 @@ class TorusFrame(object):
 
         # avoid non-positive values
         self.spec_dens_min = 0
-        if self.interp_space == 'log':
+        if self.cframe.mod_info_I['interp_space'] == 'log':
             for bloc_name, bloc_dict in self.init_spec_dens_B.items():
                 tmp_min = bloc_dict['value_ew'][bloc_dict['value_ew'] > 0].min() * 1e-4
                 self.spec_dens_min = min(self.spec_dens_min, tmp_min) if self.spec_dens_min > 0 else tmp_min
@@ -285,10 +288,10 @@ class TorusFrame(object):
 
         # build interpolation function
         init_par_uniq_tuple = tuple(self.init_par_uniq_Pu.values())
-        if self.interp_space == 'linear':
+        if self.cframe.mod_info_I['interp_space'] == 'linear':
             init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_spec_wave_w])
             def tmp_func(x): return x
-        elif self.interp_space == 'log':
+        elif self.cframe.mod_info_I['interp_space'] == 'log':
             self.init_log_spec_wave_w = np.log10(self.init_spec_wave_w)
             init_par_uniq_wave_tuple = tuple(list(init_par_uniq_tuple) + [self.init_log_spec_wave_w])
             def tmp_func(x): return np.log10(x)
@@ -303,9 +306,9 @@ class TorusFrame(object):
     def interp_model(self, input_par_p, input_par_index_P, ret_name=None):
         input_par_list = [input_par_p[input_par_index_P[par_name]] for par_name in self.init_par_uniq_Pu.keys()]
         if ret_name[0] == 'bloc':
-            if self.interp_space == 'linear':
+            if self.cframe.mod_info_I['interp_space'] == 'linear':
                 input_par_list = [input_par_list + [w] for w in self.init_spec_wave_w]
-            elif self.interp_space == 'log':
+            elif self.cframe.mod_info_I['interp_space'] == 'log':
                 input_par_list = [input_par_list + [logw] for logw in self.init_log_spec_wave_w]
         return self.interp_func_R[ret_name](np.array(input_par_list))
 
@@ -397,30 +400,29 @@ class TorusFrame(object):
         if isinstance(components, str): components = [components]
 
         prep_spec_wave_w = copy(self.init_spec_wave_w) # avoid changing the initial 
-        if self.interp_space == 'log':
+        if self.cframe.mod_info_I['interp_space'] == 'log':
             prep_log_spec_wave_w = copy(self.init_log_spec_wave_w)
             obs_log_spec_wave_w  = np.log10(obs_spec_wave_w)
 
-        obs_spec_dens_mcomp_ew = None
+        mcomp_spec_dens_ew = None
 
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             if components is not None:
                 if comp_name not in components: continue
 
-            # here uses 'prep_' (preprocessed or prepared) to express model in rest frame without any extinction, absorption, or convolution
-            prep_spec_dens_ew = np.zeros_like(prep_spec_wave_w[None,:])
+            intr_spec_dens_ew = np.zeros_like(prep_spec_wave_w[None,:])
             # for bloc_name, bloc_dict in self.init_spec_dens_B.items():
             #     if bloc_name in self.cframe.comp_info_cI[i_comp]['mod_used']:
             #         if mask_lite_e is not None:
-            #             prep_spec_dens_ew += bloc_dict['value_ew'][mask_lite_ce[i_comp],:] # limit element number for accelarate calculation
+            #             intr_spec_dens_ew += bloc_dict['value_ew'][mask_lite_ce[i_comp],:] # limit element number for accelarate calculation
             #         else:
-            #             prep_spec_dens_ew += bloc_dict['value_ew']
-            # if self.interp_space == 'log': prep_log_spec_dens_ew = np.log10(prep_log_spec_dens_ew)
+            #             intr_spec_dens_ew += bloc_dict['value_ew']
+            # if self.cframe.mod_info_I['interp_space'] == 'log': intr_log_spec_dens_ew = np.log10(intr_log_spec_dens_ew)
             # interpolate model for given pars in initial wavelength (rest)
             for bloc_name in self.init_spec_dens_B.keys():
                 if bloc_name in self.cframe.comp_info_cI[i_comp]['mod_used']:
-                    prep_spec_dens_ew += self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name=('bloc', bloc_name))[None,:] # convert to (1,w) format
-            if self.interp_space == 'log': prep_log_spec_dens_ew = prep_spec_dens_ew # already log in interp_model
+                    intr_spec_dens_ew += self.interp_model(par_cp[i_comp], self.cframe.par_index_cP[i_comp], ret_name=('bloc', bloc_name))[None,:] # convert to (1,w) format
+            if self.cframe.mod_info_I['interp_space'] == 'log': intr_log_spec_dens_ew = intr_spec_dens_ew # already log in interp_model
 
             # dust extinction
             if if_dust_ext & ('Av' in self.cframe.par_index_cP[i_comp]):
@@ -433,47 +435,47 @@ class TorusFrame(object):
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
             z_factor = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
             z_spec_wave_w  = prep_spec_wave_w * z_factor
-            if self.interp_space == 'log': z_log_spec_wave_w = prep_log_spec_wave_w + np.log10(z_factor)
+            if self.cframe.mod_info_I['interp_space'] == 'log': z_log_spec_wave_w = prep_log_spec_wave_w + np.log10(z_factor)
             if if_z_decline:
                 z_decline_factor = 1 / z_factor
             else:
                 z_decline_factor = 1
 
-            if self.interp_space == 'linear':
-                dz_spec_dens_ew = prep_spec_dens_ew * dust_ext_factor_w * z_decline_factor
-            elif self.interp_space == 'log':
-                dz_log_spec_dens_ew = prep_log_spec_dens_ew + np.log10(dust_ext_factor_w * z_decline_factor)
+            if self.cframe.mod_info_I['interp_space'] == 'linear':
+                zd_spec_dens_ew = intr_spec_dens_ew * dust_ext_factor_w * z_decline_factor
+            elif self.cframe.mod_info_I['interp_space'] == 'log':
+                zd_log_spec_dens_ew = intr_log_spec_dens_ew + np.log10(dust_ext_factor_w * z_decline_factor)
 
             # convolve with intrinsic and instrumental dispersion
             if if_convolve & ('fwhm' in self.cframe.par_index_cP[i_comp]) & (self.R_inst_rw is not None) & (conv_nbin is not None):
                 fwhm = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
                 R_inst_w = np.interp(z_spec_wave_w, self.R_inst_rw[0], self.R_inst_rw[1])
-                if self.interp_space == 'log': dz_spec_dens_ew = 10.0**dz_log_spec_dens_ew # convolve in linear space
-                dzc_spec_dens_ew = convolve_var_width_fft(z_spec_wave_w, dz_spec_dens_ew, dv_fwhm_obj=fwhm, 
+                if self.cframe.mod_info_I['interp_space'] == 'log': zd_spec_dens_ew = 10.0**zd_log_spec_dens_ew # convolve in linear space
+                czd_spec_dens_ew = convolve_var_width_fft(z_spec_wave_w, zd_spec_dens_ew, dv_fwhm_obj=fwhm, 
                                                           dw_fwhm_ref=self.dw_fwhm_dsp_w*z_factor, R_inst_w=R_inst_w, num_bins=conv_nbin)
-                if self.interp_space == 'log': dzc_log_spec_dens_ew = np.log10(dzc_spec_dens_ew)
+                if self.cframe.mod_info_I['interp_space'] == 'log': czd_log_spec_dens_ew = np.log10(czd_spec_dens_ew)
             else:
-                if self.interp_space == 'linear':
-                    dzc_spec_dens_ew = dz_spec_dens_ew # just copy if convlution not required, e.g., for broad-band sed fitting
-                elif self.interp_space == 'log': 
-                    dzc_log_spec_dens_ew = dz_log_spec_dens_ew
+                if self.cframe.mod_info_I['interp_space'] == 'linear':
+                    czd_spec_dens_ew = zd_spec_dens_ew # just copy if convlution not required, e.g., for broad-band sed fitting
+                elif self.cframe.mod_info_I['interp_space'] == 'log': 
+                    czd_log_spec_dens_ew = zd_log_spec_dens_ew
 
             # project to observed wavelength
-            if self.interp_space == 'linear':
-                interp_func = interp1d(z_spec_wave_w, dzc_spec_dens_ew, axis=1, kind='linear', fill_value=(0,0), bounds_error=False)
+            if self.cframe.mod_info_I['interp_space'] == 'linear':
+                interp_func = interp1d(z_spec_wave_w, czd_spec_dens_ew, axis=1, kind='linear', fill_value=(0,0), bounds_error=False)
                 obs_spec_dens_ew = interp_func(obs_spec_wave_w)
-            elif self.interp_space == 'log': 
-                interp_func = interp1d(z_log_spec_wave_w, dzc_log_spec_dens_ew, axis=1, kind='linear', fill_value=(self.log_spec_dens_min,self.log_spec_dens_min), bounds_error=False)
+            elif self.cframe.mod_info_I['interp_space'] == 'log': 
+                interp_func = interp1d(z_log_spec_wave_w, czd_log_spec_dens_ew, axis=1, kind='linear', fill_value=(self.log_spec_dens_min,self.log_spec_dens_min), bounds_error=False)
                 obs_log_spec_dens_ew = interp_func(obs_log_spec_wave_w)
                 obs_spec_dens_ew = 10.0**obs_log_spec_dens_ew
                 obs_spec_dens_ew[obs_log_spec_dens_ew <= self.log_spec_dens_min] = 0
 
-            if obs_spec_dens_mcomp_ew is None: 
-                obs_spec_dens_mcomp_ew = obs_spec_dens_ew
+            if mcomp_spec_dens_ew is None: 
+                mcomp_spec_dens_ew = obs_spec_dens_ew
             else:
-                obs_spec_dens_mcomp_ew = np.vstack((obs_spec_dens_mcomp_ew, obs_spec_dens_ew))
+                mcomp_spec_dens_ew = np.vstack((mcomp_spec_dens_ew, obs_spec_dens_ew))
 
-        return obs_spec_dens_mcomp_ew
+        return mcomp_spec_dens_ew
 
     ##########################################################################
     ########################### Output functions #############################
@@ -488,7 +490,7 @@ class TorusFrame(object):
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec+phot', 'spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
         
         best_chi_sq_l = copy(self.fframe.output_S[step]['chi_sq_l'])
@@ -574,14 +576,16 @@ class TorusFrame(object):
 
                 voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
                 rev_redshift = (1 + self.v0_redshift) * (1 + voff/299792.458) - 1
-                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
+                lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift)**2 # with area unit
 
                 for attr_name, attr_dict in self.init_attribute_A.items():
                     attr_value_e = self.interp_model(par_p, self.cframe.par_index_cP[i_comp], ret_name=('attr', attr_name))
 
-                    if self.interp_space == 'log': attr_value_e = 10.0**attr_value_e
+                    if self.cframe.mod_info_I['interp_space'] == 'log': attr_value_e = 10.0**attr_value_e
                     if attr_dict['additive']: 
-                        attr_value_e *= (u.Unit(self.fframe.spec_flux_unit) * lum_area * u.Unit(attr_dict['unit'])).to(attr_dict['init_unit']).value
+                        attr_value_e *= u.Unit(self.fframe.spec_flux_unit) * u.Unit(attr_dict['unit'])           # if original spec_dens is in flam
+                        if not attr_value_e.unit.is_equivalent(attr_dict['orig_unit']): attr_value_e *= lum_area # if original spec_dens is in llam
+                        attr_value_e = attr_value_e.to(attr_dict['orig_unit']).value
                         output_C[comp_name]['value_Vl']['log_'+attr_name][i_loop]  = np.log10((attr_value_e * coeff_e).sum())
                         output_C['tot'    ]['value_Vl']['log_'+attr_name][i_loop] += (attr_value_e * coeff_e).sum() # keep in linear for total sum
                     else:
@@ -612,22 +616,22 @@ class TorusFrame(object):
                         tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
 
                         if ret_emi_F['value_state'] in ['intrinsic','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                            tmp_flam_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=False, if_z_decline=True, if_full_range=True) # flux in obs frame
-                            intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                            intrinsic_flam_w = tmp_coeff_e @ tmp_flam_ew
                         if ret_emi_F['value_state'] in ['observed','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
+                            tmp_flam_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
                                                              if_dust_ext=True,  if_z_decline=True, if_full_range=True) # flux in obs frame
-                            observed_flux_w = tmp_coeff_e @ tmp_flux_ew
-                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
-                        if ret_emi_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
-                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
+                            observed_flam_w = tmp_coeff_e @ tmp_flam_ew
+                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flam_w = intrinsic_flam_w
+                        if ret_emi_F['value_state'] == 'observed' : tmp_flam_w = observed_flam_w
+                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flam_w = intrinsic_flam_w - observed_flam_w
 
                         tmp_wave_w *= u.angstrom
-                        tmp_flux_w *= u.Unit(self.fframe.spec_flux_unit)
-                        tmp_Flam    = tmp_flux_w.mean()
-                        tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
-                        tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
+                        tmp_flam_w *= u.Unit(self.fframe.spec_flux_unit)
+                        tmp_Flam    = tmp_flam_w.mean()
+                        tmp_lamFlam = tmp_flam_w.mean() * tmp_wave_w.mean()
+                        tmp_intFlux = np.trapezoid(tmp_flam_w, x=tmp_wave_w)
 
                         if ret_emi_F['value_form'] ==     'Flam'          : ret_value = tmp_Flam
                         if ret_emi_F['value_form'] in ['lamFlam', 'nuFnu']: ret_value = tmp_lamFlam
@@ -682,9 +686,9 @@ class TorusFrame(object):
             print_name_CV[comp_name]['half_open_angle'] = 'Half opening angle (degree)'
             print_name_CV[comp_name]['inclination'] = 'Inclination (degree)'
             print_name_CV[comp_name]['frac_abs'] = f"Torus dust absorption fraction"
-            print_name_CV[comp_name]['log_mass_dust'] = f"Torus dust mass (log {self.init_attribute_A['mass_dust']['init_unit']})".replace('M_sun', 'M☉')
-            print_name_CV[comp_name]['log_intLum_dust'] = f"Torus dust bolometric lum. (log {self.init_attribute_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
-            print_name_CV[comp_name]['log_intLum_agn'] = f"AGN disc bolometric lum. (log {self.init_attribute_A['intLum_agn']['init_unit']})".replace('L_sun', 'L☉')
+            print_name_CV[comp_name]['log_mass_dust'] = f"Torus dust mass (log {self.init_attribute_A['mass_dust']['orig_unit']})".replace('M_sun', 'M☉')
+            print_name_CV[comp_name]['log_intLum_dust'] = f"Torus dust bolometric lum. (log {self.init_attribute_A['intLum_agn']['orig_unit']})".replace('L_sun', 'L☉')
+            print_name_CV[comp_name]['log_intLum_agn'] = f"AGN disc bolometric lum. (log {self.init_attribute_A['intLum_agn']['orig_unit']})".replace('L_sun', 'L☉')
 
             if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
                 for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:

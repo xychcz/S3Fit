@@ -13,7 +13,7 @@ from ..auxiliaries.auxiliary_functions import print_log, casefold, greek_letters
 from ..auxiliaries.extinct_laws import ExtLaw
 
 class LineFrame(object):
-    def __init__(self, mod_name=None, fframe=None, config=None, num_coeffs_max=None,
+    def __init__(self, mod_name=None, fframe=None, config=None, 
                  v0_redshift=0, R_inst_rw=None, 
                  wave_min=None, wave_max=None, mask_valid_rw=None, 
                  verbose=True, log_message=[]):
@@ -21,7 +21,6 @@ class LineFrame(object):
         self.mod_name = mod_name
         self.fframe = fframe
         self.config = config
-        self.num_coeffs_max = num_coeffs_max # not used
 
         self.v0_redshift = v0_redshift
         self.R_inst_rw = R_inst_rw
@@ -87,7 +86,10 @@ class LineFrame(object):
         ############################################################
 
         # set inherited or default info if not specified in config
-        # component-level info
+        # model-level info, call as self.cframe.mod_info_I[info_name]
+        self.cframe.retrieve_inherited_info('num_coeffs_max', root_info_I=self.fframe.root_info_I, default=None)
+
+        # component-level info, call as self.cframe.comp_info_cI[i_comp][info_name]
         for i_comp in range(self.num_comps):
             self.cframe.retrieve_inherited_info('line_used' , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=np.array(['default']))
             self.cframe.retrieve_inherited_info('line_ties' , i_comp=i_comp, root_info_I=self.fframe.root_info_I, default=['default'])
@@ -923,11 +925,12 @@ class LineFrame(object):
         self.mask_free_cn  = np.zeros((self.num_comps, self.num_lines), dtype='bool')
         for i_comp in range(self.num_comps):
             self.mask_free_cn[i_comp] = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict_cn[i_comp]])
-        self.num_coeffs_c = self.mask_free_cn.sum(axis=1)
-        self.num_coeffs = self.mask_free_cn.sum()
+        self.num_coeffs_c   = self.mask_free_cn.sum(axis=1)
+        self.num_coeffs_tot = self.mask_free_cn.sum()
+        self.num_coeffs     = self.num_coeffs_tot
 
         self.num_coeffs_max = self.num_coeffs # just copy since all elements are mandotary
-        # self.num_coeffs_max = self.num_coeffs if self.num_coeffs_max is None else min(self.num_coeffs_max, self.num_coeffs)
+        # self.num_coeffs_max = self.num_coeffs if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs, self.cframe.mod_info_I['num_coeffs_max'])
         # self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
 
         # set component name and enable mask for each free line; _e denotes free or coeffs
@@ -952,38 +955,39 @@ class LineFrame(object):
 
     ##########################################################################
 
-    def single_line(self, obs_wave_w, wave_c_rest, voff, fwhm, flux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
+    def single_line(self, obs_spec_wave_w, rest_line_wave_v0, voff, fwhm, intFlux, v0_redshift=0, R_inst_rw=1e8, profile='Gaussian'):
         if fwhm <= 0: raise ValueError((f"Non-positive line fwhm: {fwhm}"))
-        if flux < 0: raise ValueError((f"Negative line flux: {flux}"))
+        if intFlux < 0: raise ValueError((f"Negative line integrated flux: {intFlux}"))
 
-        wave_c_obs = wave_c_rest * (1 + v0_redshift)
-        mu =   (1 + voff/299792.458) * wave_c_obs
-        fwhm_line = fwhm/299792.458  * wave_c_obs
+        obs_line_wave_v0 = rest_line_wave_v0 * (1 + v0_redshift)
+        obs_line_wave_center = (1 + voff/299792.458) * obs_line_wave_v0
+        dw_fwhm_line = fwhm/299792.458 * obs_line_wave_center
 
         if np.isscalar(R_inst_rw):
             local_R_inst = copy(R_inst_rw)
         else:
-            local_R_inst = np.interp(wave_c_obs, R_inst_rw[0], R_inst_rw[1])
-        fwhm_inst = 1 / local_R_inst * wave_c_obs
+            local_R_inst = np.interp(obs_line_wave_center, R_inst_rw[0], R_inst_rw[1])
+        dw_fwhm_inst = 1 / local_R_inst * obs_line_wave_center
 
+        dw_shift_w = obs_spec_wave_w - obs_line_wave_center
         if casefold(profile) in ['gaussian', 'gauss']:
-            fwhm_tot = np.sqrt(fwhm_line**2 + fwhm_inst**2)
-            sigma_tot = fwhm_tot / np.sqrt(np.log(256))
-            model = np.exp(-0.5 * ((obs_wave_w-mu) / sigma_tot)**2) / (sigma_tot * np.sqrt(2*np.pi)) 
+            dw_fwhm_tot  = np.sqrt(dw_fwhm_line**2 + dw_fwhm_inst**2)
+            dw_sigma_tot = dw_fwhm_tot / np.sqrt(np.log(256))
+            model_w = np.exp(-0.5 * (dw_shift_w / dw_sigma_tot)**2) / (dw_sigma_tot * np.sqrt(2*np.pi)) 
         elif casefold(profile) in ['lorentzian', 'lorentz']:
-            gamma_line = fwhm_line / 2
-            model = 1 / (1 + ((obs_wave_w-mu) / gamma_line)**2) / (gamma_line * np.pi)
-            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
+            dw_gamma_line = dw_fwhm_line / 2
+            model_w = 1 / (1 + (dw_shift_w / dw_gamma_line)**2) / (dw_gamma_line * np.pi)
+            model_w = convolve_fix_width_fft(obs_spec_wave_w, model_w, dw_fwhm=dw_fwhm_inst, reset_edge=False)
         elif casefold(profile) in ['exponential', 'exp', 'laplace']:
-            b_line = fwhm_line / np.log(4)
-            model = np.exp(-np.abs(obs_wave_w-mu) / b_line) / (b_line * 2)
-            model = convolve_fix_width_fft(obs_wave_w, model, dw_fwhm=fwhm_inst, reset_edge=False)
+            dw_b_line = dw_fwhm_line / np.log(4)
+            model_w = np.exp(-np.abs(dw_shift_w) / dw_b_line) / (dw_b_line * 2)
+            model_w = convolve_fix_width_fft(obs_spec_wave_w, model_w, dw_fwhm=dw_fwhm_inst, reset_edge=False)
         else:
             raise ValueError((f"Please specify one of the line profiles: Gaussian, Lorentzian, or Exponential."))
 
-        return model * flux
+        return model_w * intFlux
 
-    def models_single_comp(self, obs_wave_w, par_cp, i_comp):
+    def single_comp_models(self, obs_spec_wave_w, par_cp, i_comp):
         voff      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
         fwhm      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
         Av        = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['Av']]
@@ -995,48 +999,48 @@ class LineFrame(object):
         
         list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
         list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
-        models_scomp = []
+        scomp_spec_dens_ew = []
         for i_free in list_free:
-            model_sline = self.single_line(obs_wave_w, self.linerest_n[i_free], voff, fwhm, 
-                                           1,  # flux=1
-                                           self.v0_redshift, self.R_inst_rw, self.cframe.comp_info_cI[i_comp]['profile'])
+            sline_spec_dens_w = self.single_line(obs_spec_wave_w, self.linerest_n[i_free], voff, fwhm, 
+                                                 1,  # intFlux=1
+                                                 self.v0_redshift, self.R_inst_rw, self.cframe.comp_info_cI[i_comp]['profile'])
             list_linked = np.where(self.linelink_name_cn[i_comp] == self.linename_n[i_free])[0]
             list_linked = list_linked[np.isin(list_linked, list_valid)]
             for i_linked in list_linked:
-                model_sline += self.single_line(obs_wave_w, self.linerest_n[i_linked], voff, fwhm, 
-                                                self.lineratio_cn[i_comp, i_linked], 
-                                                self.v0_redshift, self.R_inst_rw, self.cframe.comp_info_cI[i_comp]['profile'])
+                sline_spec_dens_w += self.single_line(obs_spec_wave_w, self.linerest_n[i_linked], voff, fwhm, 
+                                                      self.lineratio_cn[i_comp, i_linked], 
+                                                      self.v0_redshift, self.R_inst_rw, self.cframe.comp_info_cI[i_comp]['profile'])
             # detect and exclude weak lines
-            int_flux_list = [1] + [self.lineratio_cn[i_comp, i_linked] for i_linked in list_linked]
-            peak_flux_min = min(int_flux_list) / (fwhm / np.sqrt(np.log(256)) * np.sqrt(2*np.pi)) 
-            if not any(model_sline > (peak_flux_min * 0.5)): model_sline *= 0 # require to cover half peak height
+            intFlux_list = [1] + [self.lineratio_cn[i_comp, i_linked] for i_linked in list_linked]
+            peakFlam_min = min(intFlux_list) / (fwhm / np.sqrt(np.log(256)) * np.sqrt(2*np.pi)) 
+            if not any(sline_spec_dens_w > (peakFlam_min * 0.5)): sline_spec_dens_w *= 0 # require to cover half peak height
             
-            models_scomp.append(model_sline)
+            scomp_spec_dens_ew.append(sline_spec_dens_w)
 
-        models_scomp = np.array(models_scomp)
-        if self.cframe.comp_info_cI[i_comp]['sign'] == 'absorption': models_scomp *= -1 # set negative profile for absorption line
+        scomp_spec_dens_ew = np.array(scomp_spec_dens_ew)
+        if self.cframe.comp_info_cI[i_comp]['sign'] == 'absorption': scomp_spec_dens_ew *= -1 # set negative profile for absorption line
 
-        return models_scomp
+        return scomp_spec_dens_ew
     
-    def create_models(self, obs_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
+    def create_models(self, obs_spec_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
 
-        obs_flux_mcomp_ew = None
+        mcomp_spec_dens_ew = None
         for i_comp in range(self.num_comps):
             list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
             list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
             if len(list_free) >= 1:
-                obs_flux_scomp_ew = self.models_single_comp(obs_wave_w, par_cp, i_comp)
-                if obs_flux_mcomp_ew is None: 
-                    obs_flux_mcomp_ew = obs_flux_scomp_ew
+                scomp_spec_dens_ew = self.single_comp_models(obs_spec_wave_w, par_cp, i_comp)
+                if mcomp_spec_dens_ew is None: 
+                    mcomp_spec_dens_ew = scomp_spec_dens_ew
                 else:
-                    obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+                    mcomp_spec_dens_ew = np.vstack((mcomp_spec_dens_ew, scomp_spec_dens_ew))
 
         if mask_lite_e is not None:
-            obs_flux_mcomp_ew = obs_flux_mcomp_ew[mask_lite_e,:]
+            mcomp_spec_dens_ew = mcomp_spec_dens_ew[mask_lite_e,:]
 
-        return obs_flux_mcomp_ew
+        return mcomp_spec_dens_ew
 
     def mask_lite_with_comps(self, enabled_comps=None, disabled_comps=None):
         if enabled_comps is not None:
@@ -1061,7 +1065,7 @@ class LineFrame(object):
         ############################################################
 
         if (step is None) | (step in ['best', 'final']): step = 'joint_fit_3' if self.fframe.have_phot else 'joint_fit_2'
-        if  step in ['spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
+        if  step in ['spec+phot', 'spec+SED', 'spectrum+SED']:  step = 'joint_fit_3'
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
         
         best_chi_sq_l = copy(self.fframe.output_S[step]['chi_sq_l'])
