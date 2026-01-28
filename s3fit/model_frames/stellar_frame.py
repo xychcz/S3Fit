@@ -95,9 +95,9 @@ class StellarFrame(object):
             for (i_comp, comp_name) in enumerate(self.comp_name_c):
                 mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=i_comp)
                 print_log(f"Component ({i_comp}) '{comp_name}':", self.log_message)
-                print_log(f"    SSP models number: {mask_lite_allowed_e.sum()} used in a total of {self.num_templates}", self.log_message)
-                print_log(f"    SSP models age range ({self.age_unit}): from {self.age_e[mask_lite_allowed_e].min():.3f} to {self.age_e[mask_lite_allowed_e].max():.3f}", self.log_message)
-                print_log(f"    SSP models metallicity (Z/H): {np.unique(self.met_e[mask_lite_allowed_e])}", self.log_message) 
+                print_log(f"    SSP templates number: {mask_lite_allowed_e.sum()} used in a total of {self.num_templates}", self.log_message)
+                print_log(f"    SSP templates age range ({self.age_unit}): from {self.age_e[mask_lite_allowed_e].min():.3f} to {self.age_e[mask_lite_allowed_e].max():.3f}", self.log_message)
+                print_log(f"    SSP templates metallicity (Z/H): {np.unique(self.met_e[mask_lite_allowed_e])}", self.log_message) 
                 print_log(f"    CSP SFH function: '{self.sfh_name_c[i_comp]}'", self.log_message)
 
         # set plot styles
@@ -129,7 +129,7 @@ class StellarFrame(object):
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cP[0]) == 0:
             self.cframe.par_name_cp  = [['voff', 'fwhm', 'Av', 'log_csp_age', 'log_csp_tau'][:self.cframe.num_pars_c[i_comp]] for i_comp in range(self.num_comps)]
-            self.cframe.par_index_cP = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_csp_age': 3, 'log_csp_tau': 4} for i_comp in range(self.num_comps)]
+            self.cframe.par_index_cP = [{par_name: i_par for (i_par, par_name) in enumerate(self.cframe.par_name_cp[i_comp])} for i_comp in range(self.num_comps)]
         for i_comp in range(self.num_comps):
             if 'age_min' in self.cframe.comp_info_cI[i_comp]: self.cframe.comp_info_cI[i_comp]['log_ssp_age_min'] = self.cframe.comp_info_cI[i_comp]['age_min']
             if 'age_max' in self.cframe.comp_info_cI[i_comp]: self.cframe.comp_info_cI[i_comp]['log_ssp_age_max'] = self.cframe.comp_info_cI[i_comp]['age_max']
@@ -364,13 +364,13 @@ class StellarFrame(object):
             if dpix_dsp > 1:
                 if preconvolving:
                     if self.verbose: 
-                        print_log(f'Downsample preconvolved SSP models with bin width of {dw_dsp:.3f} Å in a min resolution of {self.prep_dw_fwhm_w.min():.3f} Å', self.log_message)
+                        print_log(f'Downsample preconvolved SSP templates with bin width of {dw_dsp:.3f} Å in a min resolution of {self.prep_dw_fwhm_w.min():.3f} Å', self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # here assume the internal dispersion in the original model (e.g., in stellar atmosphere) is indepent from the measured dispersion (i.e., stellar motion) in the fitting
                     self.prep_spec_dens_ew = convolve_fix_width_fft(self.prep_spec_wave_w, self.prep_spec_dens_ew, dw_fwhm=self.prep_dw_fwhm_w.min())
                 else:
                     if self.verbose: 
-                        print_log(f'Downsample original SSP models with bin width of {dw_dsp:.3f} Å in a min resolution of {self.prep_dw_fwhm_w.min():.3f} Å', self.log_message)  
+                        print_log(f'Downsample original SSP templates with bin width of {dw_dsp:.3f} Å in a min resolution of {self.prep_dw_fwhm_w.min():.3f} Å', self.log_message)  
                 self.prep_spec_wave_w  = self.prep_spec_wave_w [  ::dpix_dsp]
                 self.prep_spec_dens_ew = self.prep_spec_dens_ew[:,::dpix_dsp]
                 self.prep_dw_fwhm_w    = self.prep_dw_fwhm_w   [  ::dpix_dsp]
@@ -435,7 +435,7 @@ class StellarFrame(object):
                 mask_lite_csp_e = np.hstack((mask_lite_csp_e, tmp_mask_e))
             return mask_lite_csp_e
 
-    def mask_lite_with_num_mods(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
+    def mask_lite_with_nums(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
         if self.sfh_name_c[0] == 'nonparametric':
             # only used in nonparametic, single component
             mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
@@ -453,40 +453,40 @@ class StellarFrame(object):
             mask_lite_ssp_e = np.zeros_like(self.age_e, dtype='bool')
             mask_lite_ssp_e[ind_ssp_lite] = True
             mask_lite_ssp_e &= mask_lite_allowed_e
-            if verbose: print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
+            if verbose: print_log(f'Number of used SSP templates: {mask_lite_ssp_e.sum()}', self.log_message) 
             return mask_lite_ssp_e
 
         else:
             mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
-            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message) 
+            if verbose: print_log(f'Number of used CSP templates: {mask_lite_csp_e.sum()}', self.log_message) 
             return mask_lite_csp_e
 
-    def mask_lite_with_coeffs(self, coeffs=None, mask=None, num_mods_min=32, verbose=True):
+    def mask_lite_with_coeffs(self, coeff_t=None, mask_e=None, num_lite=None, frac_lite=None, verbose=True):
         if self.sfh_name_c[0] == 'nonparametric':
             # only used in nonparametic, single component
             mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
 
-            coeffs_full = np.zeros(self.num_templates)
-            coeffs_full[mask if mask is not None else mask_lite_allowed_e] = coeffs
-            coeffs_sort = np.sort(coeffs_full)
-            # coeffs_min = coeffs_sort[np.cumsum(coeffs_sort)/np.sum(coeffs_sort) < 0.01].max() 
-            # # i.e., keep coeffs with sum > 99%
-            # mask_ssp_lite = coeffs_full >= np.minimum(coeffs_min, coeffs_sort[-num_mods_min]) 
-            # # keep minimum num of models
-            # mask_ssp_lite &= mask_lite_allowed_e
-            # print('Number of used SSP models:', mask_ssp_lite.sum()) #, np.unique(self.age_e[mask_ssp_lite]))
-            # print('Ages with coeffs.sum > 99%:', np.unique(self.age_e[coeffs_full >= coeffs_min]))
-            mask_lite_ssp_e = coeffs_full >= coeffs_sort[-num_mods_min]
+            coeff_e = np.zeros(self.num_templates)
+            coeff_e[mask_e if mask_e is not None else mask_lite_allowed_e] = coeff_t
+            coeff_sort_s = np.sort(coeff_e)
+            coeff_cumnorm_s = np.cumsum(coeff_sort_s)/np.sum(coeff_sort_s)
+
+            if num_lite is not None:
+                coeff_min = coeff_sort_s[-num_lite]
+            elif frac_lite is not None:
+                coeff_min = coeff_sort_s[coeff_cumnorm_s < (1-frac_lite)].max() 
+            mask_lite_ssp_e = coeff_e >= coeff_min
             mask_lite_ssp_e &= mask_lite_allowed_e
+
             if verbose: 
-                print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
-                print_log(f'Coeffs.sum of used SSP models: {1-np.cumsum(coeffs_sort)[-num_mods_min]/np.sum(coeffs_sort)}', self.log_message) 
-                print_log(f'Ages of dominant SSP models: {np.unique(self.age_e[coeffs_full >= coeffs_sort[-5]])}', self.log_message) 
+                print_log(f"Number of used SSP templates: {mask_lite_ssp_e.sum()}", self.log_message) 
+                print_log(f"Contribution of the {mask_lite_ssp_e.sum()} used SSP templates to Fλ (5500Å): {1-coeff_cumnorm_s[-num_lite]:.6f}", self.log_message) 
+                print_log(f"Ages (Gyr) of the top 5 dominant SSP templates: {self.age_e[coeff_e >= coeff_sort_s[-5]]}", self.log_message) 
             return mask_lite_ssp_e
 
         else:
             mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
-            if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message)             
+            if verbose: print_log(f'Number of used CSP templates: {mask_lite_csp_e.sum()}', self.log_message)             
             return mask_lite_csp_e
 
     ##########################################################################

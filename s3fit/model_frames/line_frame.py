@@ -80,7 +80,7 @@ class LineFrame(object):
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cP[0]) == 0:
             self.cframe.par_name_cp  = [['voff', 'fwhm', 'Av', 'log_e_den', 'log_e_tem'] for i_comp in range(self.num_comps)]
-            self.cframe.par_index_cP = [{'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_den': 3, 'log_e_tem': 4} for i_comp in range(self.num_comps)]
+            self.cframe.par_index_cP = [{par_name: i_par for (i_par, par_name) in enumerate(self.cframe.par_name_cp[i_comp])} for i_comp in range(self.num_comps)]
         self.tie_pair = self.tie_line_fluxes
         self.release_pair = self.untie_line_fluxes
         ############################################################

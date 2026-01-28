@@ -1508,7 +1508,7 @@ class FitFrame(object):
         ########################################
         # obtain a rough fit of continuum with line wavelength ranges masked out
         if 'stellar' in self.get_mod_term(cont_type.split('+')): 
-            mask_lite_stellar_e = self.stellar.mask_lite_with_num_mods(num_ages_lite=8, num_mets_lite=1, verbose=self.if_print_steps)
+            mask_lite_stellar_e = self.stellar.mask_lite_with_nums(num_ages_lite=8, num_mets_lite=1, verbose=self.if_print_steps)
             mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['stellar'], mask_lite_stellar_e)
         else:
             mask_lite_Me = self.update_mask_lite_Me()
@@ -1534,7 +1534,7 @@ class FitFrame(object):
         ################## 1st fit cycle ###################
         # obtain a better fit of stellar continuum after subtracting lines of line_fit_init
         if 'stellar' in self.get_mod_term(cont_type.split('+')): 
-            mask_lite_stellar_e = self.stellar.mask_lite_with_num_mods(num_ages_lite=16, num_mets_lite=1, verbose=self.if_print_steps)
+            mask_lite_stellar_e = self.stellar.mask_lite_with_nums(num_ages_lite=16, num_mets_lite=1, verbose=self.if_print_steps)
             mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['stellar'], mask_lite_stellar_e)
         else:
             mask_lite_Me = self.update_mask_lite_Me()
@@ -1671,7 +1671,7 @@ class FitFrame(object):
                                                      fit_message='cont_fit_2b: spectral fitting, update continuum models', i_loop=i_loop)
                 # create new mask_lite_stellar_e with new coeffs; do not use full allowed stellar model elements to save time
                 i_coeffs_0, i_coeffs_1 = self.search_mod_index(self.mod_name_T['stellar'], cont_fit_2b['mod_type'], mask_lite_Me=cont_fit_2b['mask_lite_Me'])[2:4]
-                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_2b['coeff_t'][i_coeffs_0:i_coeffs_1], num_mods_min=24, verbose=self.if_print_steps)
+                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_2b['coeff_t'][i_coeffs_0:i_coeffs_1], num_lite=24, verbose=self.if_print_steps)
                 mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['stellar'], mask_lite_stellar_e, input_mask_lite_Me=mask_lite_Me)
             else:
                 cont_fit_2b = cont_fit_2a
@@ -1747,7 +1747,7 @@ class FitFrame(object):
             if 'stellar' in self.get_mod_term(cont_type.split('+')): 
                 # create new mask_lite_stellar_e with new coeffs; do not use full allowed stellar model elements to save time
                 i_coeffs_0, i_coeffs_1 = self.search_mod_index(self.mod_name_T['stellar'], cont_fit_3b['mod_type'], mask_lite_Me=cont_fit_3b['mask_lite_Me'])[2:4]
-                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_3b['coeff_t'][i_coeffs_0:i_coeffs_1], num_mods_min=24, verbose=self.if_print_steps)
+                mask_lite_stellar_e = self.stellar.mask_lite_with_coeffs(cont_fit_3b['coeff_t'][i_coeffs_0:i_coeffs_1], num_lite=24, verbose=self.if_print_steps)
                 mask_lite_Me = self.update_mask_lite_Me(self.mod_name_T['stellar'], mask_lite_stellar_e, input_mask_lite_Me=mask_lite_Me)
             ########################################
             if 'line' in self.get_mod_term(self.full_mod_type.split('+')): 

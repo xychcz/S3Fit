@@ -86,12 +86,15 @@ class TorusFrame(object):
         ############################################################
         # to be compatible with old version <= 2.2.4
         if len(self.cframe.par_index_cP[0]) == 0:
-            self.cframe.par_name_cp  = [['voff', 'opt_depth_9.7', 'opening_angle', 'radii_ratio', 'inclination'] for i_comp in range(self.num_comps)]
-            self.cframe.par_index_cP = [{'voff': 0, 'opt_depth_9.7': 1, 'opening_angle': 2, 'radii_ratio': 3, 'inclination': 4} for i_comp in range(self.num_comps)]
+            self.cframe.par_name_cp  = [['voff', 'opt_depth_9p7', 'opening_angle', 'radii_ratio', 'inclination'] for i_comp in range(self.num_comps)]
+            self.cframe.par_index_cP = [{par_name: i_par for (i_par, par_name) in enumerate(self.cframe.par_name_cp[i_comp])} for i_comp in range(self.num_comps)]
+        # to be compatible with old version <= 2.3
         for i_comp in range(self.num_comps):
+            if 'opt_depth_9.7' in self.cframe.par_name_cp[i_comp]:
+                self.cframe.par_name_cp[i_comp] = ['opt_depth_9p7'   if par_name == 'opt_depth_9.7' else par_name for par_name in self.cframe.par_name_cp[i_comp]]
             if 'opening_angle' in self.cframe.par_name_cp[i_comp]:
                 self.cframe.par_name_cp[i_comp] = ['half_open_angle' if par_name == 'opening_angle' else par_name for par_name in self.cframe.par_name_cp[i_comp]]
-                self.cframe.par_index_cP[i_comp]['half_open_angle'] = self.cframe.par_index_cP[i_comp]['opening_angle']        
+            self.cframe.par_index_cP[i_comp] = {par_name: i_par for (i_par, par_name) in enumerate(self.cframe.par_name_cp[i_comp])}
         ############################################################
 
         # set inherited or default info if not specified in config
@@ -162,7 +165,7 @@ class TorusFrame(object):
         # mimic the user input from mod_info_I
         template = {}
         template['wave'] = {'value': skirtor_disc[0, 6:], 'unit': 'micron', 'medium': None} # 1e-3 to 1e3 micron
-        template['pars'] = {'opt_depth_9.7': skirtor_disc[1:, 0], 'radii_ratio': skirtor_disc[1:, 2], 'half_open_angle': skirtor_disc[1:, 1], 'inclination': skirtor_disc[1:, 3]}
+        template['pars'] = {'opt_depth_9p7': skirtor_disc[1:, 0], 'radii_ratio': skirtor_disc[1:, 2], 'half_open_angle': skirtor_disc[1:, 1], 'inclination': skirtor_disc[1:, 3]}
         template['spec'] = {'disc': skirtor_disc[1:, 6:], 'dust': skirtor_dust[1:, 6:], 'unit': 'erg s-1 micron-1'}
         # here 'spec' is short for spectral density
         ######### convert if spec given in fnu
@@ -314,77 +317,59 @@ class TorusFrame(object):
 
     ##########################################################################
 
-    # def mask_lite_allowed(self, i_comp=None):
+    def mask_lite_allowed(self, i_comp=None):
 
-    #     i_par_voff = self.cframe.par_index_cP[i_comp]['voff']
-    #     voff_min = self.cframe.par_min_cp[i_comp][i_par_voff]
+        mask_lite_e = np.ones(self.num_templates, dtype='bool')
 
+        for par_name, par_e in self.init_par_Pe.items():
+            i_par = self.cframe.par_index_cP[i_comp][par_name]
+            par_min = self.cframe.par_min_cp[i_comp][i_par]
+            par_max = self.cframe.par_max_cp[i_comp][i_par]
+            mask_lite_e &= (par_e >= par_min) & (par_e <= par_max)
 
-    #     log_age_min, log_age_max = self.cframe.comp_info_cI[i_comp]['log_ssp_age_min'], self.cframe.comp_info_cI[i_comp]['log_ssp_age_max']
-    #     age_min = self.age_e.min() if log_age_min is None else 10.0**log_age_min
-    #     age_max = cosmo.age(self.v0_redshift).value if log_age_max in ['universe', 'Universe'] else 10.0**log_age_max
-    #     mask_lite_ssp_e = (self.age_e >= age_min) & (self.age_e <= age_max)
-    #     met_sel = self.cframe.comp_info_cI[i_comp]['ssp_metallicity']
-    #     if met_sel != 'all':
-    #         if met_sel in ['solar', 'Solar']:
-    #             mask_lite_ssp_e &= self.met_e == 0.02
-    #         else:
-    #             mask_lite_ssp_e &= np.isin(self.met_e, met_sel)
-    #     return mask_lite_ssp_e
+        return mask_lite_e
 
-    # def mask_lite_with_num_mods(self, num_ages_lite=8, num_mets_lite=1, verbose=True):
-    #     if self.sfh_name_c[0] == 'nonparametric':
-    #         # only used in nonparametic, single component
-    #         mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
+    def mask_lite_with_nums(self, verbose=True, **kwargs):
 
-    #         ages_full, num_ages_full = np.unique(self.age_e), len(np.unique(self.age_e))
-    #         ages_allowed = np.unique(self.age_e[ mask_lite_allowed_e ])
-    #         ages_lite = np.logspace(np.log10(ages_allowed.min()), np.log10(ages_allowed.max()), num=num_ages_lite)
-    #         ages_lite *= 10.0**((np.random.rand(num_ages_lite)-0.5)*np.log10(ages_lite[1]/ages_lite[0]))
-    #         # request log-even ages with random shift
-    #         ind_ages_lite = [np.where(np.abs(ages_full-a)==np.min(np.abs(ages_full-a)))[0][0] for a in ages_lite]
-    #         # np.round(np.linspace(0, num_ages_full-1, num_ages_lite)).astype(int)
-    #         ind_mets_lite = [2,1,3,0][:num_mets_lite] # Z = 0.02 (solar), 0.008, 0.05, 0.004, select with this order
-    #         ind_ssp_lite = np.array([ind_met*num_ages_full+np.arange(num_ages_full)[ind_age] 
-    #                                  for ind_met in ind_mets_lite for ind_age in ind_ages_lite])
-    #         mask_lite_ssp_e = np.zeros_like(self.age_e, dtype='bool')
-    #         mask_lite_ssp_e[ind_ssp_lite] = True
-    #         mask_lite_ssp_e &= mask_lite_allowed_e
-    #         if verbose: print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
-    #         return mask_lite_ssp_e
+        # only used in nonparametic, single component
+        mask_lite_e = self.mask_lite_allowed(i_comp=0)
 
-    #     else:
-    #         mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
-    #         if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message) 
-    #         return mask_lite_csp_e
+        for par_name, par_uniq in self.init_par_uniq_Pu.items():
+            num_lite = 2
+            if        par_name in kwargs: num_lite = max(num_lite, kwargs[       par_name])
+            if 'num_'+par_name in kwargs: num_lite = max(num_lite, kwargs['num_'+par_name])
+            num_lite = min(num_lite, len(par_uniq))
+            i_uniq_lite = [round(n * (len(par_uniq) - 1) / (num_lite - 1)) for n in range(num_lite)]
+            par_lite = [par_uniq[i_uniq] for i_uniq in i_uniq_lite]
+            mask_lite_e &= np.isin(self.init_par_Pe[par_name], par_lite)
 
-    # def mask_lite_with_coeffs(self, coeffs=None, mask=None, num_mods_min=32, verbose=True):
-    #     if self.sfh_name_c[0] == 'nonparametric':
-    #         # only used in nonparametic, single component
-    #         mask_lite_allowed_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
+        if verbose: print_log(f'Number of used templates: {mask_lite_e.sum()}', self.log_message) 
 
-    #         coeffs_full = np.zeros(self.num_templates)
-    #         coeffs_full[mask if mask is not None else mask_lite_allowed_e] = coeffs
-    #         coeffs_sort = np.sort(coeffs_full)
-    #         # coeffs_min = coeffs_sort[np.cumsum(coeffs_sort)/np.sum(coeffs_sort) < 0.01].max() 
-    #         # # i.e., keep coeffs with sum > 99%
-    #         # mask_ssp_lite = coeffs_full >= np.minimum(coeffs_min, coeffs_sort[-num_mods_min]) 
-    #         # # keep minimum num of models
-    #         # mask_ssp_lite &= mask_lite_allowed_e
-    #         # print('Number of used SSP models:', mask_ssp_lite.sum()) #, np.unique(self.age_e[mask_ssp_lite]))
-    #         # print('Ages with coeffs.sum > 99%:', np.unique(self.age_e[coeffs_full >= coeffs_min]))
-    #         mask_lite_ssp_e = coeffs_full >= coeffs_sort[-num_mods_min]
-    #         mask_lite_ssp_e &= mask_lite_allowed_e
-    #         if verbose: 
-    #             print_log(f'Number of used SSP models: {mask_lite_ssp_e.sum()}', self.log_message) 
-    #             print_log(f'Coeffs.sum of used SSP models: {1-np.cumsum(coeffs_sort)[-num_mods_min]/np.sum(coeffs_sort)}', self.log_message) 
-    #             print_log(f'Ages of dominant SSP models: {np.unique(self.age_e[coeffs_full >= coeffs_sort[-5]])}', self.log_message) 
-    #         return mask_lite_ssp_e
+        return mask_lite_e
 
-    #     else:
-    #         mask_lite_csp_e = self.mask_lite_allowed(if_csp=True)
-    #         if verbose: print_log(f'Number of used CSP models: {mask_lite_csp_e.sum()}', self.log_message)             
-    #         return mask_lite_csp_e
+    def mask_lite_with_coeffs(self, coeff_t=None, mask_e=None, num_lite=None, frac_lite=None, verbose=True):
+
+        # only used in nonparametic, single component
+        mask_lite_e = self.mask_lite_allowed(if_ssp=True, i_comp=0)
+
+        coeff_e = np.zeros(self.num_templates)
+        coeff_e[mask_e if mask_e is not None else mask_lite_e] = coeff_t
+        coeff_sort_s = np.sort(coeff_e)
+        coeff_cumnorm_s = np.cumsum(coeff_sort_s)/np.sum(coeff_sort_s)
+
+        if num_lite is not None:
+            coeff_min = coeff_sort_s[-num_lite]
+        elif frac_lite is not None:
+            coeff_min = coeff_sort_s[coeff_cumnorm_s < (1-frac_lite)].max() 
+        mask_lite_e &= coeff_e >= coeff_min
+
+        if verbose: 
+            print_log(f"Number of used templates: {mask_lite_e.sum()}", self.log_message) 
+            print_log(f"Flux contribution of the {mask_lite_e.sum()} used templates: {1-coeff_cumnorm_s[-num_lite]:.6f}", self.log_message)
+            for par_name, par_e in self.init_par_Pe.items():
+                print_log(f"{par_name} of the top 5 dominant templates: {par_e[coeff_e >= coeff_sort_s[-5]]}", self.log_message) 
+                
+        return mask_lite_e
 
     ##########################################################################
 
@@ -696,7 +681,7 @@ class TorusFrame(object):
             for value_name in self.output_C[comp_name]['value_Vl']: print_name_CV[comp_name][value_name] = value_name
 
             print_name_CV[comp_name]['voff'] = 'Velocity shift in relative to z_sys (km s-1)'
-            print_name_CV[comp_name]['opt_depth_9.7'] = 'Optical depth at 9.7 µm'
+            print_name_CV[comp_name]['opt_depth_9p7'] = 'Optical depth at 9.7 µm'
             print_name_CV[comp_name]['radii_ratio'] = 'Outer/inner radii ratio'
             print_name_CV[comp_name]['half_open_angle'] = 'Half opening angle (degree)'
             print_name_CV[comp_name]['inclination'] = 'Inclination (degree)'

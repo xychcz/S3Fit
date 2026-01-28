@@ -127,19 +127,15 @@ class AGNFrame(object):
             for i_comp in range(self.num_comps):
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                     self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'alpha_lambda']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda': 3}
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                     self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'alpha_lambda1': 3, 'alpha_lambda2': 4, 'wave_turn': 5, 'curvature': 6}
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_tem',]
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_tem': 3}
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_e_tem', 'log_tau_be']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2, 'log_e_tem': 3, 'log_tau_be': 4}
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                     self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av']
-                    self.cframe.par_index_cP[i_comp] = {'voff': 0, 'fwhm': 1, 'Av': 2}
+                self.cframe.par_index_cP[i_comp] = {par_name: i_par for (i_par, par_name) in enumerate(self.cframe.par_name_cp[i_comp])}
         ############################################################
 
         # set inherited or default info if not specified in config
