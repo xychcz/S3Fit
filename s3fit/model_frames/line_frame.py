@@ -42,7 +42,7 @@ class LineFrame(object):
         for item in ['use_pyneb', 'if_use_pyneb']:
             if item in self.cframe.mod_info_I: self.use_pyneb = self.cframe.mod_info_I[item]
 
-        # load line list and count num_coeffs (number of independent model elements)
+        # load line list and count num_coeffs_tot (number of independent model elements)
         self.initialize_linelist()
         self.update_linelist()
 
@@ -728,7 +728,7 @@ class LineFrame(object):
         self.mask_valid_cn = self.mask_valid_cn[:,mask_valid_n]
         self.num_lines = len(self.linename_n)
 
-        # check the relations between lines and count num_coeffs
+        # check the relations between lines and count num_coeffs_tot
         self.update_linelink()
             
     def update_linelink(self):
@@ -774,7 +774,7 @@ class LineFrame(object):
                 if isinstance(line_tie, tuple): line_tie = list(line_tie)
                 self.tie_line_fluxes(line_names=line_tie, components=components)
 
-        # update mask of free lines and count num_coeffs
+        # update mask of free lines and count num_coeffs_tot
         self.update_mask_free()
         # update line ratios for each comp with default Av, log_e_den, and log_e_tem
         self.lineratio_cn = np.tile(np.zeros_like(self.lineratio_n), (self.num_comps, 1))
@@ -926,15 +926,15 @@ class LineFrame(object):
         for i_comp in range(self.num_comps):
             self.mask_free_cn[i_comp] = self.mask_valid_cn[i_comp] & ~np.isin(self.linename_n, [*self.linelink_dict_cn[i_comp]])
         self.num_coeffs_c   = self.mask_free_cn.sum(axis=1)
+        self.num_coeffs_C = {comp_name: num_coeffs for (comp_name, num_coeffs) in zip(self.comp_name_c, self.num_coeffs_c)}
         self.num_coeffs_tot = self.mask_free_cn.sum()
-        self.num_coeffs     = self.num_coeffs_tot
 
-        self.num_coeffs_max = self.num_coeffs # just copy since all elements are mandotary
-        # self.num_coeffs_max = self.num_coeffs if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs, self.cframe.mod_info_I['num_coeffs_max'])
+        self.num_coeffs_max = self.num_coeffs_tot # just copy since all elements are mandotary
+        # self.num_coeffs_max = self.num_coeffs_tot if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs_tot, self.cframe.mod_info_I['num_coeffs_max'])
         # self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
 
         # set component name and enable mask for each free line; _e denotes free or coeffs
-        self.comp_name_e = [] # np.zeros((self.num_coeffs), dtype='<U16')
+        self.comp_name_e = [] # np.zeros((self.num_coeffs_tot), dtype='<U16')
         for i_comp in range(self.num_comps):
             for i_line in range(self.num_lines):
                 if self.mask_free_cn[i_comp, i_line]:
@@ -987,12 +987,12 @@ class LineFrame(object):
 
         return model_w * intFlux
 
-    def single_comp_models(self, obs_spec_wave_w, par_cp, i_comp):
-        voff      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
-        fwhm      = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
-        Av        = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['Av']]
-        log_e_den = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_den']]
-        log_e_tem = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
+    def single_comp_models(self, obs_spec_wave_w, par_p, i_comp):
+        voff      = par_p[self.cframe.par_index_cP[i_comp]['voff']]
+        fwhm      = par_p[self.cframe.par_index_cP[i_comp]['fwhm']]
+        Av        = par_p[self.cframe.par_index_cP[i_comp]['Av']]
+        log_e_den = par_p[self.cframe.par_index_cP[i_comp]['log_e_den']]
+        log_e_tem = par_p[self.cframe.par_index_cP[i_comp]['log_e_tem']]
 
         # update lineratio_cn
         self.update_lineratio(Av, log_e_den, log_e_tem, i_comp)
@@ -1022,32 +1022,42 @@ class LineFrame(object):
 
         return scomp_spec_dens_ew
     
-    def create_models(self, obs_spec_wave_w, par_p, mask_lite_e=None, conv_nbin=None):
+    def create_models(self, obs_spec_wave_w, par_p, mask_lite_e=None, index_all_t=None, components=None, conv_nbin=None):
         # conv_nbin is not used for emission lines, it is added to keep a uniform format with other models
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
+        if mask_lite_e is None:
+            if index_all_t is not None:
+                mask_lite_e = np.zeros(self.num_coeffs_tot, dtype='bool')
+                mask_lite_e[index_all_t[index_all_t >= 0]] = True
+        if mask_lite_e is not None: 
+            mask_lite_ce = self.cframe.reshape_by_comp(mask_lite_e, self.num_coeffs_c) 
+        if isinstance(components, str): components = [components]
 
-        mcomp_spec_dens_ew = None
-        for i_comp in range(self.num_comps):
-            list_valid = np.arange(len(self.linerest_n))[self.mask_valid_cn[i_comp,:]]
-            list_free  = np.arange(len(self.linerest_n))[self.mask_free_cn[i_comp,:]]
-            if len(list_free) >= 1:
-                scomp_spec_dens_ew = self.single_comp_models(obs_spec_wave_w, par_cp, i_comp)
-                if mcomp_spec_dens_ew is None: 
-                    mcomp_spec_dens_ew = scomp_spec_dens_ew
+        mcomp_spec_dens_tw = None
+        for (i_comp, comp_name) in enumerate(self.comp_name_c):
+            if components is not None:
+                if comp_name not in components: continue
+            if mask_lite_e is not None:
+                if sum(mask_lite_ce[i_comp]) == 0: continue
+
+            if sum(self.mask_free_cn[i_comp]) >= 1:
+                scomp_spec_dens_ew = self.single_comp_models(obs_spec_wave_w, par_cp[i_comp], i_comp)
+                if mask_lite_e is not None:
+                    scomp_spec_dens_tw = scomp_spec_dens_ew[mask_lite_ce[i_comp],:]
+
+                if mcomp_spec_dens_tw is None: 
+                    mcomp_spec_dens_tw = scomp_spec_dens_tw
                 else:
-                    mcomp_spec_dens_ew = np.vstack((mcomp_spec_dens_ew, scomp_spec_dens_ew))
+                    mcomp_spec_dens_tw = np.vstack((mcomp_spec_dens_tw, scomp_spec_dens_tw))
 
-        if mask_lite_e is not None:
-            mcomp_spec_dens_ew = mcomp_spec_dens_ew[mask_lite_e,:]
-
-        return mcomp_spec_dens_ew
+        return mcomp_spec_dens_tw
 
     def mask_lite_with_comps(self, enabled_comps=None, disabled_comps=None):
         if enabled_comps is not None:
-            self.enabled_e = np.zeros((self.num_coeffs), dtype='bool')
+            self.enabled_e = np.zeros((self.num_coeffs_tot), dtype='bool')
             for comp_name in enabled_comps: self.enabled_e[self.comp_name_e == comp_name] = True
         else:
-            self.enabled_e = np.ones((self.num_coeffs), dtype='bool')
+            self.enabled_e = np.ones((self.num_coeffs_tot), dtype='bool')
             if disabled_comps is not None:
                 for comp_name in disabled_comps: self.enabled_e[self.comp_name_e == comp_name] = False
         return self.enabled_e
@@ -1069,8 +1079,9 @@ class LineFrame(object):
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
         
         best_chi_sq_l = copy(self.fframe.output_S[step]['chi_sq_l'])
-        best_par_lp   = copy(self.fframe.output_S[step]['par_lp'])
-        best_coeff_le = copy(self.fframe.output_S[step]['coeff_le'])
+        best_par_lp   = copy(self.fframe.output_S[step]['par_lp'  ])
+        best_coeff_lt = copy(self.fframe.output_S[step]['coeff_lt'])
+        best_index_lt = copy(self.fframe.output_S[step]['index_lt'])
 
         # update best-fit voff and fwhm if systemic redshift is updated
         if if_rev_v0_redshift & (self.fframe.rev_v0_redshift is not None):
@@ -1089,8 +1100,8 @@ class LineFrame(object):
         for (i_comp, comp_name) in enumerate(comp_name_c): value_names_C[comp_name] = value_names_additive
 
         # format of results
-        # output_C['comp']['par_lp'][i_l,i_p]: parameters
-        # output_C['comp']['coeff_le'][i_l,i_e]: coefficients
+        # output_C['comp']['par_lp'  ][i_l,i_p]: parameters
+        # output_C['comp']['coeff_lt'][i_l,i_t]: coefficients
         # output_C['comp']['value_Vl']['name_l'][i_l]: calculated values
         output_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
@@ -1109,9 +1120,15 @@ class LineFrame(object):
         # extract parameters of emission lines; all comp have the same num of pars
         par_lcp = best_par_lp[:, i_pars_0_of_mod:i_pars_1_of_mod].reshape(self.num_loops, num_comps, self.cframe.num_pars_c[0])
 
-        # extract coefficients of all free lines to matrix
-        coeff_lcn = np.zeros((self.num_loops, num_comps, self.num_lines))
-        coeff_lcn[:, self.mask_free_cn] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
+        # extract coefficients of all free lines
+        coeff_le = np.zeros((self.num_loops, self.num_coeffs_tot), dtype='float')
+        coeff_lt = best_coeff_lt[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
+        index_lt = best_index_lt[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
+        for i_loop in range(self.num_loops): coeff_le[i_loop][index_lt[i_loop][index_lt[i_loop] >= 0]] = coeff_lt[i_loop][index_lt[i_loop] >= 0]
+        # transfer coefficients of all free lines to full line grid
+        coeff_lcn = np.zeros((self.num_loops, num_comps, self.num_lines), dtype='float')
+        coeff_lcn[:, self.mask_free_cn] = coeff_le
+        # coeff_lcn[:, self.mask_free_cn] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
 
         # update lineratio_cn to calculate tied lines
         for i_comp in range(num_comps):
@@ -1126,16 +1143,15 @@ class LineFrame(object):
                     coeff_lcn[i_loop, i_comp, i_line] = coeff_lcn[i_loop, i_comp, i_main] * self.lineratio_cn[i_comp, i_line] * self.mask_valid_cn[i_comp, i_line]
 
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            output_C[comp_name]['par_lp']   = par_lcp[:, i_comp, :]
-            output_C[comp_name]['coeff_le'] = coeff_lcn[:, i_comp, :]
+            # output_C[comp_name]['par_lp'  ] = par_lcp  [:, i_comp, :]
+            # output_C[comp_name]['coeff_ln'] = coeff_lcn[:, i_comp, :]
+
             for (i_par, par_name) in enumerate(par_name_cp[i_comp]):
                 output_C[comp_name]['value_Vl'][par_name] = par_lcp[:, i_comp, i_par]
             for (i_line, line_name) in enumerate(self.linename_n.tolist()):
                 flux_sign = -1.0 if self.cframe.comp_info_cI[i_comp]['sign'] == 'absorption' else 1.0
                 output_C[comp_name]['value_Vl'][line_name] = coeff_lcn[:, i_comp, i_line] * flux_sign
                 output_C['tot']['value_Vl'][line_name] += coeff_lcn[:, i_comp, i_line] * flux_sign
-
-        # output_C['tot'] = output_C.pop('tot') # move sum to the end
 
         ############################################################
         # keep aliases for output in old version <= 2.2.4

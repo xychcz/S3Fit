@@ -46,10 +46,10 @@ class AGNFrame(object):
         self.wave_min_def, self.wave_max_def = 912, 1e7 # angstrom
         self.enable = (self.wave_max > self.wave_min_def) & (self.wave_min < self.wave_max_def)
 
-        # set original wavelength grid, required to project iron template
-        orig_wave_logbin = 0.05
-        orig_wave_num = int(np.round(np.log10(wave_max/wave_min) / orig_wave_logbin))
-        self.orig_wave_w = np.logspace(np.log10(wave_min), np.log10(wave_max), num=orig_wave_num)
+        # set original wavelength grid, required to project non-iron template
+        wave_logbin = 0.05
+        wave_num = int(np.round(np.log10(wave_max/wave_min) / wave_logbin))
+        self.prep_spec_wave_w = np.logspace(np.log10(wave_min), np.log10(wave_max), num=wave_num)
         # load iron template
         if 'iron' in [self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]: 
             self.read_iron()
@@ -64,14 +64,14 @@ class AGNFrame(object):
                     self.num_coeffs_c[i_comp] = len(self.cframe.comp_info_cI[i_comp]['wave_segments'])
                 else:
                     self.num_coeffs_c[i_comp] = 1
+        self.num_coeffs_C = {comp_name: num_coeffs for (comp_name, num_coeffs) in zip(self.comp_name_c, self.num_coeffs_c)}
         self.num_coeffs_tot = sum(self.num_coeffs_c)
-        self.num_coeffs = self.num_coeffs_tot
 
-        self.num_coeffs_max = self.num_coeffs if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs, self.cframe.mod_info_I['num_coeffs_max'])
+        self.num_coeffs_max = self.num_coeffs_tot if self.cframe.mod_info_I['num_coeffs_max'] is None else min(self.num_coeffs_tot, self.cframe.mod_info_I['num_coeffs_max'])
         # self.num_coeffs_max = max(self.num_coeffs_max, 3**len(self.init_par_uniq_Pu)) # set min num for each template par
 
         # currently do not consider negative spectra 
-        self.mask_absorption_e = np.zeros((self.num_coeffs), dtype='bool')
+        self.mask_absorption_e = np.zeros((self.num_coeffs_tot), dtype='bool')
 
         if self.verbose:
             print_log(f"AGN UV/optical/NIR continuum components: {[self.cframe.comp_info_cI[i_comp]['mod_used'] for i_comp in range(self.num_comps)]}", self.log_message)
@@ -278,11 +278,10 @@ class AGNFrame(object):
 
     ##########################################################################
 
-    def simple_powerlaw(self, wavelength, wave_norm=None, flux_norm=1.0, alpha_lambda=None):
-        pl = flux_norm * (wavelength/wave_norm)**alpha_lambda
-        return pl
+    def simple_powerlaw(self, wavelength, wave_norm=None, flam_norm=1.0, alpha_lambda=None):
+        return flam_norm * (wavelength/wave_norm)**alpha_lambda
 
-    def bending_powerlaw(self, wavelength, wave_turn=None, flux_trun=1.0, alpha_lambda1=None, alpha_lambda2=None, curvature=None, bending=False):
+    def bending_powerlaw(self, wavelength, wave_turn=None, flam_trun=1.0, alpha_lambda1=None, alpha_lambda2=None, curvature=None, bending=False):
         # alpha_lambda1, alpha_lambda2: index with wavelength <= wave_turn and wavelength > wave_turn
         # curvature <= 0: broken two-side powerlaw
         # curvature > 0: smoothed bending powerlaw. larger curvature --> smoother break (5: very smooth; 0.1: very sharp)
@@ -292,21 +291,21 @@ class AGNFrame(object):
         if alpha_lambda2 is not None:
             if alpha_lambda1 > alpha_lambda2: curvature = 0 # smoothing does not work in this case
 
-        pl = self.simple_powerlaw(wavelength, wave_turn, flux_trun, alpha_lambda1)
+        pl_w = self.simple_powerlaw(wavelength, wave_turn, flam_trun, alpha_lambda1)
 
         if bending:
             if curvature <= 0:
                 # sharp, continuous broken power law
                 mask_w = wavelength > wave_turn
-                pl[mask_w] = self.simple_powerlaw(wavelength[mask_w], wave_turn, flux_trun, alpha_lambda2)
+                pl_w[mask_w] = self.simple_powerlaw(wavelength[mask_w], wave_turn, flam_trun, alpha_lambda2)
             else:
-                pl_2 = self.simple_powerlaw(wavelength, wave_turn, 1, (alpha_lambda2-alpha_lambda1)/curvature)
-                pl *= ((1+pl_2)/2.0)**curvature
+                tmp_w = self.simple_powerlaw(wavelength, wave_turn, 1, (alpha_lambda2-alpha_lambda1)/curvature)
+                pl_w *= ((1+tmp_w)/2.0)**curvature
 
-        return pl
+        return pl_w
 
     def powerlaw_func(self, wavelength, wave_norm=3000, alpha_lambda1=None, alpha_lambda2=None, curvature=None, bending=False, truncation=None):
-        # normalized to given flux density (e.g.,the same unit of obs) at rest wave_norm before extinct
+        # normalized to given flam (e.g.,the same unit of obs) at rest wave_norm before extinct
 
         if isinstance(wavelength, (int,float)): wavelength = np.array([wavelength])
         pl_w = self.bending_powerlaw(wavelength, wave_norm, 1, alpha_lambda1, alpha_lambda2, curvature, bending)
@@ -401,77 +400,79 @@ class AGNFrame(object):
             if item in self.cframe.mod_info_I: iron_file = self.cframe.mod_info_I[item]
         iron_lib = fits.open(iron_file)
 
-        iron_wave_w = iron_lib[0].data[0] # angstrom, in rest frame
-        iron_flux_w = iron_lib[0].data[1] # erg/s/cm2/angstrom
-        iron_dw_fwhm_w = iron_wave_w * 1100 / 299792.458
         self.iron_dict = {}
-        self.iron_dict['init_wave_w'] = copy(iron_wave_w)
+        self.iron_dict['init_spec_wave_w'] = iron_lib[0].data[0] # angstrom, in rest frame
+        self.iron_dict['init_spec_dens_w'] = iron_lib[0].data[1] # erg/s/cm2/angstrom
+        self.iron_dict['init_dw_fwhm_w'] = self.iron_dict['init_spec_wave_w'] * 1100 / 299792.458
 
         # normalize models at given wavelength
-        mask_norm_w = (iron_wave_w > 2150) & (iron_wave_w < 4000)
-        flux_norm_uv = np.trapezoid(iron_flux_w[mask_norm_w], x=iron_wave_w[mask_norm_w])
-        mask_norm_w = (iron_wave_w > 4000) & (iron_wave_w < 5600)
-        flux_norm_opt = np.trapezoid(iron_flux_w[mask_norm_w], x=iron_wave_w[mask_norm_w])
-        iron_flux_w /= flux_norm_uv
-        self.iron_dict['init_flux_w'] = copy(iron_flux_w)
-        self.iron_dict['flux_opt_uv_ratio'] = flux_norm_opt / flux_norm_uv
+        mask_norm_w = (self.iron_dict['init_spec_wave_w'] > 2150) & (self.iron_dict['init_spec_wave_w'] < 4000)
+        flux_norm_uv = np.trapezoid(self.iron_dict['init_spec_dens_w'][mask_norm_w], x=self.iron_dict['init_spec_wave_w'][mask_norm_w])
+        mask_norm_w = (self.iron_dict['init_spec_wave_w'] > 4000) & (self.iron_dict['init_spec_wave_w'] < 5600)
+        flux_norm_opt = np.trapezoid(self.iron_dict['init_spec_dens_w'][mask_norm_w], x=self.iron_dict['init_spec_wave_w'][mask_norm_w])
+        self.iron_dict['init_spec_dens_w'] /= flux_norm_uv
+        self.iron_dict['intFlux_opt_over_uv'] = flux_norm_opt / flux_norm_uv
 
+        self.iron_dict['prep_spec_wave_w'] = copy(self.iron_dict['init_spec_wave_w'])
+        self.iron_dict['prep_spec_dens_w'] = copy(self.iron_dict['init_spec_dens_w'])
         # determine the required model resolution and bin size (in angstrom) to downsample the model
         if self.Rratio_mod is not None:
-            ds_R_mod_w = np.interp(iron_wave_w*(1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw in observed frame
-            self.dw_fwhm_dsp_w = iron_wave_w / ds_R_mod_w # required resolving width in rest frame
+            R_mod_dsp_w = np.interp(self.iron_dict['prep_spec_wave_w'] * (1+self.v0_redshift), self.R_inst_rw[0], self.R_inst_rw[1] * self.Rratio_mod) # R_inst_rw in observed frame
+            self.iron_dict['prep_dw_fwhm_w'] = self.iron_dict['prep_spec_wave_w'] / R_mod_dsp_w # required resolving width in rest frame
+        elif self.dw_fwhm_dsp is not None:
+            self.iron_dict['prep_dw_fwhm_w'] = np.full(len(self.iron_dict['prep_spec_wave_w']), self.dw_fwhm_dsp)
         else:
-            if self.dw_fwhm_dsp is not None:
-                self.dw_fwhm_dsp_w = np.full(len(iron_wave_w), self.dw_fwhm_dsp)
-            else:
-                self.dw_fwhm_dsp_w = None
-        if self.dw_fwhm_dsp_w is not None:
-            if (self.dw_fwhm_dsp_w > iron_dw_fwhm_w).all(): 
+            self.iron_dict['prep_dw_fwhm_w'] = None
+
+        if self.iron_dict['prep_dw_fwhm_w'] is not None:
+            if (self.iron_dict['prep_dw_fwhm_w'] > self.iron_dict['init_dw_fwhm_w']).all(): 
                 pre_convolving = True
             else:
                 pre_convolving = False
-                self.dw_fwhm_dsp_w = iron_dw_fwhm_w
-            self.dw_dsp = self.dw_fwhm_dsp_w.min() * 0.5 # required min bin wavelength following Nyquist–Shannon sampling
+                self.iron_dict['prep_dw_fwhm_w'] = copy(self.iron_dict['init_dw_fwhm_w'])
+            dw_dsp = self.iron_dict['prep_dw_fwhm_w'].min() * 0.5 # required min bin wavelength following Nyquist–Shannon sampling
             if self.dw_pix_inst is not None:
-                self.dw_dsp = min(self.dw_dsp, self.dw_pix_inst/(1+self.v0_redshift) * 0.5) # also require model bin wavelength <= 0.5 of data bin width (convert to rest frame)
-            self.dpix_dsp = int(self.dw_dsp / np.median(np.diff(iron_wave_w))) # required min bin number of pixels
-            self.dw_dsp = self.dpix_dsp * np.median(np.diff(iron_wave_w)) # update value
-            if self.dpix_dsp > 1:
+                dw_dsp = min(dw_dsp, self.dw_pix_inst/(1+self.v0_redshift) * 0.5) # also require model bin wavelength <= 0.5 of data bin width (convert to rest frame)
+            dpix_dsp = int(dw_dsp / np.median(np.diff(self.iron_dict['prep_spec_wave_w']))) # required min bin number of pixels
+            dw_dsp = dpix_dsp * np.median(np.diff(self.iron_dict['prep_spec_wave_w'])) # update value
+            if dpix_dsp > 1:
                 if pre_convolving:
                     if self.verbose: 
-                        print_log(f'Downsample pre-convolved AGN Fe II pesudo-continuum with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', 
+                        print_log(f'Downsample pre-convolved AGN Fe II pesudo-continuum with bin width of {dw_dsp:.3f} Å in a min resolution of {self.iron_dict['prep_dw_fwhm_w'].min():.3f} Å', 
                                   self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # set dw_fwhm_ref as the dispersion in the original model
-                    iron_flux_w = convolve_var_width_fft(iron_wave_w, iron_flux_w, dw_fwhm_obj=self.dw_fwhm_dsp_w, dw_fwhm_ref=iron_dw_fwhm_w, num_bins=10, reset_edge=True)
+                    self.iron_dict['prep_spec_dens_w'] = convolve_var_width_fft(self.iron_dict['prep_spec_wave_w'], self.iron_dict['prep_spec_dens_w'], 
+                                                                                dw_fwhm_obj=self.iron_dict['prep_dw_fwhm_w'], dw_fwhm_ref=self.iron_dict['init_dw_fwhm_w'], num_bins=10, reset_edge=True)
                 else:
                     if self.verbose: 
-                        print_log(f'Downsample original AGN Fe II pesudo-continuum with bin width of {self.dw_dsp:.3f} Å in a min resolution of {self.dw_fwhm_dsp_w.min():.3f} Å', 
+                        print_log(f'Downsample original AGN Fe II pesudo-continuum with bin width of {dw_dsp:.3f} Å in a min resolution of {self.iron_dict['prep_dw_fwhm_w'].min():.3f} Å', 
                                   self.log_message)  
-                iron_wave_w = iron_wave_w[::self.dpix_dsp]
-                iron_flux_w = iron_flux_w[::self.dpix_dsp]
-                self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[::self.dpix_dsp]
+                self.iron_dict['prep_spec_wave_w'] = self.iron_dict['prep_spec_wave_w'][::dpix_dsp]
+                self.iron_dict['prep_spec_dens_w'] = self.iron_dict['prep_spec_dens_w'][::dpix_dsp]
+                self.iron_dict['prep_dw_fwhm_w'  ] = self.iron_dict['prep_dw_fwhm_w'  ][::dpix_dsp]
 
         # select model spectra in given wavelength range
-        mask_select_w = (iron_wave_w >= self.wave_min) & (iron_wave_w <= self.wave_max)
-        iron_wave_w = iron_wave_w[mask_select_w]
-        iron_flux_w = iron_flux_w[mask_select_w]
-        self.dw_fwhm_dsp_w = self.dw_fwhm_dsp_w[mask_select_w]
+        # shorten the range after convolving to avoid padding issue
+        mask_select_w = (self.iron_dict['prep_spec_wave_w'] >= self.wave_min) & (self.iron_dict['prep_spec_wave_w'] <= self.wave_max)
+        self.iron_dict['prep_spec_wave_w'] = self.iron_dict['prep_spec_wave_w'][mask_select_w]
+        self.iron_dict['prep_spec_dens_w'] = self.iron_dict['prep_spec_dens_w'][mask_select_w]
+        self.iron_dict['prep_dw_fwhm_w'  ] = self.iron_dict['prep_dw_fwhm_w'  ][mask_select_w]
 
-        self.orig_wave_w = np.hstack((self.orig_wave_w, iron_wave_w))
-        self.orig_wave_w = np.sort(self.orig_wave_w)
-        self.iron_dict['orig_wave_w'] = self.orig_wave_w
-        self.iron_dict['orig_flux_w'] = np.interp(self.orig_wave_w, iron_wave_w, iron_flux_w, left=0, right=0)
-        self.dw_fwhm_dsp_w = np.interp(self.orig_wave_w, iron_wave_w, self.dw_fwhm_dsp_w)
-        self.iron_dict['dw_fwhm_dsp_w'] = self.dw_fwhm_dsp_w
+        # merge and re-project to general grid
+        self.prep_spec_wave_w = np.hstack((self.prep_spec_wave_w, self.iron_dict['prep_spec_wave_w']))
+        self.prep_spec_wave_w = np.sort(self.prep_spec_wave_w)
+        self.iron_dict['prep_spec_dens_w'] = np.interp(self.prep_spec_wave_w, self.iron_dict['prep_spec_wave_w'], self.iron_dict['prep_spec_dens_w'], left=0, right=0)
+        self.iron_dict['prep_dw_fwhm_w'  ] = np.interp(self.prep_spec_wave_w, self.iron_dict['prep_spec_wave_w'], self.iron_dict['prep_dw_fwhm_w'])
+        self.iron_dict['prep_spec_wave_w'] = self.prep_spec_wave_w
 
         # set segments
         for i_comp in range(self.num_comps):
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                 if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None: continue
 
-                self.iron_dict['init_flux_ew'] = [] # with the init_wave_w of iron template
-                self.iron_dict['orig_flux_ew'] = [] # follow the defined orig_wave_w
+                self.iron_dict['init_spec_dens_ew'] = [] # with the init_spec_wave_w of iron template
+                self.iron_dict['prep_spec_dens_ew'] = [] # follow the defined prep_wave_w
                 self.iron_dict['wave_segments_valid'] = []
 
                 for wave_segment in self.cframe.comp_info_cI[i_comp]['wave_segments']:
@@ -479,17 +480,17 @@ class AGNFrame(object):
                     if wave_segment['wave_frame'] != 'rest': wave_ratio /= (1+self.v0_redshift) # convert obs wave to rest frame
                     wave_min, wave_max = wave_segment['wave_min']*wave_ratio, wave_segment['wave_max']*wave_ratio
 
-                    tmp_init_flux_w = np.zeros_like(self.iron_dict['init_wave_w'])
-                    mask_w = (self.iron_dict['init_wave_w'] >= wave_min) & (self.iron_dict['init_wave_w'] < wave_max)
-                    tmp_init_flux_w[mask_w] = copy(self.iron_dict['init_flux_w'][mask_w])
-                    tmp_init_flux_norm = np.trapezoid(tmp_init_flux_w, x=self.iron_dict['init_wave_w'])
-                    self.iron_dict['init_flux_ew'].append(tmp_init_flux_w)
+                    tmp_init_spec_dens_w = np.zeros_like(self.iron_dict['init_spec_wave_w'])
+                    mask_w = (self.iron_dict['init_spec_wave_w'] >= wave_min) & (self.iron_dict['init_spec_wave_w'] < wave_max)
+                    tmp_init_spec_dens_w[mask_w] = copy(self.iron_dict['init_spec_dens_w'][mask_w])
+                    tmp_init_spec_dens_norm = np.trapezoid(tmp_init_spec_dens_w, x=self.iron_dict['init_spec_wave_w'])
 
-                    tmp_orig_flux_w = np.zeros_like(self.iron_dict['orig_wave_w'])
-                    mask_w = (self.iron_dict['orig_wave_w'] >= wave_min) & (self.iron_dict['orig_wave_w'] < wave_max)
-                    tmp_orig_flux_w[mask_w] = copy(self.iron_dict['orig_flux_w'][mask_w])
-                    tmp_orig_flux_norm = np.trapezoid(tmp_orig_flux_w, x=self.iron_dict['orig_wave_w'])
-                    if tmp_orig_flux_norm / tmp_init_flux_norm > 0.05: 
+                    tmp_prep_spec_dens_w = np.zeros_like(self.iron_dict['prep_spec_wave_w'])
+                    mask_w = (self.iron_dict['prep_spec_wave_w'] >= wave_min) & (self.iron_dict['prep_spec_wave_w'] < wave_max)
+                    tmp_prep_spec_dens_w[mask_w] = copy(self.iron_dict['prep_spec_dens_w'][mask_w])
+                    tmp_prep_spec_dens_norm = np.trapezoid(tmp_prep_spec_dens_w, x=self.iron_dict['prep_spec_wave_w'])
+
+                    if tmp_prep_spec_dens_norm / tmp_init_spec_dens_norm > 0.05: 
                         self.iron_dict['wave_segments_valid'].append([wave_min, wave_max])
                         # add to ret_emission_set
                         ret_emi_F = copy(wave_segment)
@@ -500,105 +501,113 @@ class AGNFrame(object):
                             self.cframe.comp_info_cI[i_comp]['ret_emission_set'] = []
                         self.cframe.comp_info_cI[i_comp]['ret_emission_set'].append(ret_emi_F)
                     else:
-                        tmp_orig_flux_w *= 0 # avoid using poorly covered range
-                        tmp_orig_flux_norm *= 0 
-                    self.iron_dict['orig_flux_ew'].append(tmp_orig_flux_w)
+                        tmp_prep_spec_dens_w *= 0 # avoid using poorly covered range
 
-                self.iron_dict['init_flux_ew'] = np.array(self.iron_dict['init_flux_ew'])
-                self.iron_dict['orig_flux_ew'] = np.array(self.iron_dict['orig_flux_ew'])
+                    self.iron_dict['init_spec_dens_ew'].append(tmp_init_spec_dens_w)
+                    self.iron_dict['prep_spec_dens_ew'].append(tmp_prep_spec_dens_w)
+
+                self.iron_dict['init_spec_dens_ew'] = np.array(self.iron_dict['init_spec_dens_ew'])
+                self.iron_dict['prep_spec_dens_ew'] = np.array(self.iron_dict['prep_spec_dens_ew'])
 
     ##########################################################################
 
-    def create_models(self, obs_wave_w, par_p, mask_lite_e=None, components=None, 
+    def create_models(self, obs_spec_wave_w, par_p, mask_lite_e=None, index_all_t=None, components=None, 
                       if_dust_ext=True, if_ism_abs=False, if_igm_abs=False, 
                       if_z_decline=True, if_convolve=True, conv_nbin=None, if_full_range=False): 
 
         par_cp = self.cframe.reshape_by_comp(par_p, self.cframe.num_pars_c)
+        if mask_lite_e is None:
+            if index_all_t is not None:
+                mask_lite_e = np.zeros(self.num_coeffs_tot, dtype='bool')
+                mask_lite_e[index_all_t[index_all_t >= 0]] = True
+        if mask_lite_e is not None: 
+            mask_lite_ce = self.cframe.reshape_by_comp(mask_lite_e, self.num_coeffs_c) 
         if isinstance(components, str): components = [components]
 
         if if_full_range:
-            orig_wave_w = np.logspace(np.log10(min(obs_wave_w)/(1+self.v0_redshift))-0.5, np.log10(max(obs_wave_w)/(1+self.v0_redshift))+0.5, 1000)
+            prep_spec_wave_w = np.logspace(np.log10(min(obs_spec_wave_w)/(1+self.v0_redshift))-0.5, np.log10(max(obs_spec_wave_w)/(1+self.v0_redshift))+0.5, 1000)
             if_convolve = False # do not convolve in this case
         else:
-            orig_wave_w = copy(self.orig_wave_w)
+            prep_spec_wave_w = self.prep_spec_wave_w
 
-        obs_flux_mcomp_ew = None
+        mcomp_spec_dens_tw = None
         for (i_comp, comp_name) in enumerate(self.comp_name_c):
             if components is not None:
                 if comp_name not in components: continue
+            if mask_lite_e is not None:
+                if sum(mask_lite_ce[i_comp]) == 0: continue
 
             # read and append intrinsic templates in rest frame
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'powerlaw':
                 alpha_lambda = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda']]
-                orig_flux_int_ew = self.powerlaw_func(orig_wave_w, alpha_lambda1=alpha_lambda, 
-                                                      bending=False, truncation=self.cframe.comp_info_cI[i_comp]['truncation'])
+                intr_spec_dens_ew = self.powerlaw_func(prep_spec_wave_w, alpha_lambda1=alpha_lambda, 
+                                                       bending=False, truncation=self.cframe.comp_info_cI[i_comp]['truncation'])
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                 alpha_lambda1 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda1']]
                 alpha_lambda2 = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['alpha_lambda2']]
                 wave_turn     = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['wave_turn']]
                 curvature     = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['curvature']]
-                orig_flux_int_ew = self.powerlaw_func(orig_wave_w, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, 
-                                                      bending=True, truncation=self.cframe.comp_info_cI[i_comp]['truncation'])
+                intr_spec_dens_ew = self.powerlaw_func(prep_spec_wave_w, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, 
+                                                       bending=True, truncation=self.cframe.comp_info_cI[i_comp]['truncation'])
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 log_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tem']]
-                orig_flux_int_ew = self.blackbody_func(orig_wave_w, log_tem=log_tem)
+                intr_spec_dens_ew = self.blackbody_func(prep_spec_wave_w, log_tem=log_tem)
             if self.cframe.comp_info_cI[i_comp]['mod_used'] =='recombination':
                 log_e_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
                 log_tau_be = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tau_be']]
-                orig_flux_int_ew = self.recombination_func(orig_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
+                intr_spec_dens_ew = self.recombination_func(prep_spec_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                 if if_full_range:
-                    orig_wave_w = copy(self.iron_dict['init_wave_w'])
+                    prep_spec_wave_w = copy(self.iron_dict['init_spec_wave_w'])
                     if self.cframe.comp_info_cI[i_comp]['wave_segments'] is not None:
-                        orig_flux_int_ew = self.iron_dict['init_flux_ew']
+                        intr_spec_dens_ew = self.iron_dict['init_spec_dens_ew']
                     else:
-                        orig_flux_int_ew = self.iron_dict['init_flux_w']
+                        intr_spec_dens_ew = self.iron_dict['init_spec_dens_w']
                 else:
                     if self.cframe.comp_info_cI[i_comp]['wave_segments'] is not None:
-                        orig_flux_int_ew = self.iron_dict['orig_flux_ew']
+                        intr_spec_dens_ew = self.iron_dict['prep_spec_dens_ew']
                     else:
-                        orig_flux_int_ew = self.iron_dict['orig_flux_w']
+                        intr_spec_dens_ew = self.iron_dict['prep_spec_dens_w']
 
-            if orig_flux_int_ew.ndim == 1: orig_flux_int_ew = orig_flux_int_ew[None,:] # convert to (1,w) format
+            if intr_spec_dens_ew.ndim == 1: intr_spec_dens_ew = intr_spec_dens_ew[None,:] # convert to (1,w) format
+            if mask_lite_e is not None:
+                intr_spec_dens_tw = intr_spec_dens_ew[mask_lite_ce[i_comp],:]
 
             # dust extinction
             if if_dust_ext & ('Av' in self.cframe.par_index_cP[i_comp]):
                 Av = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['Av']]
-                orig_flux_d_ew = orig_flux_int_ew * 10.0**(-0.4 * Av * ExtLaw(orig_wave_w))
+                d_spec_dens_tw = intr_spec_dens_tw * 10.0**(-0.4 * Av * ExtLaw(prep_spec_wave_w))
             else:
-                orig_flux_d_ew = orig_flux_int_ew
+                d_spec_dens_tw = intr_spec_dens_tw
 
             # redshift models
             voff = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['voff']]
             z_factor = (1 + self.v0_redshift) * (1 + voff/299792.458) # (1+z) = (1+zv0) * (1+v/c)
-            orig_wave_z_w = orig_wave_w * z_factor
+            z_spec_wave_w = prep_spec_wave_w * z_factor
             if if_z_decline:
-                orig_flux_dz_ew = orig_flux_d_ew / z_factor
+                zd_spec_dens_tw = d_spec_dens_tw / z_factor
             else:
-                orig_flux_dz_ew = orig_flux_d_ew
+                zd_spec_dens_tw = d_spec_dens_tw
 
             # convolve with intrinsic and instrumental dispersion if self.R_inst_rw is not None; only for iron
             if if_convolve & ('fwhm' in self.cframe.par_index_cP[i_comp]) & (self.R_inst_rw is not None) & (conv_nbin is not None) & (self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron'):
                 fwhm = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['fwhm']]
-                R_inst_w = np.interp(orig_wave_z_w, self.R_inst_rw[0], self.R_inst_rw[1])
-                orig_flux_dzc_ew = convolve_var_width_fft(orig_wave_z_w, orig_flux_dz_ew, dv_fwhm_obj=fwhm, 
-                                                          dw_fwhm_ref=self.dw_fwhm_dsp_w*z_factor, R_inst_w=R_inst_w, num_bins=conv_nbin)
+                R_inst_w = np.interp(z_spec_wave_w, self.R_inst_rw[0], self.R_inst_rw[1])
+                czd_spec_dens_tw = convolve_var_width_fft(z_spec_wave_w, zd_spec_dens_tw, dv_fwhm_obj=fwhm, 
+                                                          dw_fwhm_ref=self.iron_dict['prep_dw_fwhm_w']*z_factor, R_inst_w=R_inst_w, num_bins=conv_nbin)
             else:
-                orig_flux_dzc_ew = orig_flux_dz_ew # just copy if convlution not required, e.g., for broad-band sed fitting
+                czd_spec_dens_tw = zd_spec_dens_tw # just copy if convlution not required, e.g., for broad-band sed fitting
 
             # project to observed wavelength
-            interp_func = interp1d(orig_wave_z_w, orig_flux_dzc_ew, axis=1, kind='linear', fill_value=(0,0), bounds_error=False)
-            obs_flux_scomp_ew = interp_func(obs_wave_w)
+            interp_func = interp1d(z_spec_wave_w, czd_spec_dens_tw, axis=1, kind='linear', fill_value=(0,0), bounds_error=False)
+            obs_spec_dens_tw = interp_func(obs_spec_wave_w)
 
-            if obs_flux_mcomp_ew is None: 
-                obs_flux_mcomp_ew = obs_flux_scomp_ew
+            if mcomp_spec_dens_tw is None: 
+                mcomp_spec_dens_tw = obs_spec_dens_tw
             else:
-                obs_flux_mcomp_ew = np.vstack((obs_flux_mcomp_ew, obs_flux_scomp_ew))
+                mcomp_spec_dens_tw = np.vstack((mcomp_spec_dens_tw, obs_spec_dens_tw))
 
-        if mask_lite_e is not None:
-            obs_flux_mcomp_ew = obs_flux_mcomp_ew[mask_lite_e,:]
-
-        return obs_flux_mcomp_ew
+        return mcomp_spec_dens_tw
 
     ##########################################################################
     ########################## Output functions ##############################
@@ -617,8 +626,9 @@ class AGNFrame(object):
         if  step in ['spec', 'pure-spec', 'spectrum', 'pure-spectrum']:  step = 'joint_fit_2'
 
         best_chi_sq_l = copy(self.fframe.output_S[step]['chi_sq_l'])
-        best_par_lp   = copy(self.fframe.output_S[step]['par_lp'])
-        best_coeff_le = copy(self.fframe.output_S[step]['coeff_le'])
+        best_par_lp   = copy(self.fframe.output_S[step]['par_lp'  ])
+        best_coeff_lt = copy(self.fframe.output_S[step]['coeff_lt'])
+        best_index_lt = copy(self.fframe.output_S[step]['index_lt'])
 
         # update best-fit voff and fwhm if systemic redshift is updated
         if if_rev_v0_redshift & (self.fframe.rev_v0_redshift is not None):
@@ -667,12 +677,16 @@ class AGNFrame(object):
         value_names_additive += ret_names_additive
 
         # format of results
-        # output_C['comp']['par_lp'][i_l,i_p]: parameters
-        # output_C['comp']['coeff_le'][i_l,i_e]: coefficients
+        # output_C['comp']['par_lp'  ][i_l,i_p]: parameters
+        # output_C['comp']['coeff_lt'][i_l,i_t]: coefficients
+        # output_C['comp']['index_lt'][i_l,i_t]: indexes of original elements sequence in lite elements sequence
         # output_C['comp']['value_Vl']['name_l'][i_l]: calculated values
         output_C = {}
         for (i_comp, comp_name) in enumerate(comp_name_c):
             output_C[comp_name] = {} # init results for each comp
+            # output_C[comp_name]['par_lp'  ] = np.zeros((self.num_loops, self.cframe.num_pars_tot), dtype='float')
+            # output_C[comp_name]['coeff_lt'] = np.zeros((self.num_loops, self.num_coeffs_max), dtype='float')
+            # output_C[comp_name]['index_lt'] = np.zeros((self.num_loops, self.num_coeffs_max), dtype='int') - 1
             output_C[comp_name]['value_Vl'] = {}
             for value_name in par_name_cp[i_comp] + value_names_C[comp_name]:
                 output_C[comp_name]['value_Vl'][value_name] = np.zeros(self.num_loops, dtype='float')
@@ -683,24 +697,27 @@ class AGNFrame(object):
 
         # locate the results of the model in the full fitting results
         i_pars_0_of_mod, i_pars_1_of_mod, i_coeffs_0_of_mod, i_coeffs_1_of_mod = self.fframe.search_mod_index(self.mod_name, self.fframe.full_mod_type)
+        mod_par_lp   = best_par_lp  [:, i_pars_0_of_mod  :i_pars_1_of_mod  ]
+        mod_coeff_lt = best_coeff_lt[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
+        mod_index_lt = best_index_lt[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod]
+        mod_coeff_le = np.zeros((self.num_loops, self.num_coeffs_tot), dtype='float')
+        for i_loop in range(self.num_loops): mod_coeff_le[i_loop][mod_index_lt[i_loop][mod_index_lt[i_loop] >= 0]] = mod_coeff_lt[i_loop][mod_index_lt[i_loop] >= 0]
+
         for (i_comp, comp_name) in enumerate(comp_name_c):
-            i_pars_0_of_comp_in_mod, i_pars_1_of_comp_in_mod, i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.fframe.search_comp_index(comp_name, self.mod_name)
-
-            output_C[comp_name]['par_lp'  ] = best_par_lp  [:, i_pars_0_of_mod  :i_pars_1_of_mod  ][:, i_pars_0_of_comp_in_mod  :i_pars_1_of_comp_in_mod  ]
-            output_C[comp_name]['coeff_le'] = best_coeff_le[:, i_coeffs_0_of_mod:i_coeffs_1_of_mod][:, i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
-
+            i_pars_0_of_comp_in_mod, i_pars_1_of_comp_in_mod = self.fframe.search_comp_index(comp_name, self.mod_name)[0:2]
             for i_par in range(self.cframe.num_pars_c[i_comp]): 
-                output_C[comp_name]['value_Vl'][par_name_cp[i_comp][i_par]] = output_C[comp_name]['par_lp'][:, i_par]
-            for i_loop in range(self.num_loops):
-                par_p   = output_C[comp_name]['par_lp'  ][i_loop]
-                coeff_e = output_C[comp_name]['coeff_le'][i_loop]
+                output_C[comp_name]['value_Vl'][par_name_cp[i_comp][i_par]] = mod_par_lp[:, i_pars_0_of_comp_in_mod:i_pars_1_of_comp_in_mod][:, i_par]
 
-                voff = par_p[self.cframe.par_index_cP[i_comp]['voff']]
+            for i_loop in range(self.num_loops):
+                par_p   = self.cframe.reshape_by_comp(mod_par_lp  [i_loop], self.cframe.num_pars_c)[i_comp]
+                coeff_e = self.cframe.reshape_by_comp(mod_coeff_le[i_loop], self.num_coeffs_c     )[i_comp]
+
+                voff = output_C[comp_name]['value_Vl']['voff'][i_loop]
                 rev_redshift = (1 + self.v0_redshift) * (1 + voff/299792.458) - 1
                 lum_area = 4*np.pi * cosmo.luminosity_distance(rev_redshift).to('cm')**2 # with unit of cm2
 
-                tmp_flux_unit = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1 cm-2 angstrom-1')]
-                self.default_Flam_unit = tmp_flux_unit[0] if len(tmp_flux_unit) > 0 else 'erg s-1 cm-2 angstrom-1' # save to use in print_results
+                tmp_flam_unit = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1 cm-2 angstrom-1')]
+                self.default_Flam_unit = tmp_flam_unit[0] if len(tmp_flam_unit) > 0 else 'erg s-1 cm-2 angstrom-1' # save to use in print_results
                 tmp_intLum_unit  = [ret_emi_F['value_unit'] for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set'] if u.Unit(ret_emi_F['value_unit']).is_equivalent('erg s-1')]
                 self.default_intLum_unit  = tmp_intLum_unit [0] if len(tmp_intLum_unit)  > 0 else 'erg s-1' # save to use in print_results
 
@@ -708,15 +725,15 @@ class AGNFrame(object):
                     output_C[comp_name]['value_Vl']['log_Flam_waveturn'][i_loop] = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit)).to(self.default_Flam_unit).value
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
-                    log_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_tem']]
+                    log_tem = output_C[comp_name]['value_Vl']['log_tem'][i_loop]
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
                     tmp_bb_w = coeff_e[0] * self.blackbody_func(tmp_wave_w, log_tem=log_tem)
                     tmp_intLum = np.trapezoid(tmp_bb_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
                     output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_intLum)
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
-                    log_e_tem  = par_p[self.cframe.par_index_cP[i_comp]['log_e_tem']]
-                    log_tau_be = par_p[self.cframe.par_index_cP[i_comp]['log_tau_be']]
+                    log_e_tem  = output_C[comp_name]['value_Vl']['log_e_tem' ][i_loop]
+                    log_tau_be = output_C[comp_name]['value_Vl']['log_tau_be'][i_loop]
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
                     tmp_rec_w = coeff_e[0] * self.recombination_func(tmp_wave_w, log_e_tem=log_e_tem, log_tau_be=log_tau_be, H_series=self.cframe.comp_info_cI[i_comp]['H_series'])
                     tmp_intLum = np.trapezoid(tmp_rec_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
@@ -724,13 +741,14 @@ class AGNFrame(object):
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
                     if self.cframe.comp_info_cI[i_comp]['wave_segments'] is None:
-                        tmp_intLum_uv  = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 1                                   * u.angstrom).to(self.default_intLum_unit).value
-                        tmp_intLum_opt = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.iron_dict['flux_opt_uv_ratio'] * u.angstrom).to(self.default_intLum_unit).value
+                        tmp_intLum_uv  = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * 1                                     * u.angstrom).to(self.default_intLum_unit).value
+                        tmp_intLum_opt = (coeff_e[0] * u.Unit(self.fframe.spec_flux_unit) * lum_area * self.iron_dict['intFlux_opt_over_uv'] * u.angstrom).to(self.default_intLum_unit).value
                         output_C[comp_name]['value_Vl']['log_intLum_uv' ][i_loop] = np.log10(tmp_intLum_uv)
                         output_C[comp_name]['value_Vl']['log_intLum_opt'][i_loop] = np.log10(tmp_intLum_opt)
 
-                tmp_coeff_e = best_coeff_le[i_loop, i_coeffs_0_of_mod:i_coeffs_1_of_mod][i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                 # calculate requested flux/Lum in given wavelength ranges
+                i_coeffs_0_of_comp_in_mod, i_coeffs_1_of_comp_in_mod = self.fframe.search_comp_index(comp_name, self.mod_name, index_all_t=mod_index_lt[i_loop])[2:4]
+                coeff_t = mod_coeff_lt[i_loop, i_coeffs_0_of_comp_in_mod:i_coeffs_1_of_comp_in_mod]
                 if self.cframe.comp_info_cI[i_comp]['ret_emission_set'] is not None: 
                     for ret_emi_F in self.cframe.comp_info_cI[i_comp]['ret_emission_set']:
                         if 'wave_center' in ret_emi_F:
@@ -744,22 +762,22 @@ class AGNFrame(object):
                         tmp_wave_w = np.logspace(np.log10(wave_0*wave_ratio), np.log10(wave_1*wave_ratio), num=1000) # obs frame grid
 
                         if ret_emi_F['value_state'] in ['intrinsic','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=False, if_z_decline=True, if_full_range=True) # flux in obs frame
-                            intrinsic_flux_w = tmp_coeff_e @ tmp_flux_ew
+                            tmp_flam_tw = self.create_models(tmp_wave_w, mod_par_lp[i_loop], index_all_t=mod_index_lt[i_loop], components=comp_name, 
+                                                             if_dust_ext=False, if_z_decline=True, if_full_range=True) # flam in obs frame
+                            intrinsic_flam_w = coeff_t @ tmp_flam_tw
                         if ret_emi_F['value_state'] in ['observed','absorbed']:
-                            tmp_flux_ew = self.create_models(tmp_wave_w, best_par_lp[i_loop, i_pars_0_of_mod:i_pars_1_of_mod], components=comp_name, 
-                                                             if_dust_ext=True,  if_z_decline=True, if_full_range=True) # flux in obs frame
-                            observed_flux_w = tmp_coeff_e @ tmp_flux_ew
-                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flux_w = intrinsic_flux_w
-                        if ret_emi_F['value_state'] == 'observed' : tmp_flux_w = observed_flux_w
-                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flux_w = intrinsic_flux_w - observed_flux_w
+                            tmp_flam_tw = self.create_models(tmp_wave_w, mod_par_lp[i_loop], index_all_t=mod_index_lt[i_loop], components=comp_name, 
+                                                             if_dust_ext=True,  if_z_decline=True, if_full_range=True) # flam in obs frame
+                            observed_flam_w = coeff_t @ tmp_flam_tw
+                        if ret_emi_F['value_state'] == 'intrinsic': tmp_flam_w = intrinsic_flam_w
+                        if ret_emi_F['value_state'] == 'observed' : tmp_flam_w = observed_flam_w
+                        if ret_emi_F['value_state'] == 'absorbed' : tmp_flam_w = intrinsic_flam_w - observed_flam_w
 
                         tmp_wave_w *= u.angstrom
-                        tmp_flux_w *= u.Unit(self.fframe.spec_flux_unit)
-                        tmp_Flam    = tmp_flux_w.mean()
-                        tmp_lamFlam = tmp_flux_w.mean() * tmp_wave_w.mean()
-                        tmp_intFlux = np.trapezoid(tmp_flux_w, x=tmp_wave_w)
+                        tmp_flam_w *= u.Unit(self.fframe.spec_flux_unit)
+                        tmp_Flam    = tmp_flam_w.mean()
+                        tmp_lamFlam = tmp_flam_w.mean() * tmp_wave_w.mean()
+                        tmp_intFlux = np.trapezoid(tmp_flam_w, x=tmp_wave_w)
 
                         if ret_emi_F['value_form'] ==     'Flam'          : ret_value = tmp_Flam
                         if ret_emi_F['value_form'] in ['lamFlam', 'nuFnu']: ret_value = tmp_lamFlam
