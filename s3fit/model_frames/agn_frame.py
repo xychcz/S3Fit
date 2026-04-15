@@ -434,7 +434,7 @@ class AGNFrame(object):
             if dpix_dsp > 1:
                 if pre_convolving:
                     if self.verbose: 
-                        print_log(f'Downsample pre-convolved AGN Fe II pesudo-continuum with bin width of {dw_dsp:.3f} Å in a min resolution of {self.iron_dict['prep_dw_fwhm_w'].min():.3f} Å', 
+                        print_log(f"Downsample pre-convolved AGN Fe II pesudo-continuum with bin width of {dw_dsp:.3f} Å in a min resolution of {self.iron_dict['prep_dw_fwhm_w'].min():.3f} Å", 
                                   self.log_message)
                     # before downsampling, smooth the model to avoid aliasing (like in ADC or digital signal reduction)
                     # set dw_fwhm_ref as the dispersion in the original model
@@ -442,7 +442,7 @@ class AGNFrame(object):
                                                                                 dw_fwhm_obj=self.iron_dict['prep_dw_fwhm_w'], dw_fwhm_ref=self.iron_dict['init_dw_fwhm_w'], num_bins=10, reset_edge=True)
                 else:
                     if self.verbose: 
-                        print_log(f'Downsample original AGN Fe II pesudo-continuum with bin width of {dw_dsp:.3f} Å in a min resolution of {self.iron_dict['prep_dw_fwhm_w'].min():.3f} Å', 
+                        print_log(f"Downsample original AGN Fe II pesudo-continuum with bin width of {dw_dsp:.3f} Å in a min resolution of {self.iron_dict['prep_dw_fwhm_w'].min():.3f} Å", 
                                   self.log_message)  
                 self.iron_dict['prep_spec_wave_w'] = self.iron_dict['prep_spec_wave_w'][::dpix_dsp]
                 self.iron_dict['prep_spec_dens_w'] = self.iron_dict['prep_spec_dens_w'][::dpix_dsp]
