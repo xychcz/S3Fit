@@ -130,7 +130,7 @@ class AGNFrame(object):
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                     self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'alpha_lambda1', 'alpha_lambda2', 'wave_turn', 'curvature']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
-                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_tem',]
+                    self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_tem']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     self.cframe.par_name_cp[i_comp]  = ['voff', 'fwhm', 'Av', 'log_e_tem', 'log_tau_be']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
@@ -277,26 +277,54 @@ class AGNFrame(object):
     def simple_powerlaw(self, wavelength, wave_norm=None, flam_norm=1.0, alpha_lambda=None):
         return flam_norm * (wavelength/wave_norm)**alpha_lambda
 
+    # def bending_powerlaw(self, wavelength, wave_turn=None, flam_trun=1.0, alpha_lambda1=None, alpha_lambda2=None, curvature=None, bending=False):
+    #     # alpha_lambda1, alpha_lambda2: index with wavelength <= wave_turn and wavelength > wave_turn
+    #     # curvature <= 0: broken two-side powerlaw
+    #     # curvature > 0: smoothed bending powerlaw. larger curvature --> smoother break (5: very smooth; 0.1: very sharp)
+
+    #     if isinstance(wavelength, (int,float)): wavelength = np.array([wavelength])
+    #     if curvature is None: curvature = 0
+    #     if alpha_lambda2 is not None:
+    #         if alpha_lambda1 > alpha_lambda2: curvature = 0 # smoothing does not work in this case
+
+    #     pl_w = self.simple_powerlaw(wavelength, wave_turn, flam_trun, alpha_lambda1)
+
+    #     if bending:
+    #         if curvature <= 0:
+    #             # sharp, continuous broken power law
+    #             mask_w = wavelength > wave_turn
+    #             pl_w[mask_w] = self.simple_powerlaw(wavelength[mask_w], wave_turn, flam_trun, alpha_lambda2)
+    #         else:
+    #             tmp_w = self.simple_powerlaw(wavelength, wave_turn, 1, (alpha_lambda2-alpha_lambda1)/curvature)
+    #             pl_w *= ((1+tmp_w)/2.0)**curvature
+
+    #     return pl_w
+
     def bending_powerlaw(self, wavelength, wave_turn=None, flam_trun=1.0, alpha_lambda1=None, alpha_lambda2=None, curvature=None, bending=False):
         # alpha_lambda1, alpha_lambda2: index with wavelength <= wave_turn and wavelength > wave_turn
-        # curvature <= 0: broken two-side powerlaw
+        # curvature = 0: broken two-side powerlaw
         # curvature > 0: smoothed bending powerlaw. larger curvature --> smoother break (5: very smooth; 0.1: very sharp)
 
-        if isinstance(wavelength, (int,float)): wavelength = np.array([wavelength])
-        if curvature is None: curvature = 0
-        if alpha_lambda2 is not None:
-            if alpha_lambda1 > alpha_lambda2: curvature = 0 # smoothing does not work in this case
+        if isinstance(wavelength, (int, float)): wavelength = np.array([wavelength])
 
         pl_w = self.simple_powerlaw(wavelength, wave_turn, flam_trun, alpha_lambda1)
 
-        if bending:
-            if curvature <= 0:
-                # sharp, continuous broken power law
+        if bending & (alpha_lambda1 != alpha_lambda2):
+            if (curvature is None) | (curvature <= 0):
                 mask_w = wavelength > wave_turn
-                pl_w[mask_w] = self.simple_powerlaw(wavelength[mask_w], wave_turn, flam_trun, alpha_lambda2)
+                pl_w[mask_w] = self.simple_powerlaw(wavelength[mask_w], wave_turn, flam_trun, alpha_lambda2) # sharply broken powerlaw
             else:
-                tmp_w = self.simple_powerlaw(wavelength, wave_turn, 1, (alpha_lambda2-alpha_lambda1)/curvature)
-                pl_w *= ((1+tmp_w)/2.0)**curvature
+                tmp_index = (alpha_lambda2-alpha_lambda1) / curvature
+                if abs(tmp_index) > 10: # avoid overflow due to too large index
+                    tmp_index = np.sign(tmp_index) * 10
+                    curvature = (alpha_lambda2-alpha_lambda1) / tmp_index
+
+                if alpha_lambda1 < alpha_lambda2:
+                    tmp_w = self.simple_powerlaw(wavelength, wave_turn, 1, (alpha_lambda2-alpha_lambda1)/curvature)
+                    pl_w *= ((1 + tmp_w) / 2.0)**curvature
+                else:
+                    tmp_w = self.simple_powerlaw(wavelength, wave_turn, 1, (alpha_lambda2-alpha_lambda1)/curvature) # peaked case
+                    pl_w *= ((1 - np.exp(-tmp_w)) / (1 - np.exp(-1)))**curvature
 
         return pl_w
 
@@ -344,8 +372,9 @@ class AGNFrame(object):
 
         return pl_w
 
-    def blackbody_func(self, wavelength, log_tem=None, if_norm=True, wave_norm=3000):
+    def blackbody_func(self, wavelength, log_tem=None, beta_nu=None, if_norm=True, wave_norm=3000):
         # parameters: temperature (K)
+        # if modified blackbody: opacity spectral index beta_nu (typically 1--2) for dust
 
         def get_bb(wavelength):
             # Planck function for the given temperature
@@ -353,7 +382,16 @@ class AGNFrame(object):
             C2 = 1.4387768775039336e8  # const.h.value * const.c.value / const.k_B.value * 1e10
             tmp = C2 / (wavelength * 10.0**log_tem)
             tmp = np.minimum(tmp, 700) # avoid overflow warning in np.exp()
-            return C1 / wavelength**5 / (np.exp(tmp) - 1) # in erg/s/cm2/A/sr
+            bb_w = C1 / wavelength**5 / (np.exp(tmp) - 1) # in erg/s/cm2/A/sr
+
+            # if use modified form
+            if beta_nu is not None:
+                # assuming τ_λ = τ_0 * (λ / λ_0)^beta_lambda, https://ui.adsabs.harvard.edu/#abs/2023A%26A...673A.145J
+                beta_lambda = -beta_nu - 2
+                tau_w = (wavelength / 1e4)**beta_lambda # assuming τ_0 = 1, λ_0 = 1e4
+                bb_w *= (1 - np.exp(-tau_w))
+
+            return bb_w
         
         ret_bb_w = get_bb(wavelength) 
         if if_norm: ret_bb_w /= get_bb(wave_norm)
@@ -546,8 +584,9 @@ class AGNFrame(object):
                 intr_spec_dens_ew = self.powerlaw_func(prep_spec_wave_w, wave_norm=wave_turn, alpha_lambda1=alpha_lambda1, alpha_lambda2=alpha_lambda2, curvature=curvature, 
                                                        bending=True, truncation=self.cframe.comp_info_cI[i_comp]['truncation'])
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
-                log_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tem']]
-                intr_spec_dens_ew = self.blackbody_func(prep_spec_wave_w, log_tem=log_tem)
+                log_tem = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tem']]
+                beta_nu = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['beta_nu']] if 'beta_nu' in self.cframe.par_index_cP[i_comp] else None
+                intr_spec_dens_ew = self.blackbody_func(prep_spec_wave_w, log_tem=log_tem, beta_nu=beta_nu)
             if self.cframe.comp_info_cI[i_comp]['mod_used'] =='recombination':
                 log_e_tem  = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_e_tem']]
                 log_tau_be = par_cp[i_comp][self.cframe.par_index_cP[i_comp]['log_tau_be']]
@@ -722,8 +761,9 @@ class AGNFrame(object):
 
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                     log_tem = output_C[comp_name]['value_Vl']['log_tem'][i_loop]
+                    beta_nu = output_C[comp_name]['value_Vl']['beta_nu'][i_loop] if 'beta_nu' in output_C[comp_name]['value_Vl'] else None
                     tmp_wave_w = np.logspace(np.log10(912), 7.5, num=10000) # till 10 K
-                    tmp_bb_w = coeff_e[0] * self.blackbody_func(tmp_wave_w, log_tem=log_tem)
+                    tmp_bb_w = coeff_e[0] * self.blackbody_func(tmp_wave_w, log_tem=log_tem, beta_nu=beta_nu)
                     tmp_intLum = np.trapezoid(tmp_bb_w * u.Unit(self.fframe.spec_flux_unit) * lum_area, x=tmp_wave_w * u.angstrom).to(self.default_intLum_unit).value
                     output_C[comp_name]['value_Vl']['log_intLum_bol'][i_loop] = np.log10(tmp_intLum)
 
@@ -832,6 +872,7 @@ class AGNFrame(object):
                 print_name_CV[comp_name]['log_Flam_waveturn'] = f"Observed flux density (Fλ, log {self.default_Flam_unit}) at rest {wave_turn:.0f} Å".replace('angstrom', 'Å').replace('Angstrom', 'Å')
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
                 print_name_CV[comp_name]['log_tem'] = 'Blackbody temperature (log K)'
+                print_name_CV[comp_name]['beta_nu'] = 'Opacity spectral index of modified blackbody'
                 print_name_CV[comp_name]['log_intLum_bol'] = f"Blackbody bolometric lum. (log {self.default_intLum_unit})".replace('L_sun', 'L☉')
             if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                 print_name_CV[comp_name]['log_e_tem'] = 'Recombination cont. e- temperature (log K)'
@@ -895,7 +936,7 @@ class AGNFrame(object):
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'bending-powerlaw':
                     value_names += ['curvature', 'wave_turn', 'alpha_lambda1', 'alpha_lambda2', 'log_Flam_waveturn']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'blackbody':
-                    value_names += ['log_tem', 'log_intLum_bol']
+                    value_names += ['log_tem', 'beta_nu', 'log_intLum_bol'] if 'beta_nu' in value_Vl else ['log_tem', 'log_intLum_bol']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'recombination':
                     value_names += ['log_e_tem', 'log_tau_be', 'log_intLum_bol']
                 if self.cframe.comp_info_cI[i_comp]['mod_used'] == 'iron':
